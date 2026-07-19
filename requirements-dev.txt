@@ -1,7 +1,10 @@
-eccodes>=2.43.0
 numpy>=1.26.0
 paho-mqtt>=2.0.0
 Pillow>=10.0.0
 aiohttp
 homeassistant
 pytest-homeassistant-custom-component
+
+# Optional: only needed to run the eccodes cross-validation test
+# (tests/test_grib1.py) that checks the pure-Python decoder against ecCodes.
+# eccodes>=2.43.0

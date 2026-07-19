@@ -1,12 +1,15 @@
 """Decode HARMONIE-style multi-message GRIB1 files.
 
-Uses the low-level eccodes API directly rather than cfgrib/xarray: KNMI's
-files bundle many parameters and levels under a local (non-standard)
-parameter table in a single file, which trips up cfgrib's hypercube-building
-heuristics. Matching messages by their raw numeric keys
-(indicatorOfParameter / indicatorOfTypeOfLevel / level) is both simpler and
-more robust for this data, and those keys are unaffected by KNMI's local
-table not being loaded (unlike shortName, which resolves to "unknown").
+Uses the in-tree pure-Python decoder in ``grib1.py`` rather than
+eccodes/cfgrib: the ecCodes binary wheel isn't built for every CPython
+ABI/platform, so on some Home Assistant installs ``pip install eccodes``
+fails and takes the whole integration down. KNMI's HARMONIE files use only
+the simplest GRIB1 packing, which grib1.py decodes bit-exactly with numpy
+alone.
+
+Messages are matched by their raw numeric keys (indicatorOfParameter /
+indicatorOfTypeOfLevel / level); KNMI uses a local parameter table so
+shortName-based matching wouldn't work anyway.
 
 All functions here are blocking (CPU-bound), by design -- callers (the
 coordinator) are responsible for running them in an executor.
@@ -15,12 +18,12 @@ coordinator) are responsible for running them in an executor.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import eccodes
 import numpy as np
 
+from . import grib1
 from .sources.base import GribParameter
 
 
@@ -45,66 +48,28 @@ def _grib_datetime(date_int: int, time_int: int) -> datetime:
     return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
 
 
-def _message_matches(gid: int, expected: dict) -> bool:
-    for key, value in expected.items():
-        try:
-            actual = (
-                eccodes.codes_get(gid, key, int)
-                if key == "indicatorOfTypeOfLevel"
-                else eccodes.codes_get(gid, key)
-            )
-        except Exception:  # noqa: BLE001 - unknown/unsupported key means no match
-            return False
-        if actual != value:
-            return False
-    return True
+# GRIB1 unitOfTimeRange codes -> hours, for the units KNMI HARMONIE emits.
+_TIME_UNIT_HOURS = {0: 1 / 60, 1: 1, 2: 24, 10: 3, 11: 6, 12: 12, 13: 0.25}
 
 
-def _find_messages(path: Path, filters: dict[str, dict]) -> dict[str, int]:
-    """Scan a GRIB file once, returning {name: message_id} for each matched filter.
-
-    Caller owns the returned message handles and must release them.
-    """
-    remaining = dict(filters)
-    found: dict[str, int] = {}
-    with path.open("rb") as fh:
-        while remaining:
-            gid = eccodes.codes_grib_new_from_file(fh)
-            if gid is None:
-                break
-            matched_name = next(
-                (name for name, filt in remaining.items() if _message_matches(gid, filt)), None
-            )
-            if matched_name is not None:
-                found[matched_name] = gid
-                del remaining[matched_name]
-            else:
-                eccodes.codes_release(gid)
-    return found
-
-
-def _grid_arrays(gid: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    ni = eccodes.codes_get(gid, "Ni")
-    nj = eccodes.codes_get(gid, "Nj")
-    values = eccodes.codes_get_array(gid, "values").astype(np.float64)
-    lats_flat = eccodes.codes_get_array(gid, "latitudes")
-    lons_flat = eccodes.codes_get_array(gid, "longitudes")
-    missing = eccodes.codes_get(gid, "missingValue")
-    values = np.where(values == missing, np.nan, values)
-    grid = values.reshape(nj, ni)
-    lats = lats_flat.reshape(nj, ni)[:, 0]
-    lons = lons_flat.reshape(nj, ni)[0, :]
-    return grid, lats, lons
-
-
-def _message_times(gid: int) -> tuple[datetime, datetime]:
-    valid_time = _grib_datetime(
-        eccodes.codes_get(gid, "validityDate"), eccodes.codes_get(gid, "validityTime")
-    )
-    run_time = _grib_datetime(
-        eccodes.codes_get(gid, "dataDate"), eccodes.codes_get(gid, "dataTime")
-    )
+def _message_times(message: grib1.Grib1Message) -> tuple[datetime, datetime]:
+    run_time = _grib_datetime(message.data_date, message.data_time)
+    unit_hours = _TIME_UNIT_HOURS.get(message.unit_of_time_range, 1)
+    # timeRangeIndicator 0/1 = instantaneous forecast valid at reference + P1.
+    # Interval products (2=valid-over, 3=average, 4=accumulation, 5=difference)
+    # span reference+P1..reference+P2 and are labelled at the end, i.e. P2 --
+    # matching how ecCodes fills validityDate/validityTime.
+    step = message.p2 if message.time_range_indicator in (2, 3, 4, 5) else message.p1
+    valid_time = run_time + timedelta(hours=step * unit_hours)
     return valid_time, run_time
+
+
+def _load_messages(path: Path) -> list[grib1.Grib1Message]:
+    return list(grib1.iter_messages(path.read_bytes()))
+
+
+def _find(messages: list[grib1.Grib1Message], filt: dict) -> grib1.Grib1Message | None:
+    return next((m for m in messages if m.matches(filt)), None)
 
 
 def peek_valid_time(path: Path) -> tuple[datetime, datetime]:
@@ -114,47 +79,34 @@ def peek_valid_time(path: Path) -> tuple[datetime, datetime]:
     the configured forecast horizon before spending time decoding every
     configured parameter out of it.
     """
-    with path.open("rb") as fh:
-        gid = eccodes.codes_grib_new_from_file(fh)
-        if gid is None:
-            raise GribDecodeError(f"{path} contains no GRIB messages")
-        try:
-            return _message_times(gid)
-        finally:
-            eccodes.codes_release(gid)
+    buf = path.read_bytes()
+    for message in grib1.iter_messages(buf):
+        return _message_times(message)
+    raise GribDecodeError(f"{path} contains no GRIB messages")
 
 
 def decode_parameter(path: Path, parameter: GribParameter) -> DecodedField:
     """Extract one GribParameter's field from a single-lead-time GRIB file."""
+    messages = _load_messages(path)
+
     if parameter.kind == "vector":
-        gids = _find_messages(
-            path, {"u": parameter.grib_filter_u, "v": parameter.grib_filter_v}
-        )
-        if "u" not in gids or "v" not in gids:
-            for gid in gids.values():
-                eccodes.codes_release(gid)
+        u_msg = _find(messages, parameter.grib_filter_u)
+        v_msg = _find(messages, parameter.grib_filter_v)
+        if u_msg is None or v_msg is None:
             raise GribDecodeError(
                 f"Vector parameter '{parameter.key}' missing u/v component in {path}"
             )
-        try:
-            u_grid, lats, lons = _grid_arrays(gids["u"])
-            v_grid, _, _ = _grid_arrays(gids["v"])
-            valid_time, run_time = _message_times(gids["u"])
-        finally:
-            for gid in gids.values():
-                eccodes.codes_release(gid)
+        u_grid, lats, lons = grib1.to_grid(u_msg)
+        v_grid, _, _ = grib1.to_grid(v_msg)
+        valid_time, run_time = _message_times(u_msg)
         magnitude = np.sqrt(u_grid**2 + v_grid**2)
         data = magnitude * parameter.scale + parameter.offset
     else:
-        gids = _find_messages(path, {"scalar": parameter.grib_filter})
-        if "scalar" not in gids:
+        msg = _find(messages, parameter.grib_filter)
+        if msg is None:
             raise GribDecodeError(f"Parameter '{parameter.key}' not found in {path}")
-        gid = gids["scalar"]
-        try:
-            grid, lats, lons = _grid_arrays(gid)
-            valid_time, run_time = _message_times(gid)
-        finally:
-            eccodes.codes_release(gid)
+        grid, lats, lons = grib1.to_grid(msg)
+        valid_time, run_time = _message_times(msg)
         data = grid * parameter.scale + parameter.offset
 
     return DecodedField(

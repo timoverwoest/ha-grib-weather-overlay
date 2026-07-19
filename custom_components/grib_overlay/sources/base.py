@@ -19,7 +19,7 @@ class GribParameter:
     """A single physical quantity that can be extracted from a dataset's GRIB messages.
 
     KNMI's HARMONIE files use a local GRIB1 parameter table (centre=knmi,
-    table2Version=253) that eccodes has no name definitions for, so messages
+    table2Version=253) with no standard shortName definitions, so messages
     can't be matched by shortName -- ``grib_filter`` therefore keys on the
     raw numeric fields (indicatorOfParameter / indicatorOfTypeOfLevel /
     level), which are always present regardless of table definitions.

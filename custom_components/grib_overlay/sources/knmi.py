@@ -15,9 +15,10 @@ The parameter table below was verified against a real decoded
 ``harmonie_arome_cy43_p1`` message (indicatorOfParameter / typeOfLevel /
 level), cross-checked with KNMI's published HARMONIE GRIB code table
 (https://www.knmidata.nl/open-data/harmonie). KNMI uses a local GRIB1
-parameter table (centre=knmi, table2Version=253) that eccodes has no name
-definitions for, so shortName resolves to "unknown" -- filtering is done on
-the raw numeric fields instead, which are unaffected by that.
+parameter table (centre=knmi, table2Version=253) with no standard shortName
+definitions, so filtering is done on the raw numeric fields instead, which
+are always present. Decoding is handled by the in-tree pure-Python decoder
+in grib1.py (no eccodes/cfgrib binary dependency).
 
 KNMI also runs an MQTT Notification Service
 (https://developer.dataplatform.knmi.nl/notification-service) that pushes an

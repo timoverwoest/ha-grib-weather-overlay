@@ -30,8 +30,11 @@ de rest van de backend te hoeven aanpassen.
 
 ## Vereisten
 
-- Home Assistant OS of Supervised (pip-installable dependencies, geen
-  systeempakketten nodig: `eccodes`, `numpy`, `Pillow`).
+- Home Assistant OS of Supervised. Alle dependencies zijn pure-Python /
+  universele wheels (`numpy`, `Pillow`, `paho-mqtt`); GRIB1 wordt door een
+  meegeleverde eigen decoder gelezen, dus er is géén `eccodes`/`cfgrib`
+  binaire library nodig (die heeft niet voor elke Python-versie/CPU een wheel
+  en brak eerder de installatie).
 - Een gratis API-sleutel van het
   [KNMI Developer Portal](https://developer.dataplatform.knmi.nl/) voor de
   Open Data API.
@@ -98,7 +101,7 @@ je in de kaart zelf wisselen.
 ## Ontwikkelen & testen
 
 ```bash
-python3 -m pip install -r requirements-dev.txt  # eccodes, numpy, Pillow, homeassistant, pytest-homeassistant-custom-component
+python3 -m pip install -r requirements-dev.txt  # numpy, Pillow, paho-mqtt, homeassistant, pytest-homeassistant-custom-component
 python3 -m pytest tests/
 ```
 
