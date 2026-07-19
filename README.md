@@ -26,7 +26,12 @@ de rest van de backend te hoeven aanpassen.
 - Nieuwe forecast-runs worden direct opgehaald via KNMI's MQTT Notification
   Service (in plaats van te wachten op de eerstvolgende poll), met het
   reguliere poll-interval als betrouwbare fallback als de MQTT-verbinding om
-  wat voor reden dan ook niet lukt.
+  wat voor reden dan ook niet lukt. Let op: de Notification Service
+  autoriseert los van de Open Data API — het kan zijn dat je API-sleutel voor
+  MQTT wordt geweigerd ("Not authorized") terwijl het downloaden gewoon werkt.
+  Dan valt de integratie automatisch terug op pollen; de push-functie vereist
+  een sleutel die óók op de Notification Service is geabonneerd (KNMI
+  Developer Portal).
 
 ## Vereisten
 

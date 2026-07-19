@@ -25,17 +25,21 @@ KNMI also runs an MQTT Notification Service
 event as soon as a new file is published, so the coordinator doesn't have to
 wait for its next poll. Connection details (broker host/port, websocket
 transport, topic pattern, CloudEvents-style JSON payload with a
-data.filename field) were verified live against the real broker. Note the
-public anonymous "open data" demo key is *not* accepted for MQTT (tested:
-CONNACK "Not authorized") -- only a real registered API key works, same key
-as the REST API otherwise. Push is strictly a best-effort optimization:
-polling (async_list_files) remains the source of truth and keeps working on
-its own if the MQTT connection can't be established or drops.
+data.filename field) were verified live against the real broker. Note that
+the Notification Service authorises separately from the Open Data API: the
+public anonymous demo key is rejected for MQTT, and even a valid Open Data
+API key can get CONNACK "Not authorized" unless it's also subscribed to the
+Notification Service on the KNMI Developer Portal. Push is therefore strictly
+a best-effort optimization: polling (async_list_files) remains the source of
+truth and keeps working on its own if MQTT can't connect or is rejected. On
+an auth rejection we stop reconnecting (paho would otherwise retry forever)
+and log it once.
 """
 
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 from collections.abc import Callable
@@ -188,6 +192,7 @@ class KnmiSource(GribSource):
         self._session = session
         self._api_key = api_key
         self._mqtt_client: mqtt.Client | None = None
+        self._notify_auth_logged = False
 
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
         return list(KNOWN_DATASETS)
@@ -241,16 +246,25 @@ class KnmiSource(GribSource):
         self, dataset: GribDatasetInfo, filename: str, destination: Path
     ) -> Path:
         download_url = await self.async_get_download_url(dataset, filename)
-        destination.parent.mkdir(parents=True, exist_ok=True)
+        loop = asyncio.get_running_loop()
+        # A HARMONIE run is ~850MB; the streaming download is async, but the
+        # filesystem writes are blocking, so run mkdir/open/write/close in the
+        # executor to keep them off the event loop.
+        await loop.run_in_executor(
+            None, functools.partial(destination.parent.mkdir, parents=True, exist_ok=True)
+        )
         try:
             async with self._session.get(download_url) as resp:
                 if resp.status >= 400:
                     raise GribSourceError(
                         f"Downloading {filename} failed with HTTP {resp.status}"
                     )
-                with destination.open("wb") as fh:
+                fh = await loop.run_in_executor(None, destination.open, "wb")
+                try:
                     async for chunk in resp.content.iter_chunked(1024 * 1024):
-                        fh.write(chunk)
+                        await loop.run_in_executor(None, fh.write, chunk)
+                finally:
+                    await loop.run_in_executor(None, fh.close)
         except aiohttp.ClientError as err:
             raise GribSourceError(f"Downloading {filename} failed: {err}") from err
         return destination
@@ -268,12 +282,20 @@ class KnmiSource(GribSource):
             if reason_code == 0:
                 _LOGGER.debug("Connected to KNMI notification service, subscribing to %s", topic)
                 client.subscribe(topic, qos=1)
-            else:
+                return
+            # "Not authorized" and friends are permanent for this API key, so
+            # stop here instead of letting paho auto-reconnect forever (that
+            # produced dozens of identical warnings). Log it only once.
+            if not self._notify_auth_logged:
+                self._notify_auth_logged = True
                 _LOGGER.warning(
-                    "KNMI notification service rejected the connection (%s); "
-                    "falling back to polling only",
+                    "KNMI notification service rejected the connection (%s); continuing "
+                    "with polling only. Push updates need an API key that is authorised "
+                    "for the Notification Service (a separate subscription on the KNMI "
+                    "Developer Portal). Polling keeps working regardless.",
                     reason_code,
                 )
+            client.disconnect()  # clean disconnect => paho won't auto-reconnect
 
         def _on_message(_client, _userdata, msg) -> None:
             try:
@@ -287,25 +309,27 @@ class KnmiSource(GribSource):
         def _on_disconnect(_client, _userdata, _flags, reason_code, _properties) -> None:
             _LOGGER.debug("Disconnected from KNMI notification service: %s", reason_code)
 
-        client = mqtt.Client(
-            mqtt.CallbackAPIVersion.VERSION2,
-            transport="websockets",
-            protocol=mqtt.MQTTProtocolVersion.MQTTv5,
-        )
-        client.username_pw_set(username="", password=self._api_key)
-        client.tls_set()
-        client.ws_set_options(path=MQTT_WS_PATH)
-        client.reconnect_delay_set(min_delay=5, max_delay=120)
-        client.on_connect = _on_connect
-        client.on_message = _on_message
-        client.on_disconnect = _on_disconnect
-
-        def _connect_and_start() -> None:
+        # Building the client calls tls_set(), which loads CA certs from disk
+        # (blocking), and connect() does network I/O -- do it all in the executor.
+        def _build_and_connect() -> mqtt.Client:
+            client = mqtt.Client(
+                mqtt.CallbackAPIVersion.VERSION2,
+                transport="websockets",
+                protocol=mqtt.MQTTProtocolVersion.MQTTv5,
+            )
+            client.username_pw_set(username="", password=self._api_key)
+            client.tls_set()
+            client.ws_set_options(path=MQTT_WS_PATH)
+            client.reconnect_delay_set(min_delay=5, max_delay=120)
+            client.on_connect = _on_connect
+            client.on_message = _on_message
+            client.on_disconnect = _on_disconnect
             client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
             client.loop_start()
+            return client
 
         try:
-            await loop.run_in_executor(None, _connect_and_start)
+            client = await loop.run_in_executor(None, _build_and_connect)
         except Exception as err:  # noqa: BLE001 - push is best-effort, polling is the fallback
             _LOGGER.warning(
                 "Could not connect to KNMI notification service (falling back to polling "
