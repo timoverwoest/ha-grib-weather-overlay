@@ -6,7 +6,11 @@
         "description": "Choose a GRIB data source and enter your API key.",
         "data": {
           "source": "Source",
-          "api_key": "API key"
+          "api_key": "API key",
+          "notification_api_key": "Notification Service API key (optional)"
+        },
+        "data_description": {
+          "notification_api_key": "Optional: a separate KNMI Notification Service key for instant push updates of new forecast runs. Leave empty to rely on periodic polling."
         }
       },
       "dataset": {
@@ -39,7 +43,11 @@
         "data": {
           "forecast_horizon_hours": "Forecast horizon (hours)",
           "retain_runs": "Number of forecast runs to keep cached",
-          "update_interval_minutes": "Polling interval (minutes)"
+          "update_interval_minutes": "Polling interval (minutes)",
+          "notification_api_key": "Notification Service API key (optional)"
+        },
+        "data_description": {
+          "notification_api_key": "Optional: a separate KNMI Notification Service key for instant push updates. Leave empty to rely on periodic polling."
         }
       }
     }

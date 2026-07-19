@@ -6,7 +6,11 @@
         "description": "Kies een GRIB-databron en vul je API-sleutel in.",
         "data": {
           "source": "Bron",
-          "api_key": "API-sleutel"
+          "api_key": "API-sleutel",
+          "notification_api_key": "Notification Service API-sleutel (optioneel)"
+        },
+        "data_description": {
+          "notification_api_key": "Optioneel: een aparte KNMI Notification Service-sleutel voor directe push-updates bij nieuwe forecast-runs. Laat leeg om op periodiek pollen te vertrouwen."
         }
       },
       "dataset": {
@@ -39,7 +43,11 @@
         "data": {
           "forecast_horizon_hours": "Voorspellingshorizon (uren)",
           "retain_runs": "Aantal forecast-runs om gecached te houden",
-          "update_interval_minutes": "Poll-interval (minuten)"
+          "update_interval_minutes": "Poll-interval (minuten)",
+          "notification_api_key": "Notification Service API-sleutel (optioneel)"
+        },
+        "data_description": {
+          "notification_api_key": "Optioneel: een aparte KNMI Notification Service-sleutel voor directe push-updates. Laat leeg om op periodiek pollen te vertrouwen."
         }
       }
     }

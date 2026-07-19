@@ -4,6 +4,7 @@ DOMAIN = "grib_overlay"
 
 CONF_SOURCE = "source"
 CONF_API_KEY = "api_key"
+CONF_NOTIFICATION_API_KEY = "notification_api_key"
 CONF_DATASET = "dataset"
 CONF_PARAMETERS = "parameters"
 

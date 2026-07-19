@@ -29,6 +29,7 @@ from .const import (
     CONF_API_KEY,
     CONF_DATASET,
     CONF_FORECAST_HORIZON_HOURS,
+    CONF_NOTIFICATION_API_KEY,
     CONF_PARAMETERS,
     CONF_RETAIN_RUNS,
     CONF_SOURCE,
@@ -70,7 +71,15 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         self.entry = entry
         source_cls = get_source_class(entry.data[CONF_SOURCE])
         session = async_get_clientsession(hass)
-        self.source: GribSource = source_cls(session, entry.data[CONF_API_KEY])
+        # A separate notification/MQTT key (options override entry data) is used
+        # for push updates when the user supplied one; sources that don't use it
+        # ignore the kwarg.
+        notification_key = entry.options.get(
+            CONF_NOTIFICATION_API_KEY
+        ) or entry.data.get(CONF_NOTIFICATION_API_KEY)
+        self.source: GribSource = source_cls(
+            session, entry.data[CONF_API_KEY], notification_api_key=notification_key
+        )
         self.storage_dir = Path(hass.config.path(DOMAIN, entry.entry_id))
         self._current_run_filename: str | None = None
         # frames[parameter_key] = list[Frame] sorted by valid_time

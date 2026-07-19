@@ -188,9 +188,18 @@ class KnmiSource(GribSource):
     name = "KNMI Data Platform"
     supports_push_notifications = True
 
-    def __init__(self, session: aiohttp.ClientSession, api_key: str) -> None:
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        api_key: str,
+        notification_api_key: str | None = None,
+    ) -> None:
         self._session = session
         self._api_key = api_key
+        # The KNMI Notification Service authorises separately from the Open Data
+        # API. Use a dedicated notification key for MQTT when provided; otherwise
+        # fall back to the Open Data key (best-effort -- it may be rejected).
+        self._notification_api_key = notification_api_key or api_key
         self._mqtt_client: mqtt.Client | None = None
         self._notify_auth_logged = False
 
@@ -317,7 +326,7 @@ class KnmiSource(GribSource):
                 transport="websockets",
                 protocol=mqtt.MQTTProtocolVersion.MQTTv5,
             )
-            client.username_pw_set(username="", password=self._api_key)
+            client.username_pw_set(username="", password=self._notification_api_key)
             client.tls_set()
             client.ws_set_options(path=MQTT_WS_PATH)
             client.reconnect_delay_set(min_delay=5, max_delay=120)

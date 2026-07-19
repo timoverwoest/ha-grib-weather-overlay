@@ -18,6 +18,7 @@ from .const import (
     CONF_API_KEY,
     CONF_DATASET,
     CONF_FORECAST_HORIZON_HOURS,
+    CONF_NOTIFICATION_API_KEY,
     CONF_PARAMETERS,
     CONF_RETAIN_RUNS,
     CONF_SOURCE,
@@ -41,6 +42,7 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._source_key: str | None = None
         self._api_key: str | None = None
+        self._notification_api_key: str | None = None
         self._datasets: list[GribDatasetInfo] = []
         self._dataset: GribDatasetInfo | None = None
 
@@ -64,6 +66,9 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 self._source_key = source_key
                 self._api_key = api_key
+                self._notification_api_key = (
+                    user_input.get(CONF_NOTIFICATION_API_KEY) or ""
+                ).strip() or None
                 self._datasets = datasets
                 return await self.async_step_dataset()
 
@@ -73,6 +78,7 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     {key: cls.name for key, cls in SOURCE_REGISTRY.items()}
                 ),
                 vol.Required(CONF_API_KEY): str,
+                vol.Optional(CONF_NOTIFICATION_API_KEY): str,
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
@@ -103,15 +109,15 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not selected:
                 errors["base"] = "no_parameters_selected"
             else:
-                return self.async_create_entry(
-                    title=f"{self._dataset.name}",
-                    data={
-                        CONF_SOURCE: self._source_key,
-                        CONF_API_KEY: self._api_key,
-                        CONF_DATASET: self._dataset.key,
-                        CONF_PARAMETERS: selected,
-                    },
-                )
+                data = {
+                    CONF_SOURCE: self._source_key,
+                    CONF_API_KEY: self._api_key,
+                    CONF_DATASET: self._dataset.key,
+                    CONF_PARAMETERS: selected,
+                }
+                if self._notification_api_key:
+                    data[CONF_NOTIFICATION_API_KEY] = self._notification_api_key
+                return self.async_create_entry(title=f"{self._dataset.name}", data=data)
 
         all_keys = [p.key for p in self._dataset.parameters]
         schema = vol.Schema(
@@ -137,9 +143,21 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            # Normalise the notification key: strip, and drop it entirely when
+            # blank so it doesn't shadow the entry-data value with an empty one.
+            notification_key = (user_input.get(CONF_NOTIFICATION_API_KEY) or "").strip()
+            options = dict(user_input)
+            if notification_key:
+                options[CONF_NOTIFICATION_API_KEY] = notification_key
+            else:
+                options.pop(CONF_NOTIFICATION_API_KEY, None)
+            return self.async_create_entry(title="", data=options)
 
         options = self._config_entry.options
+        data = self._config_entry.data
+        current_notification_key = options.get(
+            CONF_NOTIFICATION_API_KEY, data.get(CONF_NOTIFICATION_API_KEY, "")
+        )
         schema = vol.Schema(
             {
                 vol.Required(
@@ -154,6 +172,9 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                     CONF_UPDATE_INTERVAL_MINUTES,
                     default=options.get(CONF_UPDATE_INTERVAL_MINUTES, DEFAULT_UPDATE_INTERVAL_MINUTES),
                 ): vol.All(vol.Coerce(int), vol.Range(min=5, max=180)),
+                vol.Optional(
+                    CONF_NOTIFICATION_API_KEY, default=current_notification_key
+                ): str,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)

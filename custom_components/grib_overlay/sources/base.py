@@ -75,7 +75,14 @@ class GribSourceAuthError(GribSourceError):
 
 
 class GribSource(ABC):
-    """Base class for a GRIB provider (KNMI Data Platform, and future sources)."""
+    """Base class for a GRIB provider (KNMI Data Platform, and future sources).
+
+    Implementations are constructed as ``source_cls(session, api_key,
+    notification_api_key=...)``. The ``notification_api_key`` keyword is
+    optional and provider-specific (KNMI's Notification Service authorises
+    separately from its Open Data API); sources that don't use it should still
+    accept and ignore the keyword.
+    """
 
     key: str
     name: str
