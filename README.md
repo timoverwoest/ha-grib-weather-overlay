@@ -1,2 +1,2 @@
 # ha-grib-weather-overlay
-GRIB data overlay based on KNMI open date
+GRIB data overlay based on KNMI open data
