@@ -99,11 +99,17 @@ class GribOverlayCard extends HTMLElement {
   }
 
   set hass(hass) {
-    const first = !this._hass;
     this._hass = hass;
-    if (first) {
-      this._initialize();
-    }
+    this._tryInitialize();
+  }
+
+  // Only build the Leaflet map once the card is both configured with hass AND
+  // actually attached to the document -- creating Leaflet on a detached/zero-size
+  // element is what left the map blank until a browser refresh.
+  _tryInitialize() {
+    if (this._initialized || !this._hass || !this.isConnected) return;
+    this._initialized = true;
+    this._initialize();
   }
 
   _rows() {
@@ -149,6 +155,14 @@ class GribOverlayCard extends HTMLElement {
 
   connectedCallback() {
     this._connected = true;
+    // First attach: build the map now that we have a sized, in-DOM container.
+    this._tryInitialize();
+    // Re-attach (navigating back to the view): the container was hidden/removed,
+    // so nudge Leaflet to re-measure and repaint its tiles + overlay.
+    if (this._map) {
+      this._observeResize();
+      this._scheduleInvalidate();
+    }
   }
 
   disconnectedCallback() {
@@ -158,6 +172,25 @@ class GribOverlayCard extends HTMLElement {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
     }
+  }
+
+  _observeResize() {
+    if (!window.ResizeObserver || !this._els || !this._els.mapContainer) return;
+    if (this._resizeObserver) this._resizeObserver.disconnect();
+    this._resizeObserver = new ResizeObserver(() => {
+      if (this._map) this._map.invalidateSize();
+    });
+    this._resizeObserver.observe(this._els.mapContainer);
+  }
+
+  // Leaflet needs invalidateSize after its container gains size/visibility.
+  // Fire it across a few frames/timeouts to catch late dashboard layout.
+  _scheduleInvalidate() {
+    if (!this._map) return;
+    const nudge = () => this._map && this._map.invalidateSize();
+    requestAnimationFrame(nudge);
+    setTimeout(nudge, 150);
+    setTimeout(nudge, 600);
   }
 
   // -- one-time DOM scaffold -------------------------------------------------
@@ -299,7 +332,10 @@ class GribOverlayCard extends HTMLElement {
       this._els.note.textContent = String(err.message || err);
       return;
     }
-    this._map = window.L.map(this._els.mapDiv, { center: this._config.center || [52.1, 5.3], zoom: this._config.zoom || 7 });
+    this._map = window.L.map(this._els.mapDiv, {
+      center: this._config.center || [52.1, 5.3],
+      zoom: this._config.zoom || 7,
+    });
     window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "&copy; OpenStreetMap contributors",
       maxZoom: 19,
@@ -309,15 +345,11 @@ class GribOverlayCard extends HTMLElement {
       maxZoom: 18,
     }).addTo(this._map);
 
-    // Leaflet needs an explicit nudge whenever its container is resized (grid
-    // resize, section relayout, window resize), otherwise tiles/overlay clip.
-    if (window.ResizeObserver && this._els.mapContainer) {
-      this._resizeObserver = new ResizeObserver(() => {
-        if (this._map) this._map.invalidateSize();
-      });
-      this._resizeObserver.observe(this._els.mapContainer);
-    }
+    // Observe resizes and force an initial re-measure, so tiles/overlay render
+    // even when the card was first laid out at zero/unknown size.
+    this._observeResize();
     this._applyLayout();
+    this._scheduleInvalidate();
 
     await this._loadEntries();
   }
@@ -390,11 +422,14 @@ class GribOverlayCard extends HTMLElement {
       ? wantedParam
       : entry.parameters[0]?.key || "";
 
-    if (!this._boundsFit) {
+    // Auto-fit to the dataset bounds only when the user hasn't pinned the view
+    // via config; an explicit center/zoom must win over the auto-fit.
+    const hasManualView = this._config.center !== undefined || this._config.zoom !== undefined;
+    if (!this._boundsFit && !hasManualView) {
       const [south, west, north, east] = entry.dataset.bounds;
       this._map.fitBounds([[south, west], [north, east]]);
-      this._boundsFit = true;
     }
+    this._boundsFit = true;
 
     await this._onParameterChange();
   }
