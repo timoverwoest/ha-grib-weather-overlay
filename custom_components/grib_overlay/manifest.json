@@ -1,13 +1,13 @@
 {
   "domain": "grib_overlay",
   "name": "GRIB Weather Overlay",
-  "codeowners": [],
+  "codeowners": ["@timoverwoest"],
   "config_flow": true,
   "dependencies": ["http", "frontend"],
-  "documentation": "https://github.com/example/grib-overlay",
+  "documentation": "https://github.com/timoverwoest/ha-grib-weather-overlay",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/example/grib-overlay/issues",
+  "issue_tracker": "https://github.com/timoverwoest/ha-grib-weather-overlay/issues",
   "requirements": [
     "eccodes>=2.43.0",
     "numpy>=1.26.0",

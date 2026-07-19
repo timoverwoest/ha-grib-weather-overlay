@@ -131,3 +131,7 @@ Elke databron implementeert `custom_components/grib_overlay/sources/base.py`'s
 geregistreerd in `sources/registry.py`. De rest van de integratie
 (coordinator, decode/render-pipeline, HTTP-API, kaart-kaart) kent geen
 KNMI-specifieke aannames buiten `sources/knmi.py` zelf.
+
+## Licentie
+
+[MIT](LICENSE)
