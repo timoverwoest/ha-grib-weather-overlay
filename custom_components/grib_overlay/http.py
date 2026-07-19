@@ -101,11 +101,21 @@ class GribOverlayFramesView(HomeAssistantView):
 
 
 class GribOverlayFrameImageView(HomeAssistantView):
-    """Serves one cached frame PNG."""
+    """Serves one cached frame PNG.
+
+    requires_auth is False on purpose: Leaflet loads these via a plain
+    ``L.imageOverlay`` (an <img> element), which cannot attach Home
+    Assistant's bearer token, so an authed view would 401 and no overlay
+    would appear. The metadata views above stay authenticated; only the
+    rendered image bytes are public. That's acceptable here -- they are
+    colour renderings of already-public KNMI weather data, addressed by an
+    unguessable config-entry ULID plus parameter/frame id, with no path
+    traversal (the frame id must match an in-memory frame).
+    """
 
     url = HTTP_FRAME_IMAGE_PATH + "/{entry_id}/{parameter_key}/{frame_id}.png"
     name = "api:grib_overlay:frame_image"
-    requires_auth = True
+    requires_auth = False
 
     async def get(
         self, request: web.Request, entry_id: str, parameter_key: str, frame_id: str

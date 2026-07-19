@@ -24,7 +24,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-async def test_entries_frames_and_image_endpoints(hass, hass_client, tmp_path: Path) -> None:
+async def test_entries_frames_and_image_endpoints(
+    hass, hass_client, hass_client_no_auth, tmp_path: Path
+) -> None:
     sample_path = Path(os.environ[SAMPLE_ENV_VAR])
     tar_path = tmp_path / "HARM43_V1_P1_2026071802.tar"
     with tarfile.open(tar_path, "w") as tar:
@@ -79,6 +81,17 @@ async def test_entries_frames_and_image_endpoints(hass, hass_client, tmp_path: P
     assert resp.content_type == "image/png"
     png_bytes = await resp.read()
     assert png_bytes[:8] == b"\x89PNG\r\n\x1a\n"
+
+    # The image endpoint must load without auth -- Leaflet's imageOverlay uses a
+    # plain <img> that can't send HA's bearer token. (The metadata endpoints
+    # above stay authenticated.)
+    noauth_client = await hass_client_no_auth()
+    resp = await noauth_client.get(frame_info["image_url"])
+    assert resp.status == 200
+    assert resp.content_type == "image/png"
+
+    resp = await noauth_client.get(f"/api/grib_overlay/frames/{entry.entry_id}")
+    assert resp.status == 401  # metadata still requires auth
 
     resp = await client.get(f"/api/grib_overlay/frames/unknown-entry")
     assert resp.status == 404
