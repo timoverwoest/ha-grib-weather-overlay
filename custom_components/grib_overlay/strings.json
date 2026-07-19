@@ -1,0 +1,47 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "GRIB Weather Overlay",
+        "description": "Choose a GRIB data source and enter your API key.",
+        "data": {
+          "source": "Source",
+          "api_key": "API key"
+        }
+      },
+      "dataset": {
+        "title": "Choose a dataset",
+        "data": {
+          "dataset": "Dataset"
+        }
+      },
+      "parameters": {
+        "title": "Choose parameters",
+        "description": "Select which weather parameters should be kept up to date and made available to the map card.",
+        "data": {
+          "parameters": "Parameters"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "The API key was rejected by the source.",
+      "cannot_connect": "Could not reach the source's API.",
+      "no_parameters_selected": "Select at least one parameter."
+    },
+    "abort": {
+      "already_configured": "This source/dataset combination is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "GRIB Weather Overlay options",
+        "data": {
+          "forecast_horizon_hours": "Forecast horizon (hours)",
+          "retain_runs": "Number of forecast runs to keep cached",
+          "update_interval_minutes": "Polling interval (minutes)"
+        }
+      }
+    }
+  }
+}

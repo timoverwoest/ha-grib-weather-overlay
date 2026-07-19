@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8" />
+<title>grib-overlay-card dev harness</title>
+<style>
+  body { font-family: sans-serif; background: #eee; margin: 0; padding: 24px; }
+  h1 { font-size: 1rem; color: #555; }
+  grib-overlay-card { display: block; max-width: 700px; margin: 0 auto; }
+</style>
+</head>
+<body>
+<h1>grib-overlay-card dev harness (mock API, no Home Assistant)</h1>
+<grib-overlay-card id="card"></grib-overlay-card>
+
+<script>
+  // Minimal <ha-card> stand-in so the card's innerHTML renders with some chrome.
+  if (!customElements.get("ha-card")) {
+    customElements.define("ha-card", class extends HTMLElement {
+      connectedCallback() {
+        Object.assign(this.style, {
+          display: "block",
+          borderRadius: "12px",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.25)",
+          background: "#fff",
+          overflow: "hidden",
+        });
+      }
+    });
+  }
+</script>
+<script src="/grib_overlay_static/grib-overlay-card.js"></script>
+<script>
+  const card = document.getElementById("card");
+  card.setConfig({ type: "custom:grib-overlay-card" });
+  card.hass = {
+    callApi: async (method, path) => {
+      const resp = await fetch("/api/" + path, { method });
+      if (!resp.ok) throw new Error(`${method} /api/${path} -> ${resp.status}`);
+      return resp.json();
+    },
+  };
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+dev/output/
+*.tar
+*.grib
+
+.vscode/
+.idea/
+.DS_Store
+
+.claude/settings.local.json

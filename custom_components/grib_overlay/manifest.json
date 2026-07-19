@@ -1,0 +1,18 @@
+{
+  "domain": "grib_overlay",
+  "name": "GRIB Weather Overlay",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": ["http", "frontend"],
+  "documentation": "https://github.com/example/grib-overlay",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/example/grib-overlay/issues",
+  "requirements": [
+    "eccodes>=2.43.0",
+    "numpy>=1.26.0",
+    "paho-mqtt>=2.0.0",
+    "Pillow>=10.0.0"
+  ],
+  "version": "0.1.0"
+}

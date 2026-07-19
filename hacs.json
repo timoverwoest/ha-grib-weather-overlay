@@ -1,0 +1,5 @@
+{
+  "name": "GRIB Weather Overlay",
+  "render_readme": true,
+  "homeassistant": "2024.6.0"
+}
