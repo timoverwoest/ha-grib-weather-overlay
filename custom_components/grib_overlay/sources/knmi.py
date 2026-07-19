@@ -118,6 +118,7 @@ _HARMONIE_NL_PARAMETERS: tuple[GribParameter, ...] = (
         name="Relatieve luchtvochtigheid (2m)",
         unit="%",
         grib_filter={"indicatorOfParameter": 52, "indicatorOfTypeOfLevel": _LEVEL_GROUND, "level": 2},
+        scale=100.0,  # KNMI stores RH as a 0-1 fraction -> percent
         colormap="humidity",
         value_range=(0, 100),
     ),
@@ -152,6 +153,7 @@ _HARMONIE_NL_PARAMETERS: tuple[GribParameter, ...] = (
         name="Bewolking",
         unit="%",
         grib_filter={"indicatorOfParameter": 71, "indicatorOfTypeOfLevel": _LEVEL_GROUND, "level": 0},
+        scale=100.0,  # KNMI stores cloud cover as a 0-1 fraction -> percent
         colormap="cloud",
         value_range=(0, 100),
     ),
