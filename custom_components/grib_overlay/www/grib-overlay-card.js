@@ -42,6 +42,35 @@ const STEP_OPTIONS = [
   { value: 6, label: "om de 6 stappen" },
 ];
 
+// Optional display-unit conversions applied client-side to the legend labels
+// (the colour scale itself is a normalised ramp, so only the numbers/labels
+// change). Keyed by the backend's source unit; factor multiplies the value.
+const UNIT_CONVERSIONS = {
+  "m/s": {
+    kn: { factor: 1.9438445, label: "kn" }, // knots (nautical miles/hour)
+    "km/h": { factor: 3.6, label: "km/u" },
+    mph: { factor: 2.2369363, label: "mph" },
+  },
+  km: {
+    NM: { factor: 0.5399568, label: "zeemijl" }, // nautical miles
+  },
+};
+
+// Forgiving config aliases -> canonical target unit key above.
+const UNIT_ALIASES = {
+  kt: "kn",
+  kts: "kn",
+  knots: "kn",
+  knopen: "kn",
+  knoop: "kn",
+  "km/u": "km/h",
+  kmh: "km/h",
+  kph: "km/h",
+  nm: "NM",
+  zeemijl: "NM",
+  zeemijlen: "NM",
+};
+
 class GribOverlayCard extends HTMLElement {
   static getStubConfig() {
     return { type: "custom:grib-overlay-card" };
@@ -51,6 +80,22 @@ class GribOverlayCard extends HTMLElement {
     this._config = config || {};
     this._render();
     this._applyLayout();
+    // On a live config edit (e.g. changing wind_unit in the dashboard editor)
+    // the card is already initialized; refresh the unit labels in place.
+    if (this._entries) this._refreshUnitLabels();
+  }
+
+  // Re-label the parameter dropdown + legend for the current display units,
+  // without rebuilding the dropdown or resetting the selected parameter.
+  _refreshUnitLabels() {
+    const entry = this._currentEntry();
+    if (entry && this._els && this._els.paramSelect) {
+      for (const opt of this._els.paramSelect.options) {
+        const param = entry.parameters.find((p) => p.key === opt.value);
+        if (param) opt.textContent = `${param.name} (${this._displayUnitLabel(param.unit)})`;
+      }
+    }
+    this._updateLegend();
   }
 
   set hass(hass) {
@@ -311,6 +356,24 @@ class GribOverlayCard extends HTMLElement {
     return this._entries.find((e) => e.entry_id === this._els.entrySelect.value);
   }
 
+  // Resolve a source unit ("m/s"/"km") to the configured display conversion,
+  // or null when no (valid) override applies and the source unit should stand.
+  _conversionFor(sourceUnit) {
+    const cfg = this._config || {};
+    let target;
+    if (sourceUnit === "m/s") target = cfg.wind_unit;
+    else if (sourceUnit === "km") target = cfg.visibility_unit;
+    if (!target) return null;
+    target = UNIT_ALIASES[String(target).toLowerCase()] || target;
+    if (target === sourceUnit) return null;
+    return (UNIT_CONVERSIONS[sourceUnit] || {})[target] || null;
+  }
+
+  _displayUnitLabel(sourceUnit) {
+    const conv = this._conversionFor(sourceUnit);
+    return conv ? conv.label : sourceUnit;
+  }
+
   async _onEntryChange() {
     const entry = this._currentEntry();
     if (!entry) return;
@@ -319,7 +382,7 @@ class GribOverlayCard extends HTMLElement {
     for (const param of entry.parameters) {
       const opt = document.createElement("option");
       opt.value = param.key;
-      opt.textContent = `${param.name} (${param.unit})`;
+      opt.textContent = `${param.name} (${this._displayUnitLabel(param.unit)})`;
       this._els.paramSelect.appendChild(opt);
     }
     const wantedParam = this._config.parameter;
@@ -436,7 +499,13 @@ class GribOverlayCard extends HTMLElement {
       .map((s) => `${s.color} ${(s.offset * 100).toFixed(0)}%`)
       .join(", ");
     this._els.legendBar.style.background = `linear-gradient(to right, ${stops})`;
-    this._els.legendScale.innerHTML = `<span>${legend.min_value.toFixed(1)} ${legend.unit}</span><span>${legend.max_value.toFixed(1)} ${legend.unit}</span>`;
+
+    const conv = this._conversionFor(legend.unit);
+    const factor = conv ? conv.factor : 1;
+    const unit = conv ? conv.label : legend.unit;
+    const min = (legend.min_value * factor).toFixed(1);
+    const max = (legend.max_value * factor).toFixed(1);
+    this._els.legendScale.innerHTML = `<span>${min} ${unit}</span><span>${max} ${unit}</span>`;
   }
 
   // -- mode + playback -----------------------------------------------------------

@@ -80,6 +80,9 @@ type: custom:grib-overlay-card
 # grootte in een Secties-dashboard:
 # columns: full   # breedte: "full" (volledig, standaard) of een getal kolommen
 # rows: 8         # hoogte in grid-rijen
+# eenheden (nautisch):
+# wind_unit: kn        # wind + windstoten: m/s (standaard), kn, km/h of mph
+# visibility_unit: NM  # zicht: km (standaard) of NM (zeemijlen)
 ```
 
 Zonder `entry_id`/`parameter` pakt de kaart automatisch de eerst
@@ -96,6 +99,17 @@ manieren regelen:
 - **In YAML** met `columns` (breedte: `full` of een aantal grid-kolommen) en
   `rows` (hoogte in grid-rijen). `rows` bepaalt ook de kaarthoogte in een
   gewoon (masonry) dashboard.
+
+### Eenheden
+
+Voor nautisch gebruik kun je in de kaart optioneel andere eenheden tonen. Dit
+is puur een weergavekeuze in de kaart (de onderliggende data verandert niet):
+
+- `wind_unit`: eenheid voor wind én windstoten — `m/s` (standaard), `kn`
+  (knopen / zeemijlen per uur), `km/h` of `mph`.
+- `visibility_unit`: eenheid voor zicht — `km` (standaard) of `NM` (zeemijlen).
+
+De legenda en het label in de parameterkeuze worden dan automatisch omgerekend.
 
 ## Bekende beperkingen
 
