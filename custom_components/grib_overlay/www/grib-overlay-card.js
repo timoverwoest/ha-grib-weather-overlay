@@ -50,6 +50,7 @@ class GribOverlayCard extends HTMLElement {
   setConfig(config) {
     this._config = config || {};
     this._render();
+    this._applyLayout();
   }
 
   set hass(hass) {
@@ -60,8 +61,45 @@ class GribOverlayCard extends HTMLElement {
     }
   }
 
+  _rows() {
+    const rows = Number(this._config && this._config.rows);
+    return rows > 0 ? rows : 8;
+  }
+
+  // Masonry dashboards use getCardSize (1 unit ~= 50px).
   getCardSize() {
-    return 8;
+    return this._rows();
+  }
+
+  // Sections dashboards use getGridOptions: columns/rows control width/height,
+  // and can also be dragged in the UI. Default to full width. `columns` may be
+  // a number (grid columns to span) or "full"; `rows` is height in grid rows.
+  getGridOptions() {
+    const cfg = this._config || {};
+    const columns = cfg.columns === undefined ? "full" : cfg.columns;
+    return {
+      columns,
+      rows: this._rows(),
+      min_columns: 3,
+      min_rows: 3,
+    };
+  }
+
+  // Older HA builds called this getLayoutOptions; keep an alias so the card
+  // sizes correctly on both.
+  getLayoutOptions() {
+    return this.getGridOptions();
+  }
+
+  // Give the map a sensible floor height derived from the row count so it looks
+  // right in masonry dashboards; in sections it flexes to fill the grid cell.
+  _applyLayout() {
+    if (!this._els || !this._els.mapContainer) return;
+    const mapMin = Math.max(160, Math.round(this._rows() * 64 - 150));
+    this._els.mapContainer.style.minHeight = `${mapMin}px`;
+    if (this._map) {
+      requestAnimationFrame(() => this._map.invalidateSize());
+    }
   }
 
   connectedCallback() {
@@ -71,6 +109,10 @@ class GribOverlayCard extends HTMLElement {
   disconnectedCallback() {
     this._connected = false;
     this._stopPlayback();
+    if (this._resizeObserver) {
+      this._resizeObserver.disconnect();
+      this._resizeObserver = null;
+    }
   }
 
   // -- one-time DOM scaffold -------------------------------------------------
@@ -87,11 +129,14 @@ class GribOverlayCard extends HTMLElement {
 
     const style = document.createElement("style");
     style.textContent = `
-      :host { display: block; }
-      ha-card { overflow: hidden; }
+      :host { display: block; height: 100%; }
+      ha-card {
+        overflow: hidden; height: 100%;
+        display: flex; flex-direction: column;
+      }
       .toolbar {
         display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-        padding: 8px 12px;
+        padding: 8px 12px; flex: 0 0 auto;
       }
       select, button {
         font: inherit; padding: 4px 8px; border-radius: 6px;
@@ -100,8 +145,14 @@ class GribOverlayCard extends HTMLElement {
         color: var(--primary-text-color, #000);
       }
       button.active { background: var(--primary-color, #03a9f4); color: white; }
-      .map-container { position: relative; width: 100%; height: 360px; }
-      .map { width: 100%; height: 100%; }
+      /* map-container flexes to fill the height the dashboard gives the card;
+         min-height (set from the "rows" config) is the floor used in masonry
+         dashboards where no fixed card height is imposed. */
+      .map-container { position: relative; width: 100%; flex: 1 1 auto; min-height: 240px; }
+      /* Absolute fill (not height:100%) so the map fills the container whether
+         its height comes from a fixed grid cell (sections) or from flex/min-height
+         (masonry) -- percentage heights don't resolve against an indefinite parent. */
+      .map { position: absolute; inset: 0; }
       .time-controls {
         display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
         padding: 8px 12px;
@@ -155,6 +206,7 @@ class GribOverlayCard extends HTMLElement {
       modeSingleBtn: card.querySelector(".mode-single"),
       modeAnimateBtn: card.querySelector(".mode-animate"),
       renderModeSelect: card.querySelector(".render-mode-select"),
+      mapContainer: card.querySelector(".map-container"),
       mapDiv: card.querySelector(".map"),
       singleControls: card.querySelector(".single-controls"),
       animateControls: card.querySelector(".animate-controls"),
@@ -211,6 +263,16 @@ class GribOverlayCard extends HTMLElement {
       attribution: "&copy; OpenSeaMap contributors",
       maxZoom: 18,
     }).addTo(this._map);
+
+    // Leaflet needs an explicit nudge whenever its container is resized (grid
+    // resize, section relayout, window resize), otherwise tiles/overlay clip.
+    if (window.ResizeObserver && this._els.mapContainer) {
+      this._resizeObserver = new ResizeObserver(() => {
+        if (this._map) this._map.invalidateSize();
+      });
+      this._resizeObserver.observe(this._els.mapContainer);
+    }
+    this._applyLayout();
 
     await this._loadEntries();
   }

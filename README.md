@@ -77,11 +77,25 @@ type: custom:grib-overlay-card
 # parameter: wind_10m
 # center: [52.1, 5.3]
 # zoom: 7
+# grootte in een Secties-dashboard:
+# columns: full   # breedte: "full" (volledig, standaard) of een getal kolommen
+# rows: 8         # hoogte in grid-rijen
 ```
 
 Zonder `entry_id`/`parameter` pakt de kaart automatisch de eerst
 geconfigureerde integratie en het eerste geselecteerde parametertype, en kun
 je in de kaart zelf wisselen.
+
+### Grootte / layout
+
+In een **Secties-dashboard** vult de kaart standaard de volledige breedte en
+past de kaarthoogte zich aan de toegewezen cel aan. Je kunt de grootte op twee
+manieren regelen:
+
+- **Slepen** aan de rand van de kaart in de dashboard-editor.
+- **In YAML** met `columns` (breedte: `full` of een aantal grid-kolommen) en
+  `rows` (hoogte in grid-rijen). `rows` bepaalt ook de kaarthoogte in een
+  gewoon (masonry) dashboard.
 
 ## Bekende beperkingen
 
