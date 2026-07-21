@@ -132,7 +132,7 @@ class GribOverlayCard extends HTMLElement {
       columns,
       rows: this._rows(),
       min_columns: 3,
-      min_rows: 3,
+      min_rows: 4,
     };
   }
 
@@ -142,12 +142,13 @@ class GribOverlayCard extends HTMLElement {
     return this.getGridOptions();
   }
 
-  // Give the map a sensible floor height derived from the row count so it looks
-  // right in masonry dashboards; in sections it flexes to fill the grid cell.
+  // Set the map's preferred height (flex-basis) from the row count. In masonry
+  // this is the actual map height; in a sections grid cell the map flexes from
+  // this basis and may shrink (min-height:0) so the chrome never clips.
   _applyLayout() {
     if (!this._els || !this._els.mapContainer) return;
-    const mapMin = Math.max(160, Math.round(this._rows() * 64 - 150));
-    this._els.mapContainer.style.minHeight = `${mapMin}px`;
+    const mapBasis = Math.max(160, Math.round(this._rows() * 64 - 150));
+    this._els.mapContainer.style.height = `${mapBasis}px`;
     if (this._map) {
       requestAnimationFrame(() => this._map.invalidateSize());
     }
@@ -209,13 +210,17 @@ class GribOverlayCard extends HTMLElement {
     style.textContent = `
       :host { display: block; height: 100%; }
       ha-card {
-        overflow: hidden; height: 100%;
+        /* overflow-y auto is a safety net: if the card is made so short that
+           even a zero-height map can't free enough room, the chrome scrolls
+           instead of being clipped/falling off. */
+        overflow-x: hidden; overflow-y: auto; height: 100%;
         display: flex; flex-direction: column;
       }
       .toolbar {
-        display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-        padding: 8px 12px; flex: 0 0 auto;
+        display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+        padding: 6px 10px; flex: 0 0 auto;
       }
+      .toolbar select { min-width: 0; }
       select, button {
         font: inherit; padding: 4px 8px; border-radius: 6px;
         border: 1px solid var(--divider-color, #ccc);
@@ -223,26 +228,32 @@ class GribOverlayCard extends HTMLElement {
         color: var(--primary-text-color, #000);
       }
       button.active { background: var(--primary-color, #03a9f4); color: white; }
-      /* map-container flexes to fill the height the dashboard gives the card;
-         min-height (set from the "rows" config) is the floor used in masonry
-         dashboards where no fixed card height is imposed. */
-      .map-container { position: relative; width: 100%; flex: 1 1 auto; min-height: 240px; }
+      /* The map is the only flexible row: its preferred height (the "rows"
+         config, set inline) is the basis, min-height:0 lets it shrink in a
+         short grid cell so the chrome below it never gets clipped/falls off. */
+      .map-container { position: relative; width: 100%; flex: 1 1 auto; min-height: 0; }
       /* Absolute fill (not height:100%) so the map fills the container whether
-         its height comes from a fixed grid cell (sections) or from flex/min-height
+         its height comes from a fixed grid cell (sections) or the inline basis
          (masonry) -- percentage heights don't resolve against an indefinite parent. */
       .map { position: absolute; inset: 0; }
+      /* All chrome rows keep their natural height (never shrink) so they stay
+         on the card when it's made short. */
+      .toolbar, .time-controls, .legend, .note { flex: 0 0 auto; }
       .time-controls {
-        display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+        display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center;
         padding: 8px 12px;
       }
       .time-controls input[type="range"] { flex: 1; min-width: 120px; }
+      .progress-slider { flex-basis: 100% !important; }
       .time-label { min-width: 130px; font-size: 0.9em; }
       .hidden { display: none !important; }
       .legend { padding: 4px 12px 12px; font-size: 0.8em; }
-      .legend-bar {
-        height: 10px; border-radius: 4px; margin: 4px 0;
-      }
+      .legend-bar { height: 10px; border-radius: 4px; margin: 4px 0 2px; }
+      .legend-ticks { position: relative; height: 6px; }
+      .legend-ticks span { position: absolute; top: 0; width: 1px; height: 4px;
+        background: var(--secondary-text-color, #888); transform: translateX(-50%); }
       .legend-scale { display: flex; justify-content: space-between; }
+      .legend-scale span { text-align: center; }
       .note { padding: 0 12px 8px; font-size: 0.8em; opacity: 0.7; }
     `;
     root.appendChild(style);
@@ -272,8 +283,13 @@ class GribOverlayCard extends HTMLElement {
         <button class="play-pause">▶</button>
         <input type="range" class="speed-slider" min="150" max="2000" value="700" step="50" title="Snelheid" />
         <span class="time-label"></span>
+        <input type="range" class="progress-slider" min="0" max="0" value="0" step="1" title="Positie" />
       </div>
-      <div class="legend"><div class="legend-bar"></div><div class="legend-scale"></div></div>
+      <div class="legend">
+        <div class="legend-bar"></div>
+        <div class="legend-ticks"></div>
+        <div class="legend-scale"></div>
+      </div>
       <div class="note"></div>
     `;
     root.appendChild(card);
@@ -295,8 +311,10 @@ class GribOverlayCard extends HTMLElement {
       stepSelect: card.querySelector(".step-select"),
       playPauseBtn: card.querySelector(".play-pause"),
       speedSlider: card.querySelector(".speed-slider"),
+      progressSlider: card.querySelector(".progress-slider"),
       animateTimeLabel: card.querySelector(".animate-controls .time-label"),
       legendBar: card.querySelector(".legend-bar"),
+      legendTicks: card.querySelector(".legend-ticks"),
       legendScale: card.querySelector(".legend-scale"),
       note: card.querySelector(".note"),
     };
@@ -316,6 +334,11 @@ class GribOverlayCard extends HTMLElement {
     this._els.playPauseBtn.addEventListener("click", () => this._togglePlayback());
     this._els.startSelect.addEventListener("change", () => this._clampAnimationRange());
     this._els.endSelect.addEventListener("change", () => this._clampAnimationRange());
+    // Scrubbing the animation progress bar pauses playback and jumps to that frame.
+    this._els.progressSlider.addEventListener("input", () => {
+      this._stopPlayback();
+      this._showFrame(Number(this._els.progressSlider.value));
+    });
 
     this._mode = "single";
     this._frames = [];
@@ -456,8 +479,11 @@ class GribOverlayCard extends HTMLElement {
       ? ""
       : "Nog geen frames beschikbaar voor deze parameter (eerste download/verwerking loopt mogelijk nog).";
 
-    this._els.timeSlider.max = String(Math.max(0, this._frames.length - 1));
+    const lastIndex = String(Math.max(0, this._frames.length - 1));
+    this._els.timeSlider.max = lastIndex;
     this._els.timeSlider.value = "0";
+    this._els.progressSlider.max = lastIndex;
+    this._els.progressSlider.value = "0";
     this._populateAnimationSelects();
     this._updateLegend();
     if (this._frames.length) {
@@ -512,6 +538,7 @@ class GribOverlayCard extends HTMLElement {
     this._els.singleTimeLabel.textContent = label;
     this._els.animateTimeLabel.textContent = label;
     this._els.timeSlider.value = String(index);
+    this._els.progressSlider.value = String(index); // keep the animation scrubber in sync
     this._currentLegend = frame.legend;
     this._updateLegend();
 
@@ -527,6 +554,7 @@ class GribOverlayCard extends HTMLElement {
     const legend = this._currentLegend || this._frames[0]?.legend;
     if (!legend) {
       this._els.legendBar.style.background = "";
+      this._els.legendTicks.innerHTML = "";
       this._els.legendScale.textContent = "";
       return;
     }
@@ -538,9 +566,26 @@ class GribOverlayCard extends HTMLElement {
     const conv = this._conversionFor(legend.unit);
     const factor = conv ? conv.factor : 1;
     const unit = conv ? conv.label : legend.unit;
-    const min = (legend.min_value * factor).toFixed(1);
-    const max = (legend.max_value * factor).toFixed(1);
-    this._els.legendScale.innerHTML = `<span>${min} ${unit}</span><span>${max} ${unit}</span>`;
+
+    // Intermediate ticks: five evenly spaced values across the range (not just
+    // min/max), with tick marks aligned under the gradient bar.
+    const TICKS = 5;
+    const fmt = (v) => {
+      const s = Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1);
+      return s.replace(/\.0$/, "");
+    };
+    const scaleParts = [];
+    const tickParts = [];
+    for (let i = 0; i < TICKS; i++) {
+      const t = i / (TICKS - 1);
+      const value = (legend.min_value + (legend.max_value - legend.min_value) * t) * factor;
+      const last = i === TICKS - 1;
+      const text = last ? `${fmt(value)} ${unit}` : fmt(value);
+      scaleParts.push(`<span>${text}</span>`);
+      tickParts.push(`<span style="left:${(t * 100).toFixed(1)}%"></span>`);
+    }
+    this._els.legendTicks.innerHTML = tickParts.join("");
+    this._els.legendScale.innerHTML = scaleParts.join("");
   }
 
   // -- mode + playback -----------------------------------------------------------
