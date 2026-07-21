@@ -9,6 +9,7 @@ from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.loader import async_get_integration
 
 from .const import DOMAIN
 from .coordinator import GribOverlayCoordinator
@@ -63,4 +64,12 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL_PREFIX, str(www_dir), cache_headers=False)]
     )
-    add_extra_js_url(hass, FRONTEND_URL_PATH)
+    # Append the integration version as a cache-buster: the card is served from
+    # a stable path, so without a changing query string browsers (and the HA
+    # service worker) keep serving the previously cached card after an update.
+    try:
+        integration = await async_get_integration(hass, DOMAIN)
+        version = integration.version or "0"
+    except Exception:  # noqa: BLE001 - fall back to an unversioned URL if lookup fails
+        version = "0"
+    add_extra_js_url(hass, f"{FRONTEND_URL_PATH}?v={version}")
