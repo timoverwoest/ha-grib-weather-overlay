@@ -20,8 +20,11 @@ from __future__ import annotations
 import json
 import sys
 import time
+import uuid
 
 import paho.mqtt.client as mqtt
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
 
 MQTT_HOST = "mqtt.dataplatform.knmi.nl"
 MQTT_PORT = 443
@@ -51,16 +54,23 @@ def main(api_key: str, dataset_key: str, dataset_version: str) -> None:
         print(f"DISCONNECT: {reason_code}")
 
     client = mqtt.Client(
-        mqtt.CallbackAPIVersion.VERSION2, transport="websockets", protocol=mqtt.MQTTProtocolVersion.MQTTv5
+        mqtt.CallbackAPIVersion.VERSION2,
+        client_id=f"ha-grib-overlay-{uuid.uuid4()}",
+        transport="websockets",
+        protocol=mqtt.MQTTProtocolVersion.MQTTv5,
     )
-    client.username_pw_set(username="", password=api_key)
+    client.username_pw_set(username="token", password=api_key)
     client.tls_set()
     client.ws_set_options(path=MQTT_WS_PATH)
     client.on_connect = on_connect
     client.on_message = on_message
     client.on_disconnect = on_disconnect
 
-    client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+    connect_properties = Properties(PacketTypes.CONNECT)
+    connect_properties.SessionExpiryInterval = 3600
+    client.connect(
+        MQTT_HOST, MQTT_PORT, keepalive=60, clean_start=False, properties=connect_properties
+    )
     client.loop_start()
     print(f"Listening for {LISTEN_SECONDS}s ...")
     time.sleep(LISTEN_SECONDS)

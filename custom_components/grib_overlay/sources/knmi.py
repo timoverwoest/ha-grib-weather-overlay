@@ -23,17 +23,17 @@ in grib1.py (no eccodes/cfgrib binary dependency).
 KNMI also runs an MQTT Notification Service
 (https://developer.dataplatform.knmi.nl/notification-service) that pushes an
 event as soon as a new file is published, so the coordinator doesn't have to
-wait for its next poll. Connection details (broker host/port, websocket
-transport, topic pattern, CloudEvents-style JSON payload with a
-data.filename field) were verified live against the real broker. Note that
-the Notification Service authorises separately from the Open Data API: the
-public anonymous demo key is rejected for MQTT, and even a valid Open Data
-API key can get CONNACK "Not authorized" unless it's also subscribed to the
-Notification Service on the KNMI Developer Portal. Push is therefore strictly
-a best-effort optimization: polling (async_list_files) remains the source of
-truth and keeps working on its own if MQTT can't connect or is rejected. On
-an auth rejection we stop reconnecting (paho would otherwise retry forever)
-and log it once.
+wait for its next poll. All connection details were verified live against the
+real broker (broker host/port, websocket transport, topic pattern,
+CloudEvents-style JSON payload with a data.filename field). The same Open Data
+API key works for MQTT -- crucially the connect must follow KNMI's example
+exactly: a **unique client_id is required** (the broker answers CONNACK "Not
+authorized" if it's missing/empty), the username is the literal "token", the
+API key is the password, and a persistent session is used. Push is a
+best-effort optimization: polling (async_list_files) remains the source of
+truth and keeps working on its own if MQTT can't connect or is rejected. On an
+auth rejection we stop reconnecting (paho would otherwise retry forever) and
+log it once.
 """
 
 from __future__ import annotations
@@ -42,12 +42,15 @@ import asyncio
 import functools
 import json
 import logging
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import aiohttp
 import paho.mqtt.client as mqtt
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
 
 from .base import (
     GribDatasetInfo,
@@ -200,6 +203,8 @@ class KnmiSource(GribSource):
         # API. Use a dedicated notification key for MQTT when provided; otherwise
         # fall back to the Open Data key (best-effort -- it may be rejected).
         self._notification_api_key = notification_api_key or api_key
+        # Unique, stable-per-instance MQTT client id (KNMI requires one).
+        self._mqtt_client_id = f"ha-grib-overlay-{uuid.uuid4()}"
         self._mqtt_client: mqtt.Client | None = None
         self._notify_auth_logged = False
 
@@ -299,9 +304,8 @@ class KnmiSource(GribSource):
                 self._notify_auth_logged = True
                 _LOGGER.warning(
                     "KNMI notification service rejected the connection (%s); continuing "
-                    "with polling only. Push updates need an API key that is authorised "
-                    "for the Notification Service (a separate subscription on the KNMI "
-                    "Developer Portal). Polling keeps working regardless.",
+                    "with polling only. Check that the API key is valid; polling keeps "
+                    "working regardless.",
                     reason_code,
                 )
             client.disconnect()  # clean disconnect => paho won't auto-reconnect
@@ -320,20 +324,36 @@ class KnmiSource(GribSource):
 
         # Building the client calls tls_set(), which loads CA certs from disk
         # (blocking), and connect() does network I/O -- do it all in the executor.
+        #
+        # The connect parameters mirror KNMI's official example: a unique
+        # client_id is REQUIRED (the broker rejects a missing/empty one with
+        # CONNACK "Not authorized"), the username is the literal "token" (the
+        # API key is the password), and a persistent session (clean_start=False
+        # + SessionExpiryInterval) lets the broker replay notifications that
+        # arrived while disconnected.
         def _build_and_connect() -> mqtt.Client:
             client = mqtt.Client(
                 mqtt.CallbackAPIVersion.VERSION2,
+                client_id=self._mqtt_client_id,
                 transport="websockets",
                 protocol=mqtt.MQTTProtocolVersion.MQTTv5,
             )
-            client.username_pw_set(username="", password=self._notification_api_key)
+            client.username_pw_set(username="token", password=self._notification_api_key)
             client.tls_set()
             client.ws_set_options(path=MQTT_WS_PATH)
             client.reconnect_delay_set(min_delay=5, max_delay=120)
             client.on_connect = _on_connect
             client.on_message = _on_message
             client.on_disconnect = _on_disconnect
-            client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+            connect_properties = Properties(PacketTypes.CONNECT)
+            connect_properties.SessionExpiryInterval = 3600
+            client.connect(
+                MQTT_HOST,
+                MQTT_PORT,
+                keepalive=60,
+                clean_start=False,
+                properties=connect_properties,
+            )
             client.loop_start()
             return client
 

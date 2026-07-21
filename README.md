@@ -26,12 +26,8 @@ de rest van de backend te hoeven aanpassen.
 - Nieuwe forecast-runs worden direct opgehaald via KNMI's MQTT Notification
   Service (in plaats van te wachten op de eerstvolgende poll), met het
   reguliere poll-interval als betrouwbare fallback als de MQTT-verbinding om
-  wat voor reden dan ook niet lukt. Let op: de Notification Service
-  autoriseert los van de Open Data API — het kan zijn dat je API-sleutel voor
-  MQTT wordt geweigerd ("Not authorized") terwijl het downloaden gewoon werkt.
-  Dan valt de integratie automatisch terug op pollen; de push-functie vereist
-  een sleutel die óók op de Notification Service is geabonneerd (KNMI
-  Developer Portal).
+  wat voor reden dan ook niet lukt. Je gewone Open Data API-sleutel werkt
+  hiervoor; een aparte Notification Service-sleutel is niet nodig.
 
 ## Vereisten
 
@@ -62,18 +58,16 @@ de rest van de backend te hoeven aanpassen.
 
 1. Instellingen → Apparaten & diensten → Integratie toevoegen → "GRIB Weather
    Overlay".
-2. Kies de bron (KNMI Data Platform) en vul je Open Data API-sleutel in.
-   Optioneel: vul ook een aparte **Notification Service API-sleutel** in voor
-   directe push-updates bij een nieuwe forecast-run (zie hieronder). Laat dit
-   veld leeg als je die niet hebt — dan wordt er periodiek gepolld.
+2. Kies de bron (KNMI Data Platform) en vul je Open Data API-sleutel in. Deze
+   sleutel wordt ook voor de push-notificaties (MQTT) gebruikt; het optionele
+   **Notification Service API-sleutel**-veld kun je leeg laten (alleen invullen
+   als je bewust een aparte sleutel wilt gebruiken).
 3. Kies een dataset (standaard: HARMONIE-AROME Cy43, Nederland, near-surface
    parameters).
 4. Kies welke parameters bijgehouden moeten worden.
 5. Optioneel: pas via de integratie-opties de voorspellingshorizon (default
-   24 uur), het aantal bewaarde forecast-runs (default 2), het poll-interval
-   (default 30 minuten) en de Notification Service-sleutel aan. Via de opties
-   kun je de notificatie-sleutel ook later toevoegen zonder de integratie
-   opnieuw toe te voegen.
+   24 uur), het aantal bewaarde forecast-runs (default 2) en het poll-interval
+   (default 30 minuten) aan.
 
 ## Kaart toevoegen aan een dashboard
 

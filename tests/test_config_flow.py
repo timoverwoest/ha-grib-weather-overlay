@@ -107,6 +107,11 @@ def test_source_uses_notification_key_for_mqtt() -> None:
     without_notify = KnmiSource(object(), "data-key")
     assert without_notify._notification_api_key == "data-key"
 
+    # A unique MQTT client id is required by the KNMI broker (a missing one is
+    # rejected with CONNACK "Not authorized").
+    assert with_notify._mqtt_client_id.startswith("ha-grib-overlay-")
+    assert with_notify._mqtt_client_id != without_notify._mqtt_client_id
+
 
 async def test_invalid_auth_shows_error(hass: HomeAssistant, aioclient_mock) -> None:
     aioclient_mock.get(FILES_URL, status=401)
