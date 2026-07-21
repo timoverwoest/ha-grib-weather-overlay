@@ -68,3 +68,17 @@ async def test_extract_decode_and_render_produces_frames(hass, tmp_path: Path) -
 
     # the extracted member file should have been cleaned up after processing
     assert not any(p.name.startswith("HA43_") for p in run_dir.iterdir())
+
+    # A fresh coordinator (as after a restart) must rebuild the same frames from
+    # the on-disk manifest without re-downloading/re-rendering.
+    assert (run_dir / "frames.json").exists()
+    fresh = GribOverlayCoordinator(hass, entry)
+    fresh.storage_dir = coordinator.storage_dir
+    run_filename, cached = fresh._load_cached_frames()
+    assert run_filename == tar_path.name
+    assert set(cached.keys()) == {"wind_10m", "temperature_2m", "pressure_msl"}
+    for key, frame_list in cached.items():
+        assert len(frame_list) == 1
+        assert frame_list[0].png_path.exists()
+        assert frame_list[0].bounds == frames[key][0].bounds
+        assert frame_list[0].legend.min_value == frames[key][0].legend.min_value

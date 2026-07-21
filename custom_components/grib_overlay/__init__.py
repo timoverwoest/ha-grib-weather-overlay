@@ -28,7 +28,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
 
     coordinator = GribOverlayCoordinator(hass, entry)
-    await coordinator.async_config_entry_first_refresh()
+    # Fast, non-blocking: restore cached frames from disk, start push, schedule
+    # polling. The (possibly heavy) download of a newer run happens in the
+    # background so entry setup -- and the config flow -- returns immediately.
+    await coordinator.async_setup()
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     if first_entry:
@@ -36,6 +39,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass.http.register_view(view())
         await _async_register_frontend(hass)
 
+    entry.async_create_background_task(
+        hass, coordinator.async_refresh(), f"{DOMAIN}-initial-refresh"
+    )
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     return True
 

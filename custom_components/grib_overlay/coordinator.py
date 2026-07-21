@@ -12,6 +12,7 @@ count) to keep bandwidth/disk bounded -- a HARMONIE run archive is roughly
 
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import tarfile
@@ -20,8 +21,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from . import grib_decode, render
@@ -85,8 +87,40 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         # frames[parameter_key] = list[Frame] sorted by valid_time
         self.frames: dict[str, list[Frame]] = {}
 
-    async def _async_setup(self) -> None:
-        """Called once before the first refresh: start push notifications if supported.
+    async def async_setup(self) -> None:
+        """Fast setup (does not download): restore cached frames, start push, poll timer.
+
+        The heavy download/decode is deliberately NOT done here -- __init__.py
+        kicks off the first refresh as a background task so entry setup returns
+        immediately. On a restart the cached frames from a previous run are
+        loaded from disk so the card has data straight away.
+        """
+        run_filename, frames = await self.hass.async_add_executor_job(self._load_cached_frames)
+        if run_filename:
+            self._current_run_filename = run_filename
+            self.frames = frames
+            _LOGGER.debug(
+                "Restored cached frames for run %s (%d parameters) from disk",
+                run_filename,
+                len(frames),
+            )
+
+        await self._async_start_notifications()
+
+        # This coordinator has no entities/listeners, so it never self-schedules
+        # periodic refreshes -- drive polling ourselves as a fallback for when
+        # push notifications are unavailable.
+        self._unsub_poll = async_track_time_interval(
+            self.hass, self._scheduled_poll, self.update_interval
+        )
+        self.entry.async_on_unload(self._unsub_poll)
+
+    @callback
+    def _scheduled_poll(self, _now) -> None:
+        self.hass.async_create_task(self.async_request_refresh())
+
+    async def _async_start_notifications(self) -> None:
+        """Start push notifications if the source supports it.
 
         Best-effort: async_start_notifications never raises (the source
         catches its own connection errors), so a broken/unsupported push
@@ -228,7 +262,83 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
         for frames in new_frames.values():
             frames.sort(key=lambda f: f.valid_time)
+        self._write_frames_manifest(run_dir, tar_path.name, new_frames)
         return new_frames
+
+    # -- disk cache (skip re-downloading an already-processed run on restart) ---
+
+    MANIFEST_NAME = "frames.json"
+
+    def _write_frames_manifest(
+        self, run_dir: Path, run_filename: str, frames: dict[str, list[Frame]]
+    ) -> None:
+        """Persist frame metadata so a restart can rebuild self.frames from disk."""
+        manifest = {
+            "run_filename": run_filename,
+            "frames": {
+                key: [
+                    {
+                        "valid_time": f.valid_time.isoformat(),
+                        "run_time": f.run_time.isoformat(),
+                        "png": f.png_path.name,
+                        "bounds": list(f.bounds),
+                        "legend": {
+                            "unit": f.legend.unit,
+                            "min_value": f.legend.min_value,
+                            "max_value": f.legend.max_value,
+                            "stops": [dict(s) for s in f.legend.stops],
+                        },
+                    }
+                    for f in flist
+                ]
+                for key, flist in frames.items()
+            },
+        }
+        (run_dir / self.MANIFEST_NAME).write_text(json.dumps(manifest))
+
+    def _load_cached_frames(self) -> tuple[str | None, dict[str, list[Frame]]]:
+        """Blocking: rebuild frames for the newest run that has a valid manifest + PNGs."""
+        if not self.storage_dir.exists():
+            return None, {}
+        run_dirs = sorted((p for p in self.storage_dir.iterdir() if p.is_dir()), reverse=True)
+        for run_dir in run_dirs:
+            manifest_path = run_dir / self.MANIFEST_NAME
+            if not manifest_path.exists():
+                continue
+            try:
+                manifest = json.loads(manifest_path.read_text())
+            except (ValueError, OSError):
+                continue
+            frames: dict[str, list[Frame]] = {}
+            valid = True
+            for key, flist in manifest.get("frames", {}).items():
+                frames[key] = []
+                for fd in flist:
+                    png_path = run_dir / fd["png"]
+                    if not png_path.exists():
+                        valid = False
+                        break
+                    legend = render.Legend(
+                        unit=fd["legend"]["unit"],
+                        min_value=fd["legend"]["min_value"],
+                        max_value=fd["legend"]["max_value"],
+                        stops=tuple(fd["legend"]["stops"]),
+                    )
+                    frames[key].append(
+                        Frame(
+                            parameter_key=key,
+                            valid_time=datetime.fromisoformat(fd["valid_time"]),
+                            run_time=datetime.fromisoformat(fd["run_time"]),
+                            png_path=png_path,
+                            bounds=tuple(fd["bounds"]),
+                            legend=legend,
+                        )
+                    )
+                if not valid:
+                    break
+            if valid and any(frames.values()):
+                return manifest.get("run_filename"), frames
+        return None, {}
 
     def _cleanup_old_runs(self) -> None:
         retain = self.entry.options.get(CONF_RETAIN_RUNS, DEFAULT_RETAIN_RUNS)

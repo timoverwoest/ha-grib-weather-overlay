@@ -119,9 +119,13 @@ De legenda en het label in de parameterkeuze worden dan automatisch omgerekend.
 
 - Eén HARMONIE-forecast-run bij KNMI is een tar-archief van ~850MB (alle
   lead times samen). Er is geen API om losse lead times te downloaden, dus
-  elke nieuwe run kost die volledige download; alleen de lead times binnen de
-  ingestelde voorspellingshorizon worden gedecodeerd en als PNG bewaard, de
-  rest wordt direct weer verwijderd. Zet de horizon niet hoger dan nodig.
+  een **nieuwe** run kost die volledige download (een paar minuten); alleen de
+  lead times binnen de ingestelde voorspellingshorizon worden gedecodeerd en
+  als PNG bewaard, de rest wordt direct weer verwijderd. Zet de horizon niet
+  hoger dan nodig. Bij een **herstart** wordt de al-verwerkte run van schijf
+  hergebruikt (geen nieuwe download), en de eventuele download van een nieuwere
+  run gebeurt op de achtergrond — de integratie is meteen na de start
+  beschikbaar met de reeds gecachte beelden.
 - Op dit moment wordt alleen de `harmonie_arome_cy43_p1`-dataset (Nederland,
   regular lat-lon grid) ondersteund. De Europese rotated-lat-lon varianten
   vereisen een extra reprojectiestap die nog niet is geïmplementeerd.

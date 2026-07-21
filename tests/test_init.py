@@ -78,6 +78,10 @@ async def test_setup_and_unload_entry(hass, aioclient_mock, tmp_path: Path) -> N
     await hass.async_block_till_done()
 
     coordinator = hass.data[DOMAIN][entry.entry_id]
+    # Setup no longer blocks on the download -- the first refresh runs in the
+    # background. Await one explicitly so the frames are ready to assert on.
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
     assert set(coordinator.frames.keys()) == {"wind_10m", "pressure_msl"}
     assert len(coordinator.frames["wind_10m"]) == 1
 

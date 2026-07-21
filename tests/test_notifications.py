@@ -34,7 +34,7 @@ async def test_async_setup_starts_push_notifications_for_the_right_dataset(hass)
     coordinator = GribOverlayCoordinator(hass, entry)
     coordinator.source.async_start_notifications = AsyncMock()
 
-    await coordinator._async_setup()
+    await coordinator._async_start_notifications()
 
     coordinator.source.async_start_notifications.assert_awaited_once()
     dataset_arg, callback_arg = coordinator.source.async_start_notifications.call_args.args
@@ -48,7 +48,7 @@ async def test_setup_skipped_when_source_does_not_support_push(hass) -> None:
     coordinator.source.supports_push_notifications = False
     coordinator.source.async_start_notifications = AsyncMock()
 
-    await coordinator._async_setup()
+    await coordinator._async_start_notifications()
 
     coordinator.source.async_start_notifications.assert_not_awaited()
 
