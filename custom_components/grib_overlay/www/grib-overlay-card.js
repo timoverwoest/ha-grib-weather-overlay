@@ -113,7 +113,8 @@ class GribOverlayCard extends HTMLElement {
   }
 
   _rows() {
-    const rows = Number(this._config && this._config.rows);
+    const cfg = this._config || {};
+    const rows = Number((cfg.grid_options && cfg.grid_options.rows) ?? cfg.rows);
     return rows > 0 ? rows : 8;
   }
 
@@ -122,17 +123,28 @@ class GribOverlayCard extends HTMLElement {
     return this._rows();
   }
 
-  // Sections dashboards use getGridOptions: columns/rows control width/height,
-  // and can also be dragged in the UI. Default to full width. `columns` may be
-  // a number (grid columns to span) or "full"; `rows` is height in grid rows.
+  // Sections dashboards size the card from getGridOptions() (the defaults) merged
+  // with HA's own grid_options in the config (what the resize handles write, and
+  // what always wins). We honour grid_options first, then the card's own
+  // rows/columns keys, then sensible defaults -- and expose a wide min/max so
+  // the card can always be dragged to any height.
   getGridOptions() {
     const cfg = this._config || {};
-    const columns = cfg.columns === undefined ? "full" : cfg.columns;
+    const grid = cfg.grid_options || {};
+    const columns =
+      grid.columns !== undefined
+        ? grid.columns
+        : cfg.columns !== undefined
+          ? cfg.columns
+          : "full";
+    const rows = grid.rows !== undefined ? grid.rows : this._rows();
     return {
       columns,
-      rows: this._rows(),
+      rows,
       min_columns: 3,
-      min_rows: 4,
+      max_columns: 12,
+      min_rows: 2,
+      max_rows: 30,
     };
   }
 
@@ -243,9 +255,10 @@ class GribOverlayCard extends HTMLElement {
         display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center;
         padding: 8px 12px;
       }
-      .time-controls input[type="range"] { flex: 1; min-width: 120px; }
-      .progress-slider { flex-basis: 100% !important; }
-      .time-label { min-width: 130px; font-size: 0.9em; }
+      .progress-slider { flex: 1 1 100%; min-width: 120px; }
+      .speed-control { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+      .speed-control input[type="range"] { flex: 0 0 96px; width: 96px; }
+      .time-label { flex: 1 1 auto; min-width: 130px; font-size: 0.9em; }
       .hidden { display: none !important; }
       .legend { padding: 4px 12px 12px; font-size: 0.8em; }
       .legend-bar { height: 10px; border-radius: 4px; margin: 4px 0 2px; }
@@ -281,9 +294,9 @@ class GribOverlayCard extends HTMLElement {
         <select class="end-select"></select>
         <select class="step-select"></select>
         <button class="play-pause">▶</button>
-        <input type="range" class="speed-slider" min="150" max="2000" value="700" step="50" title="Snelheid" />
+        <span class="speed-control" title="Afspeelsnelheid">🐢<input type="range" class="speed-slider" min="150" max="2000" value="1450" step="50" />🐇</span>
         <span class="time-label"></span>
-        <input type="range" class="progress-slider" min="0" max="0" value="0" step="1" title="Positie" />
+        <input type="range" class="progress-slider" min="0" max="0" value="0" step="1" title="Positie in de animatie" />
       </div>
       <div class="legend">
         <div class="legend-bar"></div>
@@ -338,6 +351,10 @@ class GribOverlayCard extends HTMLElement {
     this._els.progressSlider.addEventListener("input", () => {
       this._stopPlayback();
       this._showFrame(Number(this._els.progressSlider.value));
+    });
+    // Speed changes take effect immediately while playing.
+    this._els.speedSlider.addEventListener("input", () => {
+      if (this._playTimer) this._startPlaybackTimer();
     });
 
     this._mode = "single";
@@ -607,19 +624,32 @@ class GribOverlayCard extends HTMLElement {
     }
   }
 
+  // Slider value runs slow->fast left->right; convert to a frame interval (ms).
+  _playInterval() {
+    const s = this._els.speedSlider;
+    const min = Number(s.min);
+    const max = Number(s.max);
+    return min + max - Number(s.value);
+  }
+
   _startPlayback() {
     if (!this._frames.length) return;
-    const start = Number(this._els.startSelect.value);
-    const end = Number(this._els.endSelect.value);
-    const step = Number(this._els.stepSelect.value) || 1;
-    let index = start;
-    this._showFrame(index);
+    this._playStart = Number(this._els.startSelect.value);
+    this._playEnd = Number(this._els.endSelect.value);
+    this._playStep = Number(this._els.stepSelect.value) || 1;
+    this._playIndex = this._playStart;
+    this._showFrame(this._playIndex);
     this._els.playPauseBtn.textContent = "⏸";
+    this._startPlaybackTimer();
+  }
+
+  _startPlaybackTimer() {
+    if (this._playTimer) clearInterval(this._playTimer);
     this._playTimer = setInterval(() => {
-      index += step;
-      if (index > end) index = start;
-      this._showFrame(index);
-    }, Number(this._els.speedSlider.value));
+      this._playIndex += this._playStep;
+      if (this._playIndex > this._playEnd) this._playIndex = this._playStart;
+      this._showFrame(this._playIndex);
+    }, this._playInterval());
   }
 
   _stopPlayback() {

@@ -96,13 +96,25 @@ je in de kaart zelf wisselen.
 ### Grootte / layout
 
 In een **Secties-dashboard** vult de kaart standaard de volledige breedte en
-past de kaarthoogte zich aan de toegewezen cel aan. Je kunt de grootte op twee
-manieren regelen:
+past de kaarthoogte zich aan de toegewezen cel aan. De hoogte/breedte in een
+Secties-dashboard bepaal je op de HA-manier:
 
-- **Slepen** aan de rand van de kaart in de dashboard-editor.
-- **In YAML** met `columns` (breedte: `full` of een aantal grid-kolommen) en
-  `rows` (hoogte in grid-rijen). `rows` bepaalt ook de kaarthoogte in een
-  gewoon (masonry) dashboard.
+- **Slepen** aan de handvatten op de rand van de kaart in de dashboard-editor
+  (de betrouwbaarste manier), of
+- **In YAML met HA's eigen `grid_options`**:
+  ```yaml
+  type: custom:grib-overlay-card
+  grid_options:
+    rows: 10       # hoogte in grid-rijen
+    columns: full  # of een aantal kolommen
+  ```
+  Let op: de losse `rows:`/`columns:` van de kaart zelf gelden alleen als
+  *begingrootte* en worden door HA overschreven zodra er een `grid_options`
+  is opgeslagen (dat gebeurt zodra je de kaart plaatst of sleept). Gebruik in
+  een Secties-dashboard dus `grid_options` of de sleep-handvatten.
+
+In een gewoon (**masonry**) dashboard bepaalt de losse `rows:` van de kaart de
+kaarthoogte.
 
 ### Eenheden
 
