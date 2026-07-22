@@ -15,6 +15,7 @@ Then open dev/dev.html served from this same server (printed on start).
 from __future__ import annotations
 
 import json
+import math
 import sys
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -147,6 +148,23 @@ class Handler(BaseHTTPRequestHandler):
         elif parts[:3] == ["api", "grib_overlay", "wind"]:
             # /api/grib_overlay/wind/{entry_id}/{parameter_key}/{frame_id}.json
             self._file(DEV_DIR / "wind_sample.json", "application/json")
+        elif parts[:3] == ["api", "grib_overlay", "point"]:
+            # /api/grib_overlay/point/{entry_id}/{parameter_key}?lat=&lon=
+            parameter_key = parts[4]
+            unit = LEGENDS.get(parameter_key, {}).get("unit", "")
+            lo, hi = (
+                LEGENDS.get(parameter_key, {}).get("min_value", 0),
+                LEGENDS.get(parameter_key, {}).get("max_value", 20),
+            )
+            q = parse_qs(parsed.query)
+            lat = float(q.get("lat", [52.0])[0])
+            # a smooth synthetic series so the meteogram/value UI can be tested
+            series = []
+            for i in range(FRAME_COUNT):
+                vt = BASE_RUN_TIME + timedelta(hours=i * FRAME_STEP_HOURS)
+                frac = 0.5 + 0.4 * math.sin(i / 2.0 + lat)
+                series.append({"valid_time": vt.isoformat(), "value": round(lo + frac * (hi - lo), 1)})
+            self._json({"unit": unit, "series": series})
         else:
             self.send_response(404)
             self.end_headers()

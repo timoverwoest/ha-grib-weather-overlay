@@ -19,7 +19,11 @@ de rest van de backend te hoeven aanpassen.
 - **Windy.com-stijl geanimeerde deeltjes voor wind** (via de meegeleverde
   `leaflet-velocity`), naast de gekleurde raster-overlay. Kies "Wind (deeltjes)"
   in de kaart bij een wind-parameter; de deeltjes stromen mee met de
-  windrichting boven een gedimde snelheidskaart.
+  windrichting boven een gedimde snelheidskaart. Er is ook een
+  **"Wind (vectoren)"**-modus met pijltjes (richting + grootte).
+- **Klik op de kaart** voor de waarde op dat punt (huidig tijdstip), en
+  **houd ingedrukt / rechtsklik** voor een **meteogram** (waarde-over-tijd op
+  dat punt, wegklikbaar).
 - Kaart-kaart met OpenStreetMap-basislaag + OpenSeaMap seamark-laag + de
   GRIB-overlay, volledig los van een internetverbinding voor de kaart-JS zelf
   (Leaflet wordt meegeleverd, geen CDN-afhankelijkheid voor de code — de

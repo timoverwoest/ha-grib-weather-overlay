@@ -28,7 +28,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from . import grib_decode, render, velocity
+from . import field_grid, grib_decode, render, velocity
 from .const import (
     CONF_API_KEY,
     CONF_DATASET,
@@ -59,6 +59,8 @@ class Frame:
     legend: render.Legend
     # For vector (wind) parameters: leaflet-velocity JSON with the raw u/v grid.
     wind_path: Path | None = None
+    # Compact scalar grid for click-value / meteogram point sampling.
+    field_path: Path | None = None
 
 
 class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
@@ -284,8 +286,16 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         frame_obj, legend = render.render_field(
             field, colormap=parameter.colormap, value_range=parameter.value_range
         )
-        png_path = run_dir / f"{parameter.key}_{field.valid_time:%Y%m%dT%H%M}.png"
+        stem = f"{parameter.key}_{field.valid_time:%Y%m%dT%H%M}"
+        png_path = run_dir / f"{stem}.png"
         png_path.write_bytes(frame_obj.png_bytes)
+
+        # Store a compact scalar grid (in display units) for point sampling.
+        field_path = run_dir / f"{stem}.field.json"
+        field_path.write_text(
+            json.dumps(field_grid.build_field(field.data, field.lats, field.lons))
+        )
+
         return Frame(
             parameter_key=parameter.key,
             valid_time=field.valid_time,
@@ -294,6 +304,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             bounds=frame_obj.bounds,
             legend=legend,
             wind_path=wind_path,
+            field_path=field_path,
         )
 
     # -- disk cache (skip re-downloading an already-processed run on restart) ---
@@ -313,6 +324,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                         "run_time": f.run_time.isoformat(),
                         "png": f.png_path.name,
                         "wind": f.wind_path.name if f.wind_path else None,
+                        "field": f.field_path.name if f.field_path else None,
                         "bounds": list(f.bounds),
                         "legend": {
                             "unit": f.legend.unit,
@@ -356,10 +368,11 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                         max_value=fd["legend"]["max_value"],
                         stops=tuple(fd["legend"]["stops"]),
                     )
-                    wind_name = fd.get("wind")
-                    wind_path = run_dir / wind_name if wind_name else None
-                    if wind_path is not None and not wind_path.exists():
-                        wind_path = None
+                    def _opt(name: str) -> Path | None:
+                        val = fd.get(name)
+                        path = run_dir / val if val else None
+                        return path if path and path.exists() else None
+
                     frames[key].append(
                         Frame(
                             parameter_key=key,
@@ -368,7 +381,8 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                             png_path=png_path,
                             bounds=tuple(fd["bounds"]),
                             legend=legend,
-                            wind_path=wind_path,
+                            wind_path=_opt("wind"),
+                            field_path=_opt("field"),
                         )
                     )
                 if not valid:

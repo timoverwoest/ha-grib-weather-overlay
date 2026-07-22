@@ -7,12 +7,15 @@ different datasets, or later a different source) can coexist.
 
 from __future__ import annotations
 
+import json
+
 from aiohttp import web
 
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_WIND_PATH
+from . import field_grid
+from .const import CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_PATH, HTTP_WIND_PATH
 from .coordinator import GribOverlayCoordinator
 
 
@@ -159,9 +162,48 @@ class GribOverlayWindView(HomeAssistantView):
         )
 
 
+class GribOverlayPointView(HomeAssistantView):
+    """Returns a parameter's value time-series at a lat/lon (click value + meteogram)."""
+
+    url = HTTP_POINT_PATH + "/{entry_id}/{parameter_key}"
+    name = "api:grib_overlay:point"
+    requires_auth = True
+
+    async def get(self, request: web.Request, entry_id: str, parameter_key: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        coordinator = _coordinator(hass, entry_id)
+        if coordinator is None:
+            return web.json_response({"error": "unknown entry_id"}, status=404)
+        try:
+            lat = float(request.query["lat"])
+            lon = float(request.query["lon"])
+        except (KeyError, ValueError):
+            return web.json_response({"error": "lat/lon required"}, status=400)
+
+        frames = coordinator.frames.get(parameter_key, [])
+        unit = frames[0].legend.unit if frames else None
+        field_paths = [(f.valid_time.isoformat(), f.field_path) for f in frames if f.field_path]
+
+        def _sample_all() -> list[dict]:
+            series = []
+            for valid_time, path in field_paths:
+                try:
+                    field = json.loads(path.read_text())
+                except (OSError, ValueError):
+                    continue
+                series.append(
+                    {"valid_time": valid_time, "value": field_grid.sample_field(field, lat, lon)}
+                )
+            return series
+
+        series = await hass.async_add_executor_job(_sample_all)
+        return web.json_response({"unit": unit, "series": series})
+
+
 VIEWS = (
     GribOverlayEntriesView,
     GribOverlayFramesView,
     GribOverlayFrameImageView,
     GribOverlayWindView,
+    GribOverlayPointView,
 )

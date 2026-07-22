@@ -300,6 +300,7 @@ class GribOverlayCard extends HTMLElement {
         <select class="render-mode-select" title="Weergave">
           <option value="raster">Raster</option>
           <option value="particles">Wind (deeltjes)</option>
+          <option value="vectors">Wind (vectoren)</option>
         </select>
       </div>
       <div class="map-container"><div class="map"></div></div>
@@ -406,6 +407,17 @@ class GribOverlayCard extends HTMLElement {
       attribution: "&copy; OpenSeaMap contributors",
       maxZoom: 18,
     }).addTo(this._map);
+
+    // Click a point to read its value; hold / right-click for a meteogram.
+    this._map.on("click", (e) => this._onMapClick(e.latlng));
+    this._map.on("contextmenu", (e) => {
+      window.L.DomEvent.preventDefault(e.originalEvent);
+      this._onMapHold(e.latlng);
+    });
+    // Wind-vector arrows are redrawn whenever the map moves/zooms.
+    this._map.on("moveend zoomend", () => {
+      if (this._renderMode === "vectors") this._drawVectors();
+    });
 
     // Observe resizes and force an initial re-measure, so tiles/overlay render
     // even when the card was first laid out at zero/unknown size.
@@ -524,6 +536,8 @@ class GribOverlayCard extends HTMLElement {
     this._els.progressSlider.max = lastIndex;
     this._els.progressSlider.value = "0";
     this._removeWindLayer();
+    this._removeVectors();
+    this._closePointPopup();
     this._syncRenderModeAvailability();
     this._populateAnimationSelects();
     this._updateLegend();
@@ -566,13 +580,13 @@ class GribOverlayCard extends HTMLElement {
     const frame = this._frames[index];
     if (!frame) return;
     this._frameIndex = index;
-    const particles = this._particlesActive();
+    const windMode = this._windMode(); // "particles" | "vectors" | null
     const [south, west, north, east] = frame.bounds;
     const bounds = [[south, west], [north, east]];
 
-    // In particle mode the coloured raster stays as a dimmed background under
-    // the animated particles (the windy.com look); otherwise it's the overlay.
-    const opacity = particles ? 0.45 : 0.75;
+    // In a wind mode the coloured raster stays as a dimmed background under the
+    // particles/arrows (the windy.com look); otherwise it's the overlay.
+    const opacity = windMode ? 0.45 : 0.75;
     if (!this._imageOverlay) {
       this._imageOverlay = window.L.imageOverlay(frame.image_url, bounds, { opacity }).addTo(this._map);
     } else {
@@ -581,10 +595,15 @@ class GribOverlayCard extends HTMLElement {
       this._imageOverlay.setOpacity(opacity);
     }
 
-    if (particles) {
+    if (windMode === "particles") {
+      this._removeVectors();
       this._updateWindLayer(frame);
+    } else if (windMode === "vectors") {
+      this._removeWindLayer();
+      this._updateVectors(frame);
     } else {
       this._removeWindLayer();
+      this._removeVectors();
     }
 
     const label = `${formatTime(frame.valid_time)} (run ${formatTime(frame.run_time)})`;
@@ -603,12 +622,15 @@ class GribOverlayCard extends HTMLElement {
     }
   }
 
-  // -- wind particle layer (leaflet-velocity) --------------------------------
+  // -- wind overlays (particles / vectors) -----------------------------------
 
-  // Particles apply only when the user chose particle mode AND the current
-  // parameter actually has wind (u/v) data available.
-  _particlesActive() {
-    return this._renderMode === "particles" && this._paramHasWind();
+  // The active wind mode, or null when it doesn't apply (non-wind param or the
+  // plain raster mode).
+  _windMode() {
+    if ((this._renderMode === "particles" || this._renderMode === "vectors") && this._paramHasWind()) {
+      return this._renderMode;
+    }
+    return null;
   }
 
   _paramHasWind() {
@@ -637,8 +659,7 @@ class GribOverlayCard extends HTMLElement {
       this._els.note.textContent = "Kon winddata niet laden: " + (err.message || err);
       return;
     }
-    // A newer frame was requested while we were fetching -> drop this result.
-    if (token !== this._windToken || !this._particlesActive()) return;
+    if (token !== this._windToken || this._windMode() !== "particles") return;
 
     if (!this._windLayer) {
       this._windLayer = window.L.velocityLayer({
@@ -666,18 +687,244 @@ class GribOverlayCard extends HTMLElement {
     }
   }
 
+  // -- wind vectors (arrows) --------------------------------------------------
+
+  async _updateVectors(frame) {
+    if (!frame.wind_url) {
+      this._removeVectors();
+      return;
+    }
+    const token = (this._windToken = (this._windToken || 0) + 1);
+    let data;
+    try {
+      data = await this._fetchWind(frame.wind_url);
+    } catch (err) {
+      this._els.note.textContent = "Kon winddata niet laden: " + (err.message || err);
+      return;
+    }
+    if (token !== this._windToken || this._windMode() !== "vectors") return;
+    this._vectorData = data;
+    this._drawVectors();
+  }
+
+  _ensureVectorSvg() {
+    if (this._vectorSvg) return;
+    const svgns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgns, "svg");
+    svg.setAttribute("class", "wind-vectors");
+    svg.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:400;";
+    const defs = document.createElementNS(svgns, "defs");
+    defs.innerHTML =
+      '<marker id="gribArrowHead" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto">' +
+      '<path d="M0,0 L4,2 L0,4 Z" fill="#12324f"/></marker>';
+    svg.appendChild(defs);
+    this._map.getContainer().appendChild(svg);
+    this._vectorSvg = svg;
+  }
+
+  _drawVectors() {
+    if (!this._vectorData || this._windMode() !== "vectors") return;
+    this._ensureVectorSvg();
+    const svg = this._vectorSvg;
+    // Clear previous arrows (keep <defs>).
+    [...svg.querySelectorAll("g")].forEach((g) => g.remove());
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+    const uh = this._vectorData[0].header;
+    const u = this._vectorData[0].data;
+    const v = this._vectorData[1].data;
+    const { nx, ny, lo1, la1, dx, dy } = uh;
+    const size = this._map.getSize();
+    // Aim for roughly one arrow every ~46px.
+    const targetPx = 46;
+    const cols = Math.max(2, Math.round(size.x / targetPx));
+    const rows = Math.max(2, Math.round(size.y / targetPx));
+    const stepX = Math.max(1, Math.floor(nx / cols));
+    const stepY = Math.max(1, Math.floor(ny / rows));
+    const scale = 3.2; // px per m/s
+
+    for (let j = 0; j < ny; j += stepY) {
+      for (let i = 0; i < nx; i += stepX) {
+        const idx = j * nx + i;
+        const uu = u[idx];
+        const vv = v[idx];
+        if (uu == null || vv == null) continue;
+        const lat = la1 - j * dy;
+        const lon = lo1 + i * dx;
+        const p = this._map.latLngToContainerPoint([lat, lon]);
+        if (p.x < -20 || p.y < -20 || p.x > size.x + 20 || p.y > size.y + 20) continue;
+        const speed = Math.hypot(uu, vv);
+        if (speed < 0.3) continue;
+        const len = Math.min(26, 6 + speed * scale);
+        // East = +x, north = -y (screen y points down).
+        const nxu = uu / speed;
+        const nyu = vv / speed;
+        const x2 = p.x + nxu * len;
+        const y2 = p.y - nyu * len;
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", p.x.toFixed(1));
+        line.setAttribute("y1", p.y.toFixed(1));
+        line.setAttribute("x2", x2.toFixed(1));
+        line.setAttribute("y2", y2.toFixed(1));
+        line.setAttribute("stroke", "#12324f");
+        line.setAttribute("stroke-width", "1.6");
+        line.setAttribute("marker-end", "url(#gribArrowHead)");
+        line.setAttribute("opacity", "0.9");
+        g.appendChild(line);
+      }
+    }
+    svg.appendChild(g);
+  }
+
+  _removeVectors() {
+    if (this._vectorSvg) {
+      this._vectorSvg.remove();
+      this._vectorSvg = null;
+    }
+    this._vectorData = null;
+  }
+
+  // -- point value (click) + meteogram (hold) --------------------------------
+
+  async _fetchPointSeries(paramKey, latlng) {
+    const entry = this._currentEntry();
+    if (!entry) return null;
+    const q = `lat=${latlng.lat.toFixed(4)}&lon=${latlng.lng.toFixed(4)}`;
+    return this._hass.callApi(
+      "GET",
+      `grib_overlay/point/${entry.entry_id}/${encodeURIComponent(paramKey)}?${q}`
+    );
+  }
+
+  _closePointPopup() {
+    if (this._pointPopup && this._map) {
+      this._map.closePopup(this._pointPopup);
+      this._pointPopup = null;
+    }
+  }
+
+  _paramName() {
+    const entry = this._currentEntry();
+    const key = this._els.paramSelect.value;
+    const p = entry && entry.parameters.find((x) => x.key === key);
+    return p ? p.name : key;
+  }
+
+  // Convert a stored value (source unit) to the configured display unit + label.
+  _displayValue(value, sourceUnit) {
+    const conv = this._conversionFor(sourceUnit);
+    const factor = conv ? conv.factor : 1;
+    const unit = conv ? conv.label : sourceUnit;
+    return { text: value == null ? "–" : (value * factor).toFixed(1), unit };
+  }
+
+  async _onMapClick(latlng) {
+    const paramKey = this._els.paramSelect.value;
+    if (!paramKey || !this._frames.length) return;
+    let resp;
+    try {
+      resp = await this._fetchPointSeries(paramKey, latlng);
+    } catch (err) {
+      return; // point outside data / transient error -> ignore
+    }
+    const series = (resp && resp.series) || [];
+    const frame = this._frames[this._frameIndex || 0];
+    const match = series.find((s) => s.valid_time === frame.valid_time) || series[this._frameIndex] || series[0];
+    if (!match || match.value == null) return;
+    const { text, unit } = this._displayValue(match.value, resp.unit);
+    this._pointPopup = window.L.popup({ closeButton: true, autoPan: false })
+      .setLatLng(latlng)
+      .setContent(
+        `<div style="font:13px sans-serif"><b>${this._paramName()}</b><br>${text} ${unit}<br>` +
+          `<span style="opacity:.7">${formatTime(match.valid_time)}</span></div>`
+      )
+      .openOn(this._map);
+  }
+
+  async _onMapHold(latlng) {
+    const paramKey = this._els.paramSelect.value;
+    if (!paramKey || !this._frames.length) return;
+    let resp;
+    try {
+      resp = await this._fetchPointSeries(paramKey, latlng);
+    } catch (err) {
+      return;
+    }
+    const series = (resp && resp.series) || [];
+    if (!series.some((s) => s.value != null)) return;
+    const svg = this._buildMeteogram(series, resp.unit, latlng);
+    this._pointPopup = window.L.popup({
+      closeButton: true,
+      autoPan: true,
+      maxWidth: 340,
+      className: "grib-meteogram-popup",
+    })
+      .setLatLng(latlng)
+      .setContent(svg)
+      .openOn(this._map);
+  }
+
+  _buildMeteogram(series, sourceUnit, latlng) {
+    const conv = this._conversionFor(sourceUnit);
+    const factor = conv ? conv.factor : 1;
+    const unit = conv ? conv.label : sourceUnit;
+    const pts = series
+      .map((s) => ({ t: new Date(s.valid_time).getTime(), v: s.value == null ? null : s.value * factor }))
+      .filter((p) => p.v != null);
+    const W = 320;
+    const H = 150;
+    const m = { l: 34, r: 8, t: 22, b: 26 };
+    const vals = pts.map((p) => p.v);
+    let vmin = Math.min(...vals);
+    let vmax = Math.max(...vals);
+    if (vmax - vmin < 1e-6) {
+      vmin -= 1;
+      vmax += 1;
+    }
+    const t0 = pts[0].t;
+    const t1 = pts[pts.length - 1].t;
+    const sx = (t) => m.l + ((t - t0) / (t1 - t0 || 1)) * (W - m.l - m.r);
+    const sy = (v) => H - m.b - ((v - vmin) / (vmax - vmin)) * (H - m.t - m.b);
+    const line = pts.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`).join(" ");
+    const yticks = [vmin, (vmin + vmax) / 2, vmax]
+      .map((v) => `<text x="2" y="${(sy(v) + 3).toFixed(1)}" font-size="9" fill="#666">${v.toFixed(0)}</text>`)
+      .join("");
+    const fmtHour = (t) =>
+      new Intl.DateTimeFormat("nl-NL", { weekday: "short", hour: "2-digit" }).format(new Date(t));
+    const xticks = [pts[0], pts[Math.floor(pts.length / 2)], pts[pts.length - 1]]
+      .map(
+        (p) =>
+          `<text x="${sx(p.t).toFixed(1)}" y="${H - 8}" font-size="9" fill="#666" text-anchor="middle">${fmtHour(p.t)}</text>`
+      )
+      .join("");
+    return (
+      `<div style="font:12px sans-serif"><b>${this._paramName()}</b> · ${unit}` +
+      `<div style="opacity:.6;font-size:10px">${latlng.lat.toFixed(2)}, ${latlng.lng.toFixed(2)}</div>` +
+      `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;margin-top:4px">` +
+      `<line x1="${m.l}" y1="${H - m.b}" x2="${W - m.r}" y2="${H - m.b}" stroke="#ccc"/>` +
+      `<line x1="${m.l}" y1="${m.t}" x2="${m.l}" y2="${H - m.b}" stroke="#ccc"/>` +
+      yticks +
+      xticks +
+      `<path d="${line}" fill="none" stroke="var(--primary-color,#03a9f4)" stroke-width="2"/>` +
+      `</svg></div>`
+    );
+  }
+
   _onRenderModeChange() {
-    this._renderMode = this._els.renderModeSelect.value === "particles" ? "particles" : "raster";
+    const v = this._els.renderModeSelect.value;
+    this._renderMode = v === "particles" || v === "vectors" ? v : "raster";
     if (this._frames.length) this._showFrame(this._frameIndex || 0);
   }
 
-  // Enable/disable the particle option based on whether the current parameter
-  // has wind data; fall back to raster when it doesn't.
+  // Enable/disable the wind options based on whether the current parameter has
+  // wind data; fall back to raster when it doesn't.
   _syncRenderModeAvailability() {
     const hasWind = this._paramHasWind();
-    const opt = this._els.renderModeSelect.querySelector('option[value="particles"]');
-    if (opt) opt.disabled = !hasWind;
-    if (!hasWind && this._renderMode === "particles") {
+    for (const value of ["particles", "vectors"]) {
+      const opt = this._els.renderModeSelect.querySelector(`option[value="${value}"]`);
+      if (opt) opt.disabled = !hasWind;
+    }
+    if (!hasWind && (this._renderMode === "particles" || this._renderMode === "vectors")) {
       this._renderMode = "raster";
     }
     this._els.renderModeSelect.value = this._renderMode;
