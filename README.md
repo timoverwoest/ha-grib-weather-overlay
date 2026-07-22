@@ -16,6 +16,10 @@ de rest van de backend te hoeven aanpassen.
   dauwpunt (2m), relatieve luchtvochtigheid (2m), neerslag, luchtdruk
   (zeeniveau), zicht, bewolking.
 - Eén-tijdstip-slider én een animatiemodus (begin, eind, stap, afspeelsnelheid).
+- **Windy.com-stijl geanimeerde deeltjes voor wind** (via de meegeleverde
+  `leaflet-velocity`), naast de gekleurde raster-overlay. Kies "Wind (deeltjes)"
+  in de kaart bij een wind-parameter; de deeltjes stromen mee met de
+  windrichting boven een gedimde snelheidskaart.
 - Kaart-kaart met OpenStreetMap-basislaag + OpenSeaMap seamark-laag + de
   GRIB-overlay, volledig los van een internetverbinding voor de kaart-JS zelf
   (Leaflet wordt meegeleverd, geen CDN-afhankelijkheid voor de code — de
@@ -141,10 +145,7 @@ De legenda en het label in de parameterkeuze worden dan automatisch omgerekend.
 - Op dit moment wordt alleen de `harmonie_arome_cy43_p1`-dataset (Nederland,
   regular lat-lon grid) ondersteund. De Europese rotated-lat-lon varianten
   vereisen een extra reprojectiestap die nog niet is geïmplementeerd.
-- Windpijltjes/particle-animatie (zoals Windy) is voorbereid
-  (`renderMode: particles` staat al als optie in de kaart) maar nog niet
-  geïmplementeerd — v1 toont alle parameters, inclusief wind, als gekleurde
-  raster-overlay.
+- De rotated-lat-lon Europa-varianten worden nog niet ondersteund (zie boven).
 
 ## Ontwikkelen & testen
 

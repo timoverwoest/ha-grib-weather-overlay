@@ -8,20 +8,37 @@
 
 const LEAFLET_JS_URL = "/grib_overlay_static/vendor/leaflet/leaflet.js";
 const LEAFLET_CSS_URL = "/grib_overlay_static/vendor/leaflet/leaflet.css";
+const VELOCITY_JS_URL = "/grib_overlay_static/vendor/leaflet-velocity/leaflet-velocity.js";
+const VELOCITY_CSS_URL = "/grib_overlay_static/vendor/leaflet-velocity/leaflet-velocity.css";
+
+function loadScript(url, isReady) {
+  if (isReady()) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = url;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Kon ${url} niet laden`));
+    document.head.appendChild(script);
+  });
+}
 
 let leafletLoadingPromise = null;
 function loadLeaflet() {
-  if (window.L) return Promise.resolve(window.L);
   if (!leafletLoadingPromise) {
-    leafletLoadingPromise = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = LEAFLET_JS_URL;
-      script.onload = () => resolve(window.L);
-      script.onerror = () => reject(new Error("Kon Leaflet niet laden"));
-      document.head.appendChild(script);
-    });
+    leafletLoadingPromise = loadScript(LEAFLET_JS_URL, () => !!window.L).then(() => window.L);
   }
   return leafletLoadingPromise;
+}
+
+let velocityLoadingPromise = null;
+function loadLeafletVelocity() {
+  // leaflet-velocity extends L, so Leaflet must be loaded first.
+  if (!velocityLoadingPromise) {
+    velocityLoadingPromise = loadLeaflet().then(() =>
+      loadScript(VELOCITY_JS_URL, () => !!(window.L && window.L.velocityLayer))
+    );
+  }
+  return velocityLoadingPromise;
 }
 
 function formatTime(isoString) {
@@ -213,10 +230,12 @@ class GribOverlayCard extends HTMLElement {
     this._built = true;
 
     const root = this.attachShadow({ mode: "open" });
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = LEAFLET_CSS_URL;
-    root.appendChild(link);
+    for (const href of [LEAFLET_CSS_URL, VELOCITY_CSS_URL]) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = href;
+      root.appendChild(link);
+    }
 
     const style = document.createElement("style");
     style.textContent = `
@@ -278,9 +297,9 @@ class GribOverlayCard extends HTMLElement {
         <select class="param-select"></select>
         <button class="mode-single active" data-mode="single">Eén tijdstip</button>
         <button class="mode-animate" data-mode="animate">Animatie</button>
-        <select class="render-mode-select">
+        <select class="render-mode-select" title="Weergave">
           <option value="raster">Raster</option>
-          <option value="particles" disabled>Windpijltjes (binnenkort)</option>
+          <option value="particles">Wind (deeltjes)</option>
         </select>
       </div>
       <div class="map-container"><div class="map"></div></div>
@@ -356,10 +375,13 @@ class GribOverlayCard extends HTMLElement {
     this._els.speedSlider.addEventListener("input", () => {
       if (this._playTimer) this._startPlaybackTimer();
     });
+    this._els.renderModeSelect.addEventListener("change", () => this._onRenderModeChange());
 
     this._mode = "single";
+    this._renderMode = this._config?.renderMode === "particles" ? "particles" : "raster";
     this._frames = [];
     this._boundsFit = false;
+    this._windCache = new Map(); // wind_url -> fetched velocity data
   }
 
   // -- data loading -----------------------------------------------------------
@@ -501,6 +523,8 @@ class GribOverlayCard extends HTMLElement {
     this._els.timeSlider.value = "0";
     this._els.progressSlider.max = lastIndex;
     this._els.progressSlider.value = "0";
+    this._removeWindLayer();
+    this._syncRenderModeAvailability();
     this._populateAnimationSelects();
     this._updateLegend();
     if (this._frames.length) {
@@ -541,14 +565,26 @@ class GribOverlayCard extends HTMLElement {
   _showFrame(index) {
     const frame = this._frames[index];
     if (!frame) return;
+    this._frameIndex = index;
+    const particles = this._particlesActive();
     const [south, west, north, east] = frame.bounds;
     const bounds = [[south, west], [north, east]];
 
+    // In particle mode the coloured raster stays as a dimmed background under
+    // the animated particles (the windy.com look); otherwise it's the overlay.
+    const opacity = particles ? 0.45 : 0.75;
     if (!this._imageOverlay) {
-      this._imageOverlay = window.L.imageOverlay(frame.image_url, bounds, { opacity: 0.75 }).addTo(this._map);
+      this._imageOverlay = window.L.imageOverlay(frame.image_url, bounds, { opacity }).addTo(this._map);
     } else {
       this._imageOverlay.setUrl(frame.image_url);
       this._imageOverlay.setBounds(bounds);
+      this._imageOverlay.setOpacity(opacity);
+    }
+
+    if (particles) {
+      this._updateWindLayer(frame);
+    } else {
+      this._removeWindLayer();
     }
 
     const label = `${formatTime(frame.valid_time)} (run ${formatTime(frame.run_time)})`;
@@ -565,6 +601,86 @@ class GribOverlayCard extends HTMLElement {
       const img = new Image();
       img.src = next.image_url;
     }
+  }
+
+  // -- wind particle layer (leaflet-velocity) --------------------------------
+
+  // Particles apply only when the user chose particle mode AND the current
+  // parameter actually has wind (u/v) data available.
+  _particlesActive() {
+    return this._renderMode === "particles" && this._paramHasWind();
+  }
+
+  _paramHasWind() {
+    return this._frames.some((f) => f.wind_url);
+  }
+
+  async _fetchWind(url) {
+    if (this._windCache.has(url)) return this._windCache.get(url);
+    // url is like "/api/grib_overlay/wind/..."; hass.callApi wants it without /api/.
+    const data = await this._hass.callApi("GET", url.replace(/^\/api\//, ""));
+    this._windCache.set(url, data);
+    return data;
+  }
+
+  async _updateWindLayer(frame) {
+    if (!frame.wind_url) {
+      this._removeWindLayer();
+      return;
+    }
+    const token = (this._windToken = (this._windToken || 0) + 1);
+    let data;
+    try {
+      await loadLeafletVelocity();
+      data = await this._fetchWind(frame.wind_url);
+    } catch (err) {
+      this._els.note.textContent = "Kon winddata niet laden: " + (err.message || err);
+      return;
+    }
+    // A newer frame was requested while we were fetching -> drop this result.
+    if (token !== this._windToken || !this._particlesActive()) return;
+
+    if (!this._windLayer) {
+      this._windLayer = window.L.velocityLayer({
+        displayValues: true,
+        displayOptions: {
+          velocityType: "Wind",
+          position: "bottomleft",
+          emptyString: "geen winddata",
+          angleConvention: "bearingCW",
+          speedUnit: "m/s",
+        },
+        data,
+        maxVelocity: 30,
+        velocityScale: 0.01,
+      }).addTo(this._map);
+    } else {
+      this._windLayer.setData(data);
+    }
+  }
+
+  _removeWindLayer() {
+    if (this._windLayer) {
+      this._map.removeLayer(this._windLayer);
+      this._windLayer = null;
+    }
+  }
+
+  _onRenderModeChange() {
+    this._renderMode = this._els.renderModeSelect.value === "particles" ? "particles" : "raster";
+    if (this._frames.length) this._showFrame(this._frameIndex || 0);
+  }
+
+  // Enable/disable the particle option based on whether the current parameter
+  // has wind data; fall back to raster when it doesn't.
+  _syncRenderModeAvailability() {
+    const hasWind = this._paramHasWind();
+    const opt = this._els.renderModeSelect.querySelector('option[value="particles"]');
+    if (opt) opt.disabled = !hasWind;
+    if (!hasWind && this._renderMode === "particles") {
+      this._renderMode = "raster";
+    }
+    this._els.renderModeSelect.value = this._renderMode;
   }
 
   _updateLegend() {

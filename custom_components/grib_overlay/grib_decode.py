@@ -42,6 +42,18 @@ class DecodedField:
     unit: str
 
 
+@dataclass
+class DecodedVector:
+    """Raw u/v wind components (for particle/vector overlays)."""
+
+    u: np.ndarray  # shape (Nj, Ni), row 0 = south
+    v: np.ndarray
+    lats: np.ndarray  # 1D ascending
+    lons: np.ndarray  # 1D ascending
+    valid_time: datetime
+    run_time: datetime
+
+
 def _grib_datetime(date_int: int, time_int: int) -> datetime:
     year, month, day = date_int // 10000, (date_int // 100) % 100, date_int % 100
     hour, minute = time_int // 100, time_int % 100
@@ -117,4 +129,23 @@ def decode_parameter(path: Path, parameter: GribParameter) -> DecodedField:
         valid_time=valid_time,
         run_time=run_time,
         unit=parameter.unit,
+    )
+
+
+def decode_vector_components(path: Path, parameter: GribParameter) -> DecodedVector:
+    """Extract the raw u/v components of a vector parameter (wind), unscaled (m/s)."""
+    if parameter.kind != "vector":
+        raise GribDecodeError(f"Parameter '{parameter.key}' is not a vector parameter")
+    messages = _load_messages(path)
+    u_msg = _find(messages, parameter.grib_filter_u)
+    v_msg = _find(messages, parameter.grib_filter_v)
+    if u_msg is None or v_msg is None:
+        raise GribDecodeError(
+            f"Vector parameter '{parameter.key}' missing u/v component in {path}"
+        )
+    u_grid, lats, lons = grib1.to_grid(u_msg)
+    v_grid, _, _ = grib1.to_grid(v_msg)
+    valid_time, run_time = _message_times(u_msg)
+    return DecodedVector(
+        u=u_grid, v=v_grid, lats=lats, lons=lons, valid_time=valid_time, run_time=run_time
     )

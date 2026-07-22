@@ -14,3 +14,4 @@ dev/output/
 .DS_Store
 
 .claude/settings.local.json
+dev/wind_sample.json

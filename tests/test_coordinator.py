@@ -65,6 +65,11 @@ async def test_extract_decode_and_render_produces_frames(hass, tmp_path: Path) -
         south, west, north, east = frame.bounds
         assert south < north and west < east
         assert frame.legend.min_value < frame.legend.max_value
+        # Wind (vector) parameters also get a leaflet-velocity JSON; scalars don't.
+        if key == "wind_10m":
+            assert frame.wind_path is not None and frame.wind_path.exists()
+        else:
+            assert frame.wind_path is None
 
     # the extracted member file should have been cleaned up after processing
     assert not any(p.name.startswith("HA43_") for p in run_dir.iterdir())

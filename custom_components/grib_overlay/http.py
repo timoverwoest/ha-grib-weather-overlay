@@ -12,7 +12,7 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH
+from .const import CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_WIND_PATH
 from .coordinator import GribOverlayCoordinator
 
 
@@ -88,6 +88,11 @@ class GribOverlayFramesView(HomeAssistantView):
                     "run_time": frame.run_time.isoformat(),
                     "bounds": frame.bounds,
                     "image_url": f"{HTTP_FRAME_IMAGE_PATH}/{entry_id}/{key}/{frame.png_path.stem}.png",
+                    "wind_url": (
+                        f"{HTTP_WIND_PATH}/{entry_id}/{key}/{frame.png_path.stem}.json"
+                        if frame.wind_path
+                        else None
+                    ),
                     "legend": {
                         "unit": frame.legend.unit,
                         "min_value": frame.legend.min_value,
@@ -131,4 +136,32 @@ class GribOverlayFrameImageView(HomeAssistantView):
         return web.Response(body=data, content_type="image/png", headers={"Cache-Control": "max-age=3600"})
 
 
-VIEWS = (GribOverlayEntriesView, GribOverlayFramesView, GribOverlayFrameImageView)
+class GribOverlayWindView(HomeAssistantView):
+    """Serves one wind frame's leaflet-velocity JSON (raw u/v grid)."""
+
+    url = HTTP_WIND_PATH + "/{entry_id}/{parameter_key}/{frame_id}.json"
+    name = "api:grib_overlay:wind"
+    requires_auth = True  # fetched via hass.callApi, which sends the auth token
+
+    async def get(
+        self, request: web.Request, entry_id: str, parameter_key: str, frame_id: str
+    ) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        coordinator = _coordinator(hass, entry_id)
+        if coordinator is None:
+            return web.Response(status=404)
+        frame = coordinator.get_frame(parameter_key, frame_id)
+        if frame is None or frame.wind_path is None or not frame.wind_path.exists():
+            return web.Response(status=404)
+        data = await hass.async_add_executor_job(frame.wind_path.read_bytes)
+        return web.Response(
+            body=data, content_type="application/json", headers={"Cache-Control": "max-age=3600"}
+        )
+
+
+VIEWS = (
+    GribOverlayEntriesView,
+    GribOverlayFramesView,
+    GribOverlayFrameImageView,
+    GribOverlayWindView,
+)

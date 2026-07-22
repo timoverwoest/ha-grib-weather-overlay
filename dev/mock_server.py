@@ -62,6 +62,11 @@ def _frame_list(parameter_key: str) -> list[dict]:
     for i in range(FRAME_COUNT):
         valid_time = BASE_RUN_TIME + timedelta(hours=i * FRAME_STEP_HOURS)
         frame_id = f"{parameter_key}_{valid_time:%Y%m%dT%H%M}"
+        wind_url = (
+            f"/api/grib_overlay/wind/{ENTRY_ID}/{parameter_key}/{frame_id}.json"
+            if parameter_key == "wind_10m"
+            else None
+        )
         frames.append(
             {
                 "frame_id": frame_id,
@@ -69,6 +74,7 @@ def _frame_list(parameter_key: str) -> list[dict]:
                 "run_time": BASE_RUN_TIME.isoformat(),
                 "bounds": list(BOUNDS),
                 "image_url": f"/api/grib_overlay/frame/{ENTRY_ID}/{parameter_key}/{frame_id}.png",
+                "wind_url": wind_url,
                 "legend": LEGENDS[parameter_key],
             }
         )
@@ -138,6 +144,9 @@ class Handler(BaseHTTPRequestHandler):
             # /api/grib_overlay/frame/{entry_id}/{parameter_key}/{frame_id}.png
             parameter_key = parts[4]
             self._file(OUTPUT_DIR / f"{parameter_key}.png", "image/png")
+        elif parts[:3] == ["api", "grib_overlay", "wind"]:
+            # /api/grib_overlay/wind/{entry_id}/{parameter_key}/{frame_id}.json
+            self._file(DEV_DIR / "wind_sample.json", "application/json")
         else:
             self.send_response(404)
             self.end_headers()

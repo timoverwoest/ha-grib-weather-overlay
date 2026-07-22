@@ -20,13 +20,15 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import numpy as np
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from . import grib_decode, render
+from . import grib_decode, render, velocity
 from .const import (
     CONF_API_KEY,
     CONF_DATASET,
@@ -55,6 +57,8 @@ class Frame:
     png_path: Path
     bounds: tuple[float, float, float, float]
     legend: render.Legend
+    # For vector (wind) parameters: leaflet-velocity JSON with the raw u/v grid.
+    wind_path: Path | None = None
 
 
 class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
@@ -237,33 +241,60 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
                 for parameter in parameters:
                     try:
-                        field = grib_decode.decode_parameter(extracted_path, parameter)
+                        frame = self._process_parameter(parameter, extracted_path, run_dir)
                     except grib_decode.GribDecodeError as err:
                         _LOGGER.debug(
                             "Parameter %s not in member %s: %s", parameter.key, member.name, err
                         )
                         continue
-                    frame_obj, legend = render.render_field(
-                        field, colormap=parameter.colormap, value_range=parameter.value_range
-                    )
-                    png_path = run_dir / f"{parameter.key}_{field.valid_time:%Y%m%dT%H%M}.png"
-                    png_path.write_bytes(frame_obj.png_bytes)
-                    new_frames[parameter.key].append(
-                        Frame(
-                            parameter_key=parameter.key,
-                            valid_time=field.valid_time,
-                            run_time=field.run_time,
-                            png_path=png_path,
-                            bounds=frame_obj.bounds,
-                            legend=legend,
-                        )
-                    )
+                    new_frames[parameter.key].append(frame)
                 extracted_path.unlink(missing_ok=True)
 
         for frames in new_frames.values():
             frames.sort(key=lambda f: f.valid_time)
         self._write_frames_manifest(run_dir, tar_path.name, new_frames)
         return new_frames
+
+    def _process_parameter(
+        self, parameter: GribParameter, grib_path: Path, run_dir: Path
+    ) -> Frame:
+        """Decode one parameter, render the PNG, and (for wind) save velocity JSON."""
+        wind_path: Path | None = None
+        if parameter.kind == "vector":
+            vec = grib_decode.decode_vector_components(grib_path, parameter)
+            magnitude = np.hypot(vec.u, vec.v) * parameter.scale + parameter.offset
+            field = grib_decode.DecodedField(
+                parameter_key=parameter.key,
+                data=magnitude,
+                lats=vec.lats,
+                lons=vec.lons,
+                valid_time=vec.valid_time,
+                run_time=vec.run_time,
+                unit=parameter.unit,
+            )
+            wind_path = run_dir / f"{parameter.key}_{vec.valid_time:%Y%m%dT%H%M}.wind.json"
+            wind_path.write_text(
+                json.dumps(
+                    velocity.build_velocity_data(vec.u, vec.v, vec.lats, vec.lons, vec.valid_time)
+                )
+            )
+        else:
+            field = grib_decode.decode_parameter(grib_path, parameter)
+
+        frame_obj, legend = render.render_field(
+            field, colormap=parameter.colormap, value_range=parameter.value_range
+        )
+        png_path = run_dir / f"{parameter.key}_{field.valid_time:%Y%m%dT%H%M}.png"
+        png_path.write_bytes(frame_obj.png_bytes)
+        return Frame(
+            parameter_key=parameter.key,
+            valid_time=field.valid_time,
+            run_time=field.run_time,
+            png_path=png_path,
+            bounds=frame_obj.bounds,
+            legend=legend,
+            wind_path=wind_path,
+        )
 
     # -- disk cache (skip re-downloading an already-processed run on restart) ---
 
@@ -281,6 +312,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                         "valid_time": f.valid_time.isoformat(),
                         "run_time": f.run_time.isoformat(),
                         "png": f.png_path.name,
+                        "wind": f.wind_path.name if f.wind_path else None,
                         "bounds": list(f.bounds),
                         "legend": {
                             "unit": f.legend.unit,
@@ -324,6 +356,10 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                         max_value=fd["legend"]["max_value"],
                         stops=tuple(fd["legend"]["stops"]),
                     )
+                    wind_name = fd.get("wind")
+                    wind_path = run_dir / wind_name if wind_name else None
+                    if wind_path is not None and not wind_path.exists():
+                        wind_path = None
                     frames[key].append(
                         Frame(
                             parameter_key=key,
@@ -332,6 +368,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                             png_path=png_path,
                             bounds=tuple(fd["bounds"]),
                             legend=legend,
+                            wind_path=wind_path,
                         )
                     )
                 if not valid:

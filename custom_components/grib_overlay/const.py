@@ -19,5 +19,6 @@ DEFAULT_UPDATE_INTERVAL_MINUTES = 30
 HTTP_ENTRIES_PATH = "/api/grib_overlay/entries"
 HTTP_FRAMES_PATH = "/api/grib_overlay/frames"
 HTTP_FRAME_IMAGE_PATH = "/api/grib_overlay/frame"
+HTTP_WIND_PATH = "/api/grib_overlay/wind"
 
 STORAGE_VERSION = 1
