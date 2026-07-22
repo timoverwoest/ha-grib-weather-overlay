@@ -310,12 +310,17 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
     # -- disk cache (skip re-downloading an already-processed run on restart) ---
 
     MANIFEST_NAME = "frames.json"
+    # Bump when the on-disk artifacts a run produces change (e.g. field grids
+    # added in v0.5.0). A cached run with an older version is treated as
+    # incomplete and re-processed so the new artifacts get generated.
+    MANIFEST_VERSION = 2
 
     def _write_frames_manifest(
         self, run_dir: Path, run_filename: str, frames: dict[str, list[Frame]]
     ) -> None:
         """Persist frame metadata so a restart can rebuild self.frames from disk."""
         manifest = {
+            "manifest_version": self.MANIFEST_VERSION,
             "run_filename": run_filename,
             "frames": {
                 key: [
@@ -352,6 +357,10 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             try:
                 manifest = json.loads(manifest_path.read_text())
             except (ValueError, OSError):
+                continue
+            # Older manifests lack newer artifacts (e.g. field grids) -> skip so
+            # the run is re-processed by the current code.
+            if manifest.get("manifest_version", 1) < self.MANIFEST_VERSION:
                 continue
             frames: dict[str, list[Frame]] = {}
             valid = True

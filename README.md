@@ -21,9 +21,10 @@ de rest van de backend te hoeven aanpassen.
   in de kaart bij een wind-parameter; de deeltjes stromen mee met de
   windrichting boven een gedimde snelheidskaart. Er is ook een
   **"Wind (vectoren)"**-modus met pijltjes (richting + grootte).
-- **Klik op de kaart** voor de waarde op dat punt (huidig tijdstip), en
-  **houd ingedrukt / rechtsklik** voor een **meteogram** (waarde-over-tijd op
-  dat punt, wegklikbaar).
+- **Waarde onder de muis** (voor álle parameters) wordt live linksonder in de
+  kaart getoond, in de ingestelde eenheden; voor wind ook de richting. **Klik/
+  tik** zet de waarde vast in een popup, en **houd ingedrukt / rechtsklik**
+  opent een wegklikbaar **meteogram** (waarde-over-tijd op dat punt).
 - Kaart-kaart met OpenStreetMap-basislaag + OpenSeaMap seamark-laag + de
   GRIB-overlay, volledig los van een internetverbinding voor de kaart-JS zelf
   (Leaflet wordt meegeleverd, geen CDN-afhankelijkheid voor de code — de

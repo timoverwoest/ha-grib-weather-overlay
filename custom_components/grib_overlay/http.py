@@ -15,7 +15,7 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
 from . import field_grid
-from .const import CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_PATH, HTTP_WIND_PATH
+from .const import CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_PATH, HTTP_WIND_PATH
 from .coordinator import GribOverlayCoordinator
 
 
@@ -96,6 +96,11 @@ class GribOverlayFramesView(HomeAssistantView):
                         if frame.wind_path
                         else None
                     ),
+                    "field_url": (
+                        f"{HTTP_FIELD_PATH}/{entry_id}/{key}/{frame.png_path.stem}.json"
+                        if frame.field_path
+                        else None
+                    ),
                     "legend": {
                         "unit": frame.legend.unit,
                         "min_value": frame.legend.min_value,
@@ -162,6 +167,29 @@ class GribOverlayWindView(HomeAssistantView):
         )
 
 
+class GribOverlayFieldView(HomeAssistantView):
+    """Serves one frame's compact scalar grid JSON (for the client-side readout)."""
+
+    url = HTTP_FIELD_PATH + "/{entry_id}/{parameter_key}/{frame_id}.json"
+    name = "api:grib_overlay:field"
+    requires_auth = True  # fetched via hass.callApi
+
+    async def get(
+        self, request: web.Request, entry_id: str, parameter_key: str, frame_id: str
+    ) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        coordinator = _coordinator(hass, entry_id)
+        if coordinator is None:
+            return web.Response(status=404)
+        frame = coordinator.get_frame(parameter_key, frame_id)
+        if frame is None or frame.field_path is None or not frame.field_path.exists():
+            return web.Response(status=404)
+        data = await hass.async_add_executor_job(frame.field_path.read_bytes)
+        return web.Response(
+            body=data, content_type="application/json", headers={"Cache-Control": "max-age=3600"}
+        )
+
+
 class GribOverlayPointView(HomeAssistantView):
     """Returns a parameter's value time-series at a lat/lon (click value + meteogram)."""
 
@@ -205,5 +233,6 @@ VIEWS = (
     GribOverlayFramesView,
     GribOverlayFrameImageView,
     GribOverlayWindView,
+    GribOverlayFieldView,
     GribOverlayPointView,
 )

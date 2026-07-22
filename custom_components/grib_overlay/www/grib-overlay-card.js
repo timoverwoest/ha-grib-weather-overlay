@@ -41,6 +41,43 @@ function loadLeafletVelocity() {
   return velocityLoadingPromise;
 }
 
+// Bilinearly sample a {nx,ny,lo1,la1,dx,dy} grid (north-first, row-major) at a
+// lat/lon. Returns null outside the grid or where all corners are missing.
+function sampleGrid(header, data, lat, lon) {
+  const { nx, ny, lo1, la1, dx, dy } = header;
+  if (nx < 2 || ny < 2 || !dx || !dy) return null;
+  const fx = (lon - lo1) / dx;
+  const fy = (la1 - lat) / dy; // la1 is north; rows increase southward
+  if (fx < 0 || fy < 0 || fx > nx - 1 || fy > ny - 1) return null;
+  const x0 = Math.floor(fx);
+  const y0 = Math.floor(fy);
+  const x1 = Math.min(x0 + 1, nx - 1);
+  const y1 = Math.min(y0 + 1, ny - 1);
+  const tx = fx - x0;
+  const ty = fy - y0;
+  const at = (x, y) => data[y * nx + x];
+  const corners = [
+    [at(x0, y0), (1 - tx) * (1 - ty)],
+    [at(x1, y0), tx * (1 - ty)],
+    [at(x0, y1), (1 - tx) * ty],
+    [at(x1, y1), tx * ty],
+  ];
+  let sw = 0;
+  let sv = 0;
+  for (const [v, w] of corners) {
+    if (v != null && isFinite(v)) {
+      sw += w;
+      sv += v * w;
+    }
+  }
+  return sw === 0 ? null : sv / sw;
+}
+
+const COMPASS8 = ["N", "NO", "O", "ZO", "Z", "ZW", "W", "NW"];
+function compass(deg) {
+  return COMPASS8[Math.round(((deg % 360) / 45)) % 8];
+}
+
 function formatTime(isoString) {
   const date = new Date(isoString);
   return new Intl.DateTimeFormat("nl-NL", {
@@ -287,6 +324,12 @@ class GribOverlayCard extends HTMLElement {
       .legend-scale { display: flex; justify-content: space-between; }
       .legend-scale span { text-align: center; }
       .note { padding: 0 12px 8px; font-size: 0.8em; opacity: 0.7; }
+      .readout {
+        position: absolute; left: 8px; bottom: 8px; z-index: 500;
+        background: rgba(255,255,255,0.85); color: #12324f;
+        padding: 3px 8px; border-radius: 6px; font: 12px/1.3 sans-serif;
+        pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,0.3); max-width: 70%;
+      }
     `;
     root.appendChild(style);
 
@@ -303,7 +346,7 @@ class GribOverlayCard extends HTMLElement {
           <option value="vectors">Wind (vectoren)</option>
         </select>
       </div>
-      <div class="map-container"><div class="map"></div></div>
+      <div class="map-container"><div class="map"></div><div class="readout hidden"></div></div>
       <div class="time-controls single-controls">
         <input type="range" class="time-slider" min="0" max="0" value="0" step="1" />
         <span class="time-label"></span>
@@ -335,6 +378,7 @@ class GribOverlayCard extends HTMLElement {
       renderModeSelect: card.querySelector(".render-mode-select"),
       mapContainer: card.querySelector(".map-container"),
       mapDiv: card.querySelector(".map"),
+      readout: card.querySelector(".readout"),
       singleControls: card.querySelector(".single-controls"),
       animateControls: card.querySelector(".animate-controls"),
       timeSlider: card.querySelector(".single-controls .time-slider"),
@@ -383,6 +427,7 @@ class GribOverlayCard extends HTMLElement {
     this._frames = [];
     this._boundsFit = false;
     this._windCache = new Map(); // wind_url -> fetched velocity data
+    this._fieldCache = new Map(); // field_url -> fetched scalar grid
   }
 
   // -- data loading -----------------------------------------------------------
@@ -408,7 +453,10 @@ class GribOverlayCard extends HTMLElement {
       maxZoom: 18,
     }).addTo(this._map);
 
-    // Click a point to read its value; hold / right-click for a meteogram.
+    // Hover shows the value at the cursor; tap/click pins it in a popup; hold /
+    // right-click opens a meteogram at that point.
+    this._map.on("mousemove", (e) => this._onMouseMove(e.latlng));
+    this._map.on("mouseout", () => this._els.readout.classList.add("hidden"));
     this._map.on("click", (e) => this._onMapClick(e.latlng));
     this._map.on("contextmenu", (e) => {
       window.L.DomEvent.preventDefault(e.originalEvent);
@@ -538,6 +586,8 @@ class GribOverlayCard extends HTMLElement {
     this._removeWindLayer();
     this._removeVectors();
     this._closePointPopup();
+    this._readoutSource = null;
+    this._els.readout.classList.add("hidden");
     this._syncRenderModeAvailability();
     this._populateAnimationSelects();
     this._updateLegend();
@@ -613,6 +663,7 @@ class GribOverlayCard extends HTMLElement {
     this._els.progressSlider.value = String(index); // keep the animation scrubber in sync
     this._currentLegend = frame.legend;
     this._updateLegend();
+    this._loadReadoutSource(frame);
 
     // Prefetch the next frame's image so animation playback doesn't flicker.
     const next = this._frames[index + 1];
@@ -620,6 +671,66 @@ class GribOverlayCard extends HTMLElement {
       const img = new Image();
       img.src = next.image_url;
     }
+  }
+
+  // -- value readout at the cursor (all parameters) --------------------------
+
+  // Load the grid the cursor readout samples for the current frame: wind params
+  // use the u/v grid (speed + direction); scalar params use the field grid.
+  async _loadReadoutSource(frame) {
+    const token = (this._readoutToken = (this._readoutToken || 0) + 1);
+    let source = null;
+    try {
+      if (frame.wind_url) {
+        const d = await this._fetchWind(frame.wind_url);
+        source = { kind: "wind", header: d[0].header, u: d[0].data, v: d[1].data };
+      } else if (frame.field_url) {
+        const d = await this._fetchJson(frame.field_url, this._fieldCache);
+        source = { kind: "scalar", header: d, data: d.data, unit: frame.legend.unit };
+      }
+    } catch (err) {
+      source = null;
+    }
+    if (token !== this._readoutToken) return; // a newer frame won the race
+    this._readoutSource = source;
+  }
+
+  async _fetchJson(url, cache) {
+    if (cache.has(url)) return cache.get(url);
+    const data = await this._hass.callApi("GET", url.replace(/^\/api\//, ""));
+    cache.set(url, data);
+    return data;
+  }
+
+  // Value at a lat/lon for the current parameter, formatted in display units.
+  // Returns null when there's no data there. For wind, also direction.
+  _valueAt(latlng) {
+    const src = this._readoutSource;
+    if (!src) return null;
+    if (src.kind === "wind") {
+      const u = sampleGrid(src.header, src.u, latlng.lat, latlng.lng);
+      const v = sampleGrid(src.header, src.v, latlng.lat, latlng.lng);
+      if (u == null || v == null) return null;
+      const speed = Math.hypot(u, v);
+      const { text, unit } = this._displayValue(speed, "m/s");
+      // Meteorological direction: where the wind comes FROM.
+      const from = (270 - (Math.atan2(v, u) * 180) / Math.PI + 360) % 360;
+      return { label: `${text} ${unit} · ${Math.round(from)}° ${compass(from)}` };
+    }
+    const value = sampleGrid(src.header, src.data, latlng.lat, latlng.lng);
+    if (value == null) return null;
+    const { text, unit } = this._displayValue(value, src.unit);
+    return { label: `${text} ${unit}` };
+  }
+
+  _onMouseMove(latlng) {
+    const r = this._valueAt(latlng);
+    if (!r) {
+      this._els.readout.classList.add("hidden");
+      return;
+    }
+    this._els.readout.textContent = `${this._paramName()}: ${r.label}`;
+    this._els.readout.classList.remove("hidden");
   }
 
   // -- wind overlays (particles / vectors) -----------------------------------
@@ -663,14 +774,7 @@ class GribOverlayCard extends HTMLElement {
 
     if (!this._windLayer) {
       this._windLayer = window.L.velocityLayer({
-        displayValues: true,
-        displayOptions: {
-          velocityType: "Wind",
-          position: "bottomleft",
-          emptyString: "geen winddata",
-          angleConvention: "bearingCW",
-          speedUnit: "m/s",
-        },
+        displayValues: false, // our own cursor readout handles this, for all params
         data,
         maxVelocity: 30,
         velocityScale: 0.01,
@@ -730,40 +834,30 @@ class GribOverlayCard extends HTMLElement {
     [...svg.querySelectorAll("g")].forEach((g) => g.remove());
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
 
-    const uh = this._vectorData[0].header;
+    const header = this._vectorData[0].header;
     const u = this._vectorData[0].data;
     const v = this._vectorData[1].data;
-    const { nx, ny, lo1, la1, dx, dy } = uh;
     const size = this._map.getSize();
-    // Aim for roughly one arrow every ~46px.
-    const targetPx = 46;
-    const cols = Math.max(2, Math.round(size.x / targetPx));
-    const rows = Math.max(2, Math.round(size.y / targetPx));
-    const stepX = Math.max(1, Math.floor(nx / cols));
-    const stepY = Math.max(1, Math.floor(ny / rows));
-    const scale = 3.2; // px per m/s
+    const spacing = 44; // px between arrows on screen -> uniform coverage at any zoom
+    const scale = 3.4; // px per m/s
 
-    for (let j = 0; j < ny; j += stepY) {
-      for (let i = 0; i < nx; i += stepX) {
-        const idx = j * nx + i;
-        const uu = u[idx];
-        const vv = v[idx];
+    // Place arrows on a regular SCREEN grid and interpolate the wind there, so
+    // the whole visible overlay is covered evenly regardless of zoom level.
+    for (let py = spacing / 2; py < size.y; py += spacing) {
+      for (let px = spacing / 2; px < size.x; px += spacing) {
+        const ll = this._map.containerPointToLatLng([px, py]);
+        const uu = sampleGrid(header, u, ll.lat, ll.lng);
+        const vv = sampleGrid(header, v, ll.lat, ll.lng);
         if (uu == null || vv == null) continue;
-        const lat = la1 - j * dy;
-        const lon = lo1 + i * dx;
-        const p = this._map.latLngToContainerPoint([lat, lon]);
-        if (p.x < -20 || p.y < -20 || p.x > size.x + 20 || p.y > size.y + 20) continue;
         const speed = Math.hypot(uu, vv);
         if (speed < 0.3) continue;
-        const len = Math.min(26, 6 + speed * scale);
+        const len = Math.min(24, 5 + speed * scale);
         // East = +x, north = -y (screen y points down).
-        const nxu = uu / speed;
-        const nyu = vv / speed;
-        const x2 = p.x + nxu * len;
-        const y2 = p.y - nyu * len;
+        const x2 = px + (uu / speed) * len;
+        const y2 = py - (vv / speed) * len;
         const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        line.setAttribute("x1", p.x.toFixed(1));
-        line.setAttribute("y1", p.y.toFixed(1));
+        line.setAttribute("x1", px.toFixed(1));
+        line.setAttribute("y1", py.toFixed(1));
         line.setAttribute("x2", x2.toFixed(1));
         line.setAttribute("y2", y2.toFixed(1));
         line.setAttribute("stroke", "#12324f");
@@ -818,25 +912,17 @@ class GribOverlayCard extends HTMLElement {
     return { text: value == null ? "–" : (value * factor).toFixed(1), unit };
   }
 
-  async _onMapClick(latlng) {
-    const paramKey = this._els.paramSelect.value;
-    if (!paramKey || !this._frames.length) return;
-    let resp;
-    try {
-      resp = await this._fetchPointSeries(paramKey, latlng);
-    } catch (err) {
-      return; // point outside data / transient error -> ignore
-    }
-    const series = (resp && resp.series) || [];
+  // Tap/click pins the current value in a popup (works on touch, where there's
+  // no hover). Uses the same client-side grid as the readout.
+  _onMapClick(latlng) {
+    const r = this._valueAt(latlng);
+    if (!r) return;
     const frame = this._frames[this._frameIndex || 0];
-    const match = series.find((s) => s.valid_time === frame.valid_time) || series[this._frameIndex] || series[0];
-    if (!match || match.value == null) return;
-    const { text, unit } = this._displayValue(match.value, resp.unit);
     this._pointPopup = window.L.popup({ closeButton: true, autoPan: false })
       .setLatLng(latlng)
       .setContent(
-        `<div style="font:13px sans-serif"><b>${this._paramName()}</b><br>${text} ${unit}<br>` +
-          `<span style="opacity:.7">${formatTime(match.valid_time)}</span></div>`
+        `<div style="font:13px sans-serif"><b>${this._paramName()}</b><br>${r.label}<br>` +
+          `<span style="opacity:.7">${formatTime(frame.valid_time)}</span></div>`
       )
       .openOn(this._map);
   }

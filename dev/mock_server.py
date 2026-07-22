@@ -76,6 +76,7 @@ def _frame_list(parameter_key: str) -> list[dict]:
                 "bounds": list(BOUNDS),
                 "image_url": f"/api/grib_overlay/frame/{ENTRY_ID}/{parameter_key}/{frame_id}.png",
                 "wind_url": wind_url,
+                "field_url": f"/api/grib_overlay/field/{ENTRY_ID}/{parameter_key}/{frame_id}.json",
                 "legend": LEGENDS[parameter_key],
             }
         )
@@ -148,6 +149,10 @@ class Handler(BaseHTTPRequestHandler):
         elif parts[:3] == ["api", "grib_overlay", "wind"]:
             # /api/grib_overlay/wind/{entry_id}/{parameter_key}/{frame_id}.json
             self._file(DEV_DIR / "wind_sample.json", "application/json")
+        elif parts[:3] == ["api", "grib_overlay", "field"]:
+            # /api/grib_overlay/field/{entry_id}/{parameter_key}/{frame_id}.json
+            parameter_key = parts[4]
+            self._file(DEV_DIR / f"field_{parameter_key}.json", "application/json")
         elif parts[:3] == ["api", "grib_overlay", "point"]:
             # /api/grib_overlay/point/{entry_id}/{parameter_key}?lat=&lon=
             parameter_key = parts[4]

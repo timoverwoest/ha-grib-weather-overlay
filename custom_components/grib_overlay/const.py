@@ -20,6 +20,7 @@ HTTP_ENTRIES_PATH = "/api/grib_overlay/entries"
 HTTP_FRAMES_PATH = "/api/grib_overlay/frames"
 HTTP_FRAME_IMAGE_PATH = "/api/grib_overlay/frame"
 HTTP_WIND_PATH = "/api/grib_overlay/wind"
+HTTP_FIELD_PATH = "/api/grib_overlay/field"
 HTTP_POINT_PATH = "/api/grib_overlay/point"
 
 STORAGE_VERSION = 1
