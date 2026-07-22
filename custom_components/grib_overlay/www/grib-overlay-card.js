@@ -462,8 +462,8 @@ class GribOverlayCard extends HTMLElement {
       window.L.DomEvent.preventDefault(e.originalEvent);
       this._onMapHold(e.latlng);
     });
-    // Wind-vector arrows are redrawn whenever the map moves/zooms.
-    this._map.on("moveend zoomend", () => {
+    // Wind-vector arrows are redrawn whenever the map moves/zooms/resizes.
+    this._map.on("moveend zoomend resize", () => {
       if (this._renderMode === "vectors") this._drawVectors();
     });
 
@@ -816,7 +816,7 @@ class GribOverlayCard extends HTMLElement {
     const svgns = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(svgns, "svg");
     svg.setAttribute("class", "wind-vectors");
-    svg.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:400;";
+    svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;z-index:400;";
     const defs = document.createElementNS(svgns, "defs");
     defs.innerHTML =
       '<marker id="gribArrowHead" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto">' +
@@ -838,6 +838,15 @@ class GribOverlayCard extends HTMLElement {
     const u = this._vectorData[0].data;
     const v = this._vectorData[1].data;
     const size = this._map.getSize();
+    // Size the SVG to the whole map. Without explicit width/height an inline SVG
+    // falls back to its 300x150 default and clips everything outside the top-left
+    // corner (arrows only showed there); matching the map size makes 1 user unit
+    // = 1 container pixel so the arrows land where we compute them.
+    svg.setAttribute("width", size.x);
+    svg.setAttribute("height", size.y);
+    svg.setAttribute("viewBox", `0 0 ${size.x} ${size.y}`);
+    svg.style.width = size.x + "px";
+    svg.style.height = size.y + "px";
     const spacing = 44; // px between arrows on screen -> uniform coverage at any zoom
     const scale = 3.4; // px per m/s
 
@@ -957,9 +966,13 @@ class GribOverlayCard extends HTMLElement {
     const pts = series
       .map((s) => ({ t: new Date(s.valid_time).getTime(), v: s.value == null ? null : s.value * factor }))
       .filter((p) => p.v != null);
-    const W = 320;
-    const H = 150;
-    const m = { l: 34, r: 8, t: 22, b: 26 };
+    // Font sizes are in the SVG's own user units; the SVG then scales to fill the
+    // popup width. Keep the viewBox modest and the fonts generous so the axis
+    // labels stay readable on a phone instead of being scaled down to nothing.
+    const W = 300;
+    const H = 170;
+    const m = { l: 34, r: 10, t: 14, b: 34 };
+    const FS = 13; // axis label font-size, in user units
     const vals = pts.map((p) => p.v);
     let vmin = Math.min(...vals);
     let vmax = Math.max(...vals);
@@ -972,26 +985,34 @@ class GribOverlayCard extends HTMLElement {
     const sx = (t) => m.l + ((t - t0) / (t1 - t0 || 1)) * (W - m.l - m.r);
     const sy = (v) => H - m.b - ((v - vmin) / (vmax - vmin)) * (H - m.t - m.b);
     const line = pts.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`).join(" ");
+    const dots = pts
+      .map((p) => `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy(p.v).toFixed(1)}" r="2.2" fill="var(--primary-color,#03a9f4)"/>`)
+      .join("");
     const yticks = [vmin, (vmin + vmax) / 2, vmax]
-      .map((v) => `<text x="2" y="${(sy(v) + 3).toFixed(1)}" font-size="9" fill="#666">${v.toFixed(0)}</text>`)
+      .map(
+        (v) =>
+          `<line x1="${m.l - 3}" y1="${sy(v).toFixed(1)}" x2="${W - m.r}" y2="${sy(v).toFixed(1)}" stroke="#eee"/>` +
+          `<text x="${m.l - 5}" y="${(sy(v) + FS / 3).toFixed(1)}" font-size="${FS}" fill="#666" text-anchor="end">${v.toFixed(0)}</text>`
+      )
       .join("");
     const fmtHour = (t) =>
       new Intl.DateTimeFormat("nl-NL", { weekday: "short", hour: "2-digit" }).format(new Date(t));
     const xticks = [pts[0], pts[Math.floor(pts.length / 2)], pts[pts.length - 1]]
       .map(
-        (p) =>
-          `<text x="${sx(p.t).toFixed(1)}" y="${H - 8}" font-size="9" fill="#666" text-anchor="middle">${fmtHour(p.t)}</text>`
+        (p, i) =>
+          `<text x="${sx(p.t).toFixed(1)}" y="${H - 10}" font-size="${FS}" fill="#666" text-anchor="${i === 0 ? "start" : i === 2 ? "end" : "middle"}">${fmtHour(p.t)}</text>`
       )
       .join("");
     return (
-      `<div style="font:12px sans-serif"><b>${this._paramName()}</b> · ${unit}` +
-      `<div style="opacity:.6;font-size:10px">${latlng.lat.toFixed(2)}, ${latlng.lng.toFixed(2)}</div>` +
+      `<div style="width:290px;max-width:78vw;font:14px sans-serif"><b>${this._paramName()}</b> · ${unit}` +
+      `<div style="opacity:.6;font-size:12px">${latlng.lat.toFixed(2)}, ${latlng.lng.toFixed(2)}</div>` +
       `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;margin-top:4px">` +
-      `<line x1="${m.l}" y1="${H - m.b}" x2="${W - m.r}" y2="${H - m.b}" stroke="#ccc"/>` +
-      `<line x1="${m.l}" y1="${m.t}" x2="${m.l}" y2="${H - m.b}" stroke="#ccc"/>` +
       yticks +
       xticks +
-      `<path d="${line}" fill="none" stroke="var(--primary-color,#03a9f4)" stroke-width="2"/>` +
+      `<line x1="${m.l}" y1="${H - m.b}" x2="${W - m.r}" y2="${H - m.b}" stroke="#ccc"/>` +
+      `<line x1="${m.l}" y1="${m.t}" x2="${m.l}" y2="${H - m.b}" stroke="#ccc"/>` +
+      `<path d="${line}" fill="none" stroke="var(--primary-color,#03a9f4)" stroke-width="2.5"/>` +
+      dots +
       `</svg></div>`
     );
   }
