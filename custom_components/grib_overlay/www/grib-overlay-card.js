@@ -971,48 +971,113 @@ class GribOverlayCard extends HTMLElement {
     // labels stay readable on a phone instead of being scaled down to nothing.
     const W = 300;
     const H = 170;
-    const m = { l: 34, r: 10, t: 14, b: 34 };
+    const m = { l: 42, r: 10, t: 14, b: 34 };
     const FS = 13; // axis label font-size, in user units
+    const px0 = m.l;
+    const px1 = W - m.r;
+    const py0 = m.t;
+    const py1 = H - m.b;
+
+    // "Nice numbers": round a range to a 1/2/5 x 10^k value so major gridlines
+    // land on clean, human-readable numbers.
+    const niceNum = (range, round) => {
+      const exp = Math.floor(Math.log10(range));
+      const f = range / Math.pow(10, exp);
+      const nf = round
+        ? f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10
+        : f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+      return nf * Math.pow(10, exp);
+    };
+
+    // ---- y scale: expand data range to nice bounds so majors are round ----
     const vals = pts.map((p) => p.v);
-    let vmin = Math.min(...vals);
-    let vmax = Math.max(...vals);
-    if (vmax - vmin < 1e-6) {
-      vmin -= 1;
-      vmax += 1;
+    let dmin = Math.min(...vals);
+    let dmax = Math.max(...vals);
+    if (dmax - dmin < 1e-6) {
+      dmin -= 1;
+      dmax += 1;
     }
+    const yStep = niceNum((dmax - dmin) / 4, true);
+    const vmin = Math.floor(dmin / yStep) * yStep;
+    const vmax = Math.ceil(dmax / yStep) * yStep;
+    const yMant = Math.round(yStep / Math.pow(10, Math.floor(Math.log10(yStep))));
+    const yMinorDiv = yMant === 2 ? 4 : 5; // keep minor steps round
+    const yMinorStep = yStep / yMinorDiv;
+
+    // ---- x scale: clock-aligned hourly ticks; majors every N hours ----
     const t0 = pts[0].t;
     const t1 = pts[pts.length - 1].t;
-    const sx = (t) => m.l + ((t - t0) / (t1 - t0 || 1)) * (W - m.l - m.r);
-    const sy = (v) => H - m.b - ((v - vmin) / (vmax - vmin)) * (H - m.t - m.b);
+    const spanH = (t1 - t0) / 3600000 || 1;
+    const cand = [1, 2, 3, 6, 12, 24, 48];
+    let xMajorH = cand[cand.length - 1];
+    for (const c of cand) {
+      if (spanH / c <= 6) {
+        xMajorH = c;
+        break;
+      }
+    }
+    const hourTs = [];
+    const d0 = new Date(t0);
+    d0.setMinutes(0, 0, 0);
+    if (d0.getTime() < t0) d0.setHours(d0.getHours() + 1);
+    for (let tt = d0.getTime(); tt <= t1; tt += 3600000) hourTs.push(tt);
+
+    const sx = (t) => px0 + ((t - t0) / (t1 - t0 || 1)) * (px1 - px0);
+    const sy = (v) => py1 - ((v - vmin) / (vmax - vmin)) * (py1 - py0);
+
+    const parts = [];
+    // Major horizontal gridlines + y labels + major y tick marks.
+    const nY = Math.round((vmax - vmin) / yStep);
+    for (let i = 0; i <= nY; i++) {
+      const v = vmin + i * yStep;
+      const y = sy(v).toFixed(1);
+      parts.push(`<line x1="${px0}" y1="${y}" x2="${px1}" y2="${y}" stroke="#d9dee3"/>`);
+      parts.push(`<line x1="${px0 - 5}" y1="${y}" x2="${px0}" y2="${y}" stroke="#9aa5ad"/>`);
+      parts.push(
+        `<text x="${px0 - 8}" y="${(parseFloat(y) + FS / 3).toFixed(1)}" font-size="${FS}" fill="#666" text-anchor="end">${Number(v.toFixed(2))}</text>`
+      );
+    }
+    // Minor y tick marks (skip positions that coincide with a major).
+    const nYm = Math.round((vmax - vmin) / yMinorStep);
+    for (let j = 0; j <= nYm; j++) {
+      if (j % yMinorDiv === 0) continue;
+      const y = sy(vmin + j * yMinorStep).toFixed(1);
+      parts.push(`<line x1="${px0 - 3}" y1="${y}" x2="${px0}" y2="${y}" stroke="#c2c9cf"/>`);
+    }
+    // Major vertical gridlines + x labels + major x ticks; minor x ticks between.
+    const pad2 = (n) => (n < 10 ? "0" + n : "" + n);
+    const wd = new Intl.DateTimeFormat("nl-NL", { weekday: "short" });
+    for (const tt of hourTs) {
+      const hr = new Date(tt).getHours();
+      const x = sx(tt).toFixed(1);
+      if (hr % xMajorH === 0) {
+        parts.push(`<line x1="${x}" y1="${py0}" x2="${x}" y2="${py1}" stroke="#d9dee3"/>`);
+        parts.push(`<line x1="${x}" y1="${py1}" x2="${x}" y2="${(py1 + 5).toFixed(1)}" stroke="#9aa5ad"/>`);
+        const label = hr === 0 ? wd.format(new Date(tt)) : pad2(hr);
+        parts.push(
+          `<text x="${x}" y="${H - 10}" font-size="${FS}" fill="#666" text-anchor="middle">${label}</text>`
+        );
+      } else {
+        parts.push(`<line x1="${x}" y1="${py1}" x2="${x}" y2="${(py1 + 3).toFixed(1)}" stroke="#c2c9cf"/>`);
+      }
+    }
+    // Axes (drawn over the gridlines).
+    parts.push(`<line x1="${px0}" y1="${py1}" x2="${px1}" y2="${py1}" stroke="#aeb6bd"/>`);
+    parts.push(`<line x1="${px0}" y1="${py0}" x2="${px0}" y2="${py1}" stroke="#aeb6bd"/>`);
+    // Data line + dots (on top).
     const line = pts.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`).join(" ");
-    const dots = pts
-      .map((p) => `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy(p.v).toFixed(1)}" r="2.2" fill="var(--primary-color,#03a9f4)"/>`)
-      .join("");
-    const yticks = [vmin, (vmin + vmax) / 2, vmax]
-      .map(
-        (v) =>
-          `<line x1="${m.l - 3}" y1="${sy(v).toFixed(1)}" x2="${W - m.r}" y2="${sy(v).toFixed(1)}" stroke="#eee"/>` +
-          `<text x="${m.l - 5}" y="${(sy(v) + FS / 3).toFixed(1)}" font-size="${FS}" fill="#666" text-anchor="end">${v.toFixed(0)}</text>`
-      )
-      .join("");
-    const fmtHour = (t) =>
-      new Intl.DateTimeFormat("nl-NL", { weekday: "short", hour: "2-digit" }).format(new Date(t));
-    const xticks = [pts[0], pts[Math.floor(pts.length / 2)], pts[pts.length - 1]]
-      .map(
-        (p, i) =>
-          `<text x="${sx(p.t).toFixed(1)}" y="${H - 10}" font-size="${FS}" fill="#666" text-anchor="${i === 0 ? "start" : i === 2 ? "end" : "middle"}">${fmtHour(p.t)}</text>`
-      )
-      .join("");
+    parts.push(`<path d="${line}" fill="none" stroke="var(--primary-color,#03a9f4)" stroke-width="2.5"/>`);
+    parts.push(
+      pts
+        .map((p) => `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy(p.v).toFixed(1)}" r="2.2" fill="var(--primary-color,#03a9f4)"/>`)
+        .join("")
+    );
+
     return (
       `<div style="width:290px;max-width:78vw;font:14px sans-serif"><b>${this._paramName()}</b> · ${unit}` +
       `<div style="opacity:.6;font-size:12px">${latlng.lat.toFixed(2)}, ${latlng.lng.toFixed(2)}</div>` +
       `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;margin-top:4px">` +
-      yticks +
-      xticks +
-      `<line x1="${m.l}" y1="${H - m.b}" x2="${W - m.r}" y2="${H - m.b}" stroke="#ccc"/>` +
-      `<line x1="${m.l}" y1="${m.t}" x2="${m.l}" y2="${H - m.b}" stroke="#ccc"/>` +
-      `<path d="${line}" fill="none" stroke="var(--primary-color,#03a9f4)" stroke-width="2.5"/>` +
-      dots +
+      parts.join("") +
       `</svg></div>`
     );
   }
