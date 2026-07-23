@@ -98,6 +98,7 @@ type: custom:grib-overlay-card
 # eenheden (nautisch):
 # wind_unit: kn        # wind + windstoten: m/s (standaard), kn, km/h of mph
 # visibility_unit: NM  # zicht: km (standaard) of NM (zeemijlen)
+# direction_unit: deg  # windrichting: compass (N/O/Z/W, standaard) of deg (0-360°)
 ```
 
 Zonder `entry_id`/`parameter` pakt de kaart automatisch de eerst
@@ -135,6 +136,9 @@ is puur een weergavekeuze in de kaart (de onderliggende data verandert niet):
 - `wind_unit`: eenheid voor wind én windstoten — `m/s` (standaard), `kn`
   (knopen / zeemijlen per uur), `km/h` of `mph`.
 - `visibility_unit`: eenheid voor zicht — `km` (standaard) of `NM` (zeemijlen).
+- `direction_unit`: weergave van de windrichting (in de readout onder de muis en
+  op de tweede as van het wind-meteogram) — `compass` (kompas `N/O/Z/W`,
+  standaard) of `deg` (numeriek `0–360°`).
 
 De legenda en het label in de parameterkeuze worden dan automatisch omgerekend.
 

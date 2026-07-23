@@ -110,6 +110,20 @@ const UNIT_CONVERSIONS = {
   },
 };
 
+// Config values (any of these) that select the numeric 0-360 direction style;
+// anything else falls back to the compass style.
+const DIRECTION_DEG_ALIASES = new Set([
+  "deg",
+  "deg°",
+  "degree",
+  "degrees",
+  "°",
+  "graden",
+  "360",
+  "0-360",
+  "0-360°",
+]);
+
 // Forgiving config aliases -> canonical target unit key above.
 const UNIT_ALIASES = {
   kt: "kn",
@@ -528,6 +542,20 @@ class GribOverlayCard extends HTMLElement {
     return conv ? conv.label : sourceUnit;
   }
 
+  // Wind-direction display style: "compass" (N/O/Z/W, default) or "deg" (0-360).
+  _directionMode() {
+    const raw = String((this._config && this._config.direction_unit) || "compass")
+      .toLowerCase()
+      .trim();
+    return DIRECTION_DEG_ALIASES.has(raw) ? "deg" : "compass";
+  }
+
+  // Format a from-direction (degrees) per the configured style.
+  _formatDirection(deg) {
+    const d = ((deg % 360) + 360) % 360;
+    return this._directionMode() === "deg" ? `${Math.round(d)}°` : compass(d);
+  }
+
   async _onEntryChange() {
     const entry = this._currentEntry();
     if (!entry) return;
@@ -715,7 +743,7 @@ class GribOverlayCard extends HTMLElement {
       const { text, unit } = this._displayValue(speed, "m/s");
       // Meteorological direction: where the wind comes FROM.
       const from = (270 - (Math.atan2(v, u) * 180) / Math.PI + 360) % 360;
-      return { label: `${text} ${unit} · ${Math.round(from)}° ${compass(from)}` };
+      return { label: `${text} ${unit} · ${this._formatDirection(from)}` };
     }
     const value = sampleGrid(src.header, src.data, latlng.lat, latlng.lng);
     if (value == null) return null;
@@ -972,12 +1000,15 @@ class GribOverlayCard extends HTMLElement {
       }))
       .filter((p) => p.v != null);
     const showDir = hasDirection && pts.some((p) => p.dir != null);
+    const dirMode = this._directionMode(); // "compass" | "deg"
     // Font sizes are in the SVG's own user units; the SVG then scales to fill the
     // popup width. Keep the viewBox modest and the fonts generous so the axis
     // labels stay readable on a phone instead of being scaled down to nothing.
     const W = 300;
     const H = 170;
-    const m = { l: 42, r: showDir ? 26 : 10, t: 14, b: 34 };
+    // Numeric 0-360 labels are wider ("360") than single compass letters.
+    const rMargin = showDir ? (dirMode === "deg" ? 30 : 24) : 10;
+    const m = { l: 42, r: rMargin, t: 14, b: 34 };
     const FS = 13; // axis label font-size, in user units
     const DIR_COLOR = "#e8833a";
     const px0 = m.l;
@@ -1074,14 +1105,16 @@ class GribOverlayCard extends HTMLElement {
     // ---- secondary axis: wind direction (0-360 deg, from-direction) ----
     if (showDir) {
       const sy2 = (d) => py1 - (d / 360) * (py1 - py0);
-      const compass = { 0: "N", 90: "O", 180: "Z", 270: "W", 360: "N" };
-      // Right axis line + major ticks/labels (compass) + minor ticks (45s).
+      const compassLbl = { 0: "N", 90: "O", 180: "Z", 270: "W", 360: "N" };
+      // Major label per style: compass letters or the numeric bearing (0-360).
+      const dirLabel = (d) => (dirMode === "deg" ? String(d) : compassLbl[d]);
+      // Right axis line + major ticks/labels + minor ticks (45s).
       parts.push(`<line x1="${px1}" y1="${py0}" x2="${px1}" y2="${py1}" stroke="#e0a274"/>`);
       for (let d = 0; d <= 360; d += 90) {
         const y = sy2(d).toFixed(1);
         parts.push(`<line x1="${px1}" y1="${y}" x2="${(px1 + 5).toFixed(1)}" y2="${y}" stroke="${DIR_COLOR}"/>`);
         parts.push(
-          `<text x="${(px1 + 8).toFixed(1)}" y="${(parseFloat(y) + FS / 3).toFixed(1)}" font-size="${FS}" fill="${DIR_COLOR}" text-anchor="start">${compass[d]}</text>`
+          `<text x="${(px1 + 8).toFixed(1)}" y="${(parseFloat(y) + FS / 3).toFixed(1)}" font-size="${FS}" fill="${DIR_COLOR}" text-anchor="start">${dirLabel(d)}</text>`
         );
       }
       for (let d = 45; d < 360; d += 90) {
@@ -1123,7 +1156,7 @@ class GribOverlayCard extends HTMLElement {
     const legend = showDir
       ? `<div style="font-size:11px;margin-top:1px">` +
         `<span style="color:var(--primary-color,#03a9f4)">━ snelheid (${unit})</span>` +
-        `&nbsp;&nbsp;<span style="color:${DIR_COLOR}">┅ richting</span></div>`
+        `&nbsp;&nbsp;<span style="color:${DIR_COLOR}">┅ richting (${dirMode === "deg" ? "°" : "kompas"})</span></div>`
       : "";
     return (
       `<div style="width:290px;max-width:78vw;font:14px sans-serif"><b>${this._paramName()}</b> · ${unit}` +
