@@ -254,7 +254,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         for member_path in member_paths:
             try:
                 valid_time, member_run_time = grib_decode.peek_valid_time(member_path)
-            except grib_decode.GribDecodeError as err:
+            except (grib_decode.GribDecodeError, OSError) as err:
+                # OSError covers a member that vanished/was unreadable -- skip it
+                # rather than aborting the whole run (the next poll re-fetches).
                 _LOGGER.debug("Skipping unreadable member %s: %s", member_path.name, err)
                 member_path.unlink(missing_ok=True)
                 continue
@@ -267,7 +269,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             for parameter in parameters:
                 try:
                     frame = self._process_parameter(parameter, member_path, run_dir)
-                except grib_decode.GribDecodeError as err:
+                except (grib_decode.GribDecodeError, OSError) as err:
                     _LOGGER.debug(
                         "Parameter %s not in member %s: %s", parameter.key, member_path.name, err
                     )
