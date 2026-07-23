@@ -6,6 +6,7 @@ coordinator, same as grib_decode.py.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from io import BytesIO
 
@@ -132,6 +133,26 @@ def _legend_stops(colormap: str) -> tuple[dict, ...]:
     )
 
 
+def _mercator_north_first_rows(south: float, north: float, nrows: int) -> np.ndarray:
+    """Source-row indices remapping a south-first, latitude-linear grid to an
+    image whose rows run north (top) -> south (bottom) *uniformly in Web
+    Mercator y*.
+
+    Leaflet's imageOverlay stretches the PNG linearly in Web-Mercator pixel
+    space between the bounds, but our grid rows are linear in latitude. Over a
+    wide latitude span that mismatch visibly shifts the overlay (lower-latitude
+    data creeps north). Pre-warping the rows here makes the PNG line up.
+    """
+    if nrows < 2 or north <= south:
+        return np.arange(nrows - 1, -1, -1)  # just flip to north-first
+    clamp = lambda d: max(min(d, 85.0), -85.0)
+    merc = lambda d: math.log(math.tan(math.pi / 4 + math.radians(clamp(d)) / 2))
+    ys = np.linspace(merc(north), merc(south), nrows)  # top=north -> bottom=south
+    lats = np.degrees(2.0 * np.arctan(np.exp(ys)) - math.pi / 2)
+    src = np.rint((lats - south) / (north - south) * (nrows - 1)).astype(int)
+    return np.clip(src, 0, nrows - 1)
+
+
 def render_field(
     field: DecodedField,
     *,
@@ -140,7 +161,12 @@ def render_field(
     opacity: int = 200,
 ) -> tuple[RenderedFrame, Legend]:
     """Render one DecodedField to an RGBA PNG + Leaflet imageOverlay bounds + legend."""
-    data = field.data
+    south, north = float(field.lats.min()), float(field.lats.max())
+    west, east = float(field.lons.min()), float(field.lons.max())
+
+    # Warp latitude rows to Web Mercator and put north on top in one gather, so
+    # the PNG aligns with Leaflet's (Mercator) imageOverlay placement.
+    data = field.data[_mercator_north_first_rows(south, north, field.data.shape[0])]
 
     if value_range is None:
         finite = data[np.isfinite(data)]
@@ -157,17 +183,11 @@ def render_field(
 
     rgb = lut[idx]
     alpha = np.where(np.isnan(data), 0, opacity).astype(np.uint8)
-    rgba = np.dstack([rgb, alpha])
-
-    # data row 0 = southernmost latitude; image row 0 must be the top (north).
-    rgba = np.flipud(rgba)
+    rgba = np.dstack([rgb, alpha])  # already north-first from the row map above
 
     image = Image.fromarray(rgba, mode="RGBA")
     buf = BytesIO()
     image.save(buf, format="PNG", optimize=True)
-
-    south, north = float(field.lats.min()), float(field.lats.max())
-    west, east = float(field.lons.min()), float(field.lons.max())
 
     frame = RenderedFrame(
         png_bytes=buf.getvalue(),
