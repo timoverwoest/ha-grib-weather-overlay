@@ -8,6 +8,7 @@ different datasets, or later a different source) can coexist.
 from __future__ import annotations
 
 import json
+import math
 
 from aiohttp import web
 
@@ -21,6 +22,25 @@ from .coordinator import GribOverlayCoordinator
 
 def _coordinator(hass: HomeAssistant, entry_id: str) -> GribOverlayCoordinator | None:
     return hass.data.get(DOMAIN, {}).get(entry_id)
+
+
+def _wind_direction(wind, lat: float, lon: float) -> float | None:
+    """Meteorological FROM direction (degrees) from a stored u/v wind record pair.
+
+    ``wind`` is the leaflet-velocity two-record list ([u_record, v_record]); each
+    record's header carries the same nx/ny/lo1/la1/dx/dy grid used by the scalar
+    field, so we can bilinearly sample u and v with ``field_grid.sample_field``.
+    """
+    if not isinstance(wind, list) or len(wind) < 2:
+        return None
+    try:
+        u = field_grid.sample_field({**wind[0]["header"], "data": wind[0]["data"]}, lat, lon)
+        v = field_grid.sample_field({**wind[1]["header"], "data": wind[1]["data"]}, lat, lon)
+    except (KeyError, TypeError):
+        return None
+    if u is None or v is None or math.hypot(u, v) < 0.3:
+        return None  # calm: direction is meaningless
+    return round((270.0 - math.degrees(math.atan2(v, u))) % 360.0, 0)
 
 
 class GribOverlayEntriesView(HomeAssistantView):
@@ -210,22 +230,37 @@ class GribOverlayPointView(HomeAssistantView):
 
         frames = coordinator.frames.get(parameter_key, [])
         unit = frames[0].legend.unit if frames else None
-        field_paths = [(f.valid_time.isoformat(), f.field_path) for f in frames if f.field_path]
+        entries = [
+            (f.valid_time.isoformat(), f.field_path, f.wind_path) for f in frames if f.field_path
+        ]
+        # Wind parameters carry u/v grids, so we can add a direction series too.
+        has_direction = any(wind_path is not None for _, _, wind_path in entries)
 
         def _sample_all() -> list[dict]:
             series = []
-            for valid_time, path in field_paths:
+            for valid_time, field_path, wind_path in entries:
                 try:
-                    field = json.loads(path.read_text())
+                    field = json.loads(field_path.read_text())
                 except (OSError, ValueError):
                     continue
-                series.append(
-                    {"valid_time": valid_time, "value": field_grid.sample_field(field, lat, lon)}
-                )
+                point = {
+                    "valid_time": valid_time,
+                    "value": field_grid.sample_field(field, lat, lon),
+                }
+                if wind_path is not None and wind_path.exists():
+                    try:
+                        wind = json.loads(wind_path.read_text())
+                    except (OSError, ValueError):
+                        wind = None
+                    point["direction"] = _wind_direction(wind, lat, lon) if wind else None
+                series.append(point)
             return series
 
         series = await hass.async_add_executor_job(_sample_all)
-        return web.json_response({"unit": unit, "series": series})
+        payload = {"unit": unit, "series": series}
+        if has_direction:
+            payload["direction_unit"] = "°"
+        return web.json_response(payload)
 
 
 VIEWS = (

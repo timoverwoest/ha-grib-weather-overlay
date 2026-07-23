@@ -24,7 +24,9 @@ de rest van de backend te hoeven aanpassen.
 - **Waarde onder de muis** (voor álle parameters) wordt live linksonder in de
   kaart getoond, in de ingestelde eenheden; voor wind ook de richting. **Klik/
   tik** zet de waarde vast in een popup, en **houd ingedrukt / rechtsklik**
-  opent een wegklikbaar **meteogram** (waarde-over-tijd op dat punt).
+  opent een wegklikbaar **meteogram** (waarde-over-tijd op dat punt) met major
+  gridlijnen en minor ticks op beide assen. Voor **wind en windstoten** toont
+  het meteogram tegelijk de **windrichting op een tweede y-as** (kompas N/O/Z/W).
 - Kaart-kaart met OpenStreetMap-basislaag + OpenSeaMap seamark-laag + de
   GRIB-overlay, volledig los van een internetverbinding voor de kaart-JS zelf
   (Leaflet wordt meegeleverd, geen CDN-afhankelijkheid voor de code — de

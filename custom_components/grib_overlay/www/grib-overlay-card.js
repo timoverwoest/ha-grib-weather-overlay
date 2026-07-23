@@ -947,7 +947,8 @@ class GribOverlayCard extends HTMLElement {
     }
     const series = (resp && resp.series) || [];
     if (!series.some((s) => s.value != null)) return;
-    const svg = this._buildMeteogram(series, resp.unit, latlng);
+    const hasDir = !!(resp && resp.direction_unit) && series.some((s) => s.direction != null);
+    const svg = this._buildMeteogram(series, resp.unit, latlng, hasDir);
     this._pointPopup = window.L.popup({
       closeButton: true,
       autoPan: true,
@@ -959,20 +960,26 @@ class GribOverlayCard extends HTMLElement {
       .openOn(this._map);
   }
 
-  _buildMeteogram(series, sourceUnit, latlng) {
+  _buildMeteogram(series, sourceUnit, latlng, hasDirection = false) {
     const conv = this._conversionFor(sourceUnit);
     const factor = conv ? conv.factor : 1;
     const unit = conv ? conv.label : sourceUnit;
     const pts = series
-      .map((s) => ({ t: new Date(s.valid_time).getTime(), v: s.value == null ? null : s.value * factor }))
+      .map((s) => ({
+        t: new Date(s.valid_time).getTime(),
+        v: s.value == null ? null : s.value * factor,
+        dir: s.direction == null ? null : s.direction,
+      }))
       .filter((p) => p.v != null);
+    const showDir = hasDirection && pts.some((p) => p.dir != null);
     // Font sizes are in the SVG's own user units; the SVG then scales to fill the
     // popup width. Keep the viewBox modest and the fonts generous so the axis
     // labels stay readable on a phone instead of being scaled down to nothing.
     const W = 300;
     const H = 170;
-    const m = { l: 42, r: 10, t: 14, b: 34 };
+    const m = { l: 42, r: showDir ? 26 : 10, t: 14, b: 34 };
     const FS = 13; // axis label font-size, in user units
+    const DIR_COLOR = "#e8833a";
     const px0 = m.l;
     const px1 = W - m.r;
     const py0 = m.t;
@@ -1064,7 +1071,47 @@ class GribOverlayCard extends HTMLElement {
     // Axes (drawn over the gridlines).
     parts.push(`<line x1="${px0}" y1="${py1}" x2="${px1}" y2="${py1}" stroke="#aeb6bd"/>`);
     parts.push(`<line x1="${px0}" y1="${py0}" x2="${px0}" y2="${py1}" stroke="#aeb6bd"/>`);
-    // Data line + dots (on top).
+    // ---- secondary axis: wind direction (0-360 deg, from-direction) ----
+    if (showDir) {
+      const sy2 = (d) => py1 - (d / 360) * (py1 - py0);
+      const compass = { 0: "N", 90: "O", 180: "Z", 270: "W", 360: "N" };
+      // Right axis line + major ticks/labels (compass) + minor ticks (45s).
+      parts.push(`<line x1="${px1}" y1="${py0}" x2="${px1}" y2="${py1}" stroke="#e0a274"/>`);
+      for (let d = 0; d <= 360; d += 90) {
+        const y = sy2(d).toFixed(1);
+        parts.push(`<line x1="${px1}" y1="${y}" x2="${(px1 + 5).toFixed(1)}" y2="${y}" stroke="${DIR_COLOR}"/>`);
+        parts.push(
+          `<text x="${(px1 + 8).toFixed(1)}" y="${(parseFloat(y) + FS / 3).toFixed(1)}" font-size="${FS}" fill="${DIR_COLOR}" text-anchor="start">${compass[d]}</text>`
+        );
+      }
+      for (let d = 45; d < 360; d += 90) {
+        const y = sy2(d).toFixed(1);
+        parts.push(`<line x1="${px1}" y1="${y}" x2="${(px1 + 3).toFixed(1)}" y2="${y}" stroke="#f0b487"/>`);
+      }
+      // Direction line: break the path across the 0/360 wrap (jumps > 180 deg).
+      let dpath = "";
+      let prev = null;
+      for (const p of pts) {
+        if (p.dir == null) {
+          prev = null;
+          continue;
+        }
+        const cmd = prev == null || Math.abs(p.dir - prev) > 180 ? "M" : "L";
+        dpath += `${cmd}${sx(p.t).toFixed(1)},${sy2(p.dir).toFixed(1)}`;
+        prev = p.dir;
+      }
+      parts.push(
+        `<path d="${dpath}" fill="none" stroke="${DIR_COLOR}" stroke-width="1.6" stroke-dasharray="4 3"/>`
+      );
+      parts.push(
+        pts
+          .filter((p) => p.dir != null)
+          .map((p) => `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy2(p.dir).toFixed(1)}" r="2" fill="${DIR_COLOR}"/>`)
+          .join("")
+      );
+    }
+
+    // Data line + dots (speed, on top, left axis).
     const line = pts.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`).join(" ");
     parts.push(`<path d="${line}" fill="none" stroke="var(--primary-color,#03a9f4)" stroke-width="2.5"/>`);
     parts.push(
@@ -1073,9 +1120,15 @@ class GribOverlayCard extends HTMLElement {
         .join("")
     );
 
+    const legend = showDir
+      ? `<div style="font-size:11px;margin-top:1px">` +
+        `<span style="color:var(--primary-color,#03a9f4)">━ snelheid (${unit})</span>` +
+        `&nbsp;&nbsp;<span style="color:${DIR_COLOR}">┅ richting</span></div>`
+      : "";
     return (
       `<div style="width:290px;max-width:78vw;font:14px sans-serif"><b>${this._paramName()}</b> · ${unit}` +
       `<div style="opacity:.6;font-size:12px">${latlng.lat.toFixed(2)}, ${latlng.lng.toFixed(2)}</div>` +
+      legend +
       `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;margin-top:4px">` +
       parts.join("") +
       `</svg></div>`

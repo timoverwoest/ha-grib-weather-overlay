@@ -163,13 +163,21 @@ class Handler(BaseHTTPRequestHandler):
             )
             q = parse_qs(parsed.query)
             lat = float(q.get("lat", [52.0])[0])
+            is_wind = parameter_key in ("wind_10m", "wind_gust_10m")
             # a smooth synthetic series so the meteogram/value UI can be tested
             series = []
             for i in range(FRAME_COUNT):
                 vt = BASE_RUN_TIME + timedelta(hours=i * FRAME_STEP_HOURS)
                 frac = 0.5 + 0.4 * math.sin(i / 2.0 + lat)
-                series.append({"valid_time": vt.isoformat(), "value": round(lo + frac * (hi - lo), 1)})
-            self._json({"unit": unit, "series": series})
+                point = {"valid_time": vt.isoformat(), "value": round(lo + frac * (hi - lo), 1)}
+                if is_wind:
+                    # sweep direction so it crosses the 0/360 wrap (tests the break)
+                    point["direction"] = round((300 + i * 25) % 360, 0)
+                series.append(point)
+            payload = {"unit": unit, "series": series}
+            if is_wind:
+                payload["direction_unit"] = "°"
+            self._json(payload)
         else:
             self.send_response(404)
             self.end_headers()
