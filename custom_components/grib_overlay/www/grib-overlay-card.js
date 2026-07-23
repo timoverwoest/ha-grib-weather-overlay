@@ -358,6 +358,7 @@ class GribOverlayCard extends HTMLElement {
           <option value="raster">Raster</option>
           <option value="particles">Wind (deeltjes)</option>
           <option value="vectors">Wind (vectoren)</option>
+          <option value="wavevectors">Golfrichting (pijlen)</option>
         </select>
       </div>
       <div class="map-container"><div class="map"></div><div class="readout hidden"></div></div>
@@ -442,6 +443,7 @@ class GribOverlayCard extends HTMLElement {
     this._boundsFit = false;
     this._windCache = new Map(); // wind_url -> fetched velocity data
     this._fieldCache = new Map(); // field_url -> fetched scalar grid
+    this._paramFramesCache = new Map(); // param key -> frames (for wave arrows)
   }
 
   // -- data loading -----------------------------------------------------------
@@ -478,7 +480,7 @@ class GribOverlayCard extends HTMLElement {
     });
     // Wind-vector arrows are redrawn whenever the map moves/zooms/resizes.
     this._map.on("moveend zoomend resize", () => {
-      if (this._renderMode === "vectors") this._drawVectors();
+      if (this._renderMode === "vectors" || this._renderMode === "wavevectors") this._drawVectors();
     });
 
     // Observe resizes and force an initial re-measure, so tiles/overlay render
@@ -615,6 +617,7 @@ class GribOverlayCard extends HTMLElement {
     this._removeVectors();
     this._closePointPopup();
     this._readoutSource = null;
+    this._paramFramesCache.clear(); // frames may be a fresh run
     this._els.readout.classList.add("hidden");
     this._syncRenderModeAvailability();
     this._populateAnimationSelects();
@@ -658,13 +661,13 @@ class GribOverlayCard extends HTMLElement {
     const frame = this._frames[index];
     if (!frame) return;
     this._frameIndex = index;
-    const windMode = this._windMode(); // "particles" | "vectors" | null
+    const mode = this._activeMode(); // particles | vectors | wavevectors | null
     const [south, west, north, east] = frame.bounds;
     const bounds = [[south, west], [north, east]];
 
-    // In a wind mode the coloured raster stays as a dimmed background under the
-    // particles/arrows (the windy.com look); otherwise it's the overlay.
-    const opacity = windMode ? 0.45 : 0.75;
+    // In an overlay mode the coloured raster stays as a dimmed background under
+    // the particles/arrows (the windy.com look); otherwise it's the overlay.
+    const opacity = mode ? 0.45 : 0.75;
     if (!this._imageOverlay) {
       this._imageOverlay = window.L.imageOverlay(frame.image_url, bounds, { opacity }).addTo(this._map);
     } else {
@@ -673,12 +676,15 @@ class GribOverlayCard extends HTMLElement {
       this._imageOverlay.setOpacity(opacity);
     }
 
-    if (windMode === "particles") {
+    if (mode === "particles") {
       this._removeVectors();
       this._updateWindLayer(frame);
-    } else if (windMode === "vectors") {
+    } else if (mode === "vectors") {
       this._removeWindLayer();
       this._updateVectors(frame);
+    } else if (mode === "wavevectors") {
+      this._removeWindLayer();
+      this._updateWaveVectors(frame);
     } else {
       this._removeWindLayer();
       this._removeVectors();
@@ -776,6 +782,112 @@ class GribOverlayCard extends HTMLElement {
     return this._frames.some((f) => f.wind_url);
   }
 
+  // -- wave direction arrows --------------------------------------------------
+  // Waves store direction (deg) and height (m) as separate scalar parameters,
+  // so the arrows are synthesised from those two fields (unlike wind's u/v).
+
+  _paramByUnit(unit) {
+    const entry = this._currentEntry();
+    return (entry && entry.parameters.find((p) => p.unit === unit)) || null;
+  }
+
+  _directionParam() {
+    return this._paramByUnit("°");
+  }
+
+  _hasWaveVectors() {
+    return !!this._directionParam();
+  }
+
+  // The active overlay mode, honouring what the current data supports.
+  _activeMode() {
+    if ((this._renderMode === "particles" || this._renderMode === "vectors") && this._paramHasWind()) {
+      return this._renderMode;
+    }
+    if (this._renderMode === "wavevectors" && this._hasWaveVectors()) return "wavevectors";
+    return null;
+  }
+
+  async _fetchParamFrames(paramKey) {
+    if (this._paramFramesCache.has(paramKey)) return this._paramFramesCache.get(paramKey);
+    const entry = this._currentEntry();
+    const data = await this._hass.callApi(
+      "GET",
+      `grib_overlay/frames/${entry.entry_id}?parameter=${encodeURIComponent(paramKey)}`
+    );
+    const frames = (data[paramKey] || []).slice().sort((a, b) => a.valid_time.localeCompare(b.valid_time));
+    this._paramFramesCache.set(paramKey, frames);
+    return frames;
+  }
+
+  async _frameForParamAt(paramKey, validTime) {
+    const frames = await this._fetchParamFrames(paramKey);
+    return frames.find((f) => f.valid_time === validTime) || null;
+  }
+
+  async _updateWaveVectors(frame) {
+    const dirParam = this._directionParam();
+    if (!dirParam) {
+      this._removeVectors();
+      return;
+    }
+    const heightParam = this._paramByUnit("m");
+    const token = (this._windToken = (this._windToken || 0) + 1);
+    let dirField;
+    let magField = null;
+    try {
+      const dirFrame = await this._frameForParamAt(dirParam.key, frame.valid_time);
+      if (!dirFrame || !dirFrame.field_url) {
+        this._removeVectors();
+        return;
+      }
+      dirField = await this._fetchJson(dirFrame.field_url, this._fieldCache);
+      if (heightParam) {
+        const magFrame = await this._frameForParamAt(heightParam.key, frame.valid_time);
+        if (magFrame && magFrame.field_url) {
+          magField = await this._fetchJson(magFrame.field_url, this._fieldCache);
+        }
+      }
+    } catch (err) {
+      return;
+    }
+    if (token !== this._windToken || this._activeMode() !== "wavevectors") return;
+    this._vectorData = this._buildWaveVectorData(dirField, magField);
+    this._drawVectors();
+  }
+
+  // Turn a direction field (deg, "from") + optional height field (m) into the
+  // same u/v structure the arrow drawer consumes. Arrow points the way the
+  // waves travel (direction + 180), length scales with height (or uniform).
+  _buildWaveVectorData(dirField, magField) {
+    const n = dirField.data.length;
+    const u = new Array(n).fill(0);
+    const v = new Array(n).fill(0);
+    const sameGrid =
+      magField && magField.data && magField.data.length === n && magField.nx === dirField.nx;
+    for (let i = 0; i < n; i++) {
+      const dir = dirField.data[i];
+      if (dir == null) continue;
+      let mag = 1;
+      if (sameGrid) {
+        mag = magField.data[i];
+        if (mag == null) continue;
+      }
+      const travel = ((dir + 180) * Math.PI) / 180; // meteorological "from" -> travel
+      u[i] = mag * Math.sin(travel);
+      v[i] = mag * Math.cos(travel);
+    }
+    const header = {
+      nx: dirField.nx,
+      ny: dirField.ny,
+      lo1: dirField.lo1,
+      la1: dirField.la1,
+      dx: dirField.dx,
+      dy: dirField.dy,
+    };
+    return [{ header, data: u }, { header, data: v }];
+  }
+
   async _fetchWind(url) {
     if (this._windCache.has(url)) return this._windCache.get(url);
     // url is like "/api/grib_overlay/wind/..."; hass.callApi wants it without /api/.
@@ -855,7 +967,8 @@ class GribOverlayCard extends HTMLElement {
   }
 
   _drawVectors() {
-    if (!this._vectorData || this._windMode() !== "vectors") return;
+    const m = this._activeMode();
+    if (!this._vectorData || (m !== "vectors" && m !== "wavevectors")) return;
     this._ensureVectorSvg();
     const svg = this._vectorSvg;
     // Clear previous arrows (keep <defs>).
@@ -1027,20 +1140,30 @@ class GribOverlayCard extends HTMLElement {
       return nf * Math.pow(10, exp);
     };
 
-    // ---- y scale: expand data range to nice bounds so majors are round ----
-    const vals = pts.map((p) => p.v);
-    let dmin = Math.min(...vals);
-    let dmax = Math.max(...vals);
-    if (dmax - dmin < 1e-6) {
-      dmin -= 1;
-      dmax += 1;
+    // ---- y scale ----
+    // A direction parameter (deg) always spans the full compass 0-360, so its
+    // axis is fixed rather than scaled to the data range.
+    const isDirection = sourceUnit === "°";
+    let vmin, vmax, yStep, yMinorStep;
+    if (isDirection) {
+      vmin = 0;
+      vmax = 360;
+      yStep = 90;
+      yMinorStep = 30;
+    } else {
+      const vals = pts.map((p) => p.v);
+      let dmin = Math.min(...vals);
+      let dmax = Math.max(...vals);
+      if (dmax - dmin < 1e-6) {
+        dmin -= 1;
+        dmax += 1;
+      }
+      yStep = niceNum((dmax - dmin) / 4, true); // expand to nice, round bounds
+      vmin = Math.floor(dmin / yStep) * yStep;
+      vmax = Math.ceil(dmax / yStep) * yStep;
+      const yMant = Math.round(yStep / Math.pow(10, Math.floor(Math.log10(yStep))));
+      yMinorStep = yStep / (yMant === 2 ? 4 : 5); // keep minor steps round
     }
-    const yStep = niceNum((dmax - dmin) / 4, true);
-    const vmin = Math.floor(dmin / yStep) * yStep;
-    const vmax = Math.ceil(dmax / yStep) * yStep;
-    const yMant = Math.round(yStep / Math.pow(10, Math.floor(Math.log10(yStep))));
-    const yMinorDiv = yMant === 2 ? 4 : 5; // keep minor steps round
-    const yMinorStep = yStep / yMinorDiv;
 
     // ---- x scale: clock-aligned hourly ticks; majors every N hours ----
     const t0 = pts[0].t;
@@ -1078,9 +1201,9 @@ class GribOverlayCard extends HTMLElement {
     // Minor y tick marks (skip positions that coincide with a major).
     const nYm = Math.round((vmax - vmin) / yMinorStep);
     for (let j = 0; j <= nYm; j++) {
-      if (j % yMinorDiv === 0) continue;
-      const y = sy(vmin + j * yMinorStep).toFixed(1);
-      parts.push(`<line x1="${px0 - 3}" y1="${y}" x2="${px0}" y2="${y}" stroke="#c2c9cf"/>`);
+      const v = vmin + j * yMinorStep;
+      if (Math.abs(v / yStep - Math.round(v / yStep)) < 1e-6) continue; // on a major
+      parts.push(`<line x1="${px0 - 3}" y1="${sy(v).toFixed(1)}" x2="${px0}" y2="${sy(v).toFixed(1)}" stroke="#c2c9cf"/>`);
     }
     // Major vertical gridlines + x labels + major x ticks; minor x ticks between.
     const pad2 = (n) => (n < 10 ? "0" + n : "" + n);
@@ -1174,19 +1297,26 @@ class GribOverlayCard extends HTMLElement {
 
   _onRenderModeChange() {
     const v = this._els.renderModeSelect.value;
-    this._renderMode = v === "particles" || v === "vectors" ? v : "raster";
+    this._renderMode = ["particles", "vectors", "wavevectors"].includes(v) ? v : "raster";
     if (this._frames.length) this._showFrame(this._frameIndex || 0);
   }
 
-  // Enable/disable the wind options based on whether the current parameter has
-  // wind data; fall back to raster when it doesn't.
+  // Enable/disable overlay modes based on the available data: wind modes need a
+  // wind (u/v) parameter, the wave-arrow mode needs a wave-direction parameter.
   _syncRenderModeAvailability() {
     const hasWind = this._paramHasWind();
     for (const value of ["particles", "vectors"]) {
       const opt = this._els.renderModeSelect.querySelector(`option[value="${value}"]`);
       if (opt) opt.disabled = !hasWind;
     }
+    const hasWave = this._hasWaveVectors();
+    const waveOpt = this._els.renderModeSelect.querySelector('option[value="wavevectors"]');
+    if (waveOpt) waveOpt.disabled = !hasWave;
+
     if (!hasWind && (this._renderMode === "particles" || this._renderMode === "vectors")) {
+      this._renderMode = "raster";
+    }
+    if (!hasWave && this._renderMode === "wavevectors") {
       this._renderMode = "raster";
     }
     this._els.renderModeSelect.value = this._renderMode;

@@ -48,6 +48,14 @@ LEGENDS = {
         {"offset": 0.5, "color": "#ffffbf"}, {"offset": 0.75, "color": "#fc8d59"},
         {"offset": 1.0, "color": "#a50026"},
     ]},
+    "wave_height": {"unit": "m", "min_value": 0, "max_value": 8, "stops": [
+        {"offset": 0.0, "color": "#0c2c5c"}, {"offset": 0.4, "color": "#40bebe"},
+        {"offset": 0.6, "color": "#f0d66a"}, {"offset": 1.0, "color": "#961a5a"},
+    ]},
+    "wave_direction": {"unit": "°", "min_value": 0, "max_value": 360, "stops": [
+        {"offset": 0.0, "color": "#d73027"}, {"offset": 0.5, "color": "#3cb4c8"},
+        {"offset": 1.0, "color": "#d73027"},
+    ]},
 }
 
 ENTRY_ID = "mock_entry_1"
@@ -55,6 +63,8 @@ PARAMETERS = [
     {"key": "wind_10m", "name": "Wind (10m)", "unit": "m/s", "colormap": "wind"},
     {"key": "precipitation", "name": "Neerslag", "unit": "mm", "colormap": "precipitation"},
     {"key": "temperature_2m", "name": "Temperatuur (2m)", "unit": "°C", "colormap": "temperature"},
+    {"key": "wave_height", "name": "Golfhoogte (significant)", "unit": "m", "colormap": "wave"},
+    {"key": "wave_direction", "name": "Golfrichting", "unit": "°", "colormap": "direction"},
 ]
 
 

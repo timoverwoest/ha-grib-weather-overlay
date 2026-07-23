@@ -334,9 +334,10 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
     MANIFEST_NAME = "frames.json"
     # Bump when the on-disk artifacts a run produces change (e.g. field grids
-    # added in v0.5.0). A cached run with an older version is treated as
-    # incomplete and re-processed so the new artifacts get generated.
-    MANIFEST_VERSION = 2
+    # added in v0.5.0) or need regenerating (v3: PNGs re-rendered with the
+    # Web-Mercator row warp so wide overlays line up). A cached run with an
+    # older version is re-processed so the corrected artifacts get generated.
+    MANIFEST_VERSION = 3
 
     def _write_frames_manifest(
         self, run_dir: Path, run_filename: str, frames: dict[str, list[Frame]]
