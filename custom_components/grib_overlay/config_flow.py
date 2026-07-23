@@ -50,7 +50,7 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             source_key = user_input[CONF_SOURCE]
-            api_key = user_input[CONF_API_KEY]
+            api_key = user_input.get(CONF_API_KEY, "")
             source_cls = get_source_class(source_key)
             session = async_get_clientsession(self.hass)
             source = source_cls(session, api_key)
@@ -77,7 +77,8 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_SOURCE, default="knmi"): vol.In(
                     {key: cls.name for key, cls in SOURCE_REGISTRY.items()}
                 ),
-                vol.Required(CONF_API_KEY): str,
+                # Optional: KNMI needs an Open Data key; DWD Open Data does not.
+                vol.Optional(CONF_API_KEY, default=""): str,
                 vol.Optional(CONF_NOTIFICATION_API_KEY): str,
             }
         )

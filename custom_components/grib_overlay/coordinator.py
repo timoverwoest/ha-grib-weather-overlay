@@ -197,30 +197,32 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             CONF_FORECAST_HORIZON_HOURS, DEFAULT_FORECAST_HORIZON_HOURS
         )
         run_dir = self.storage_dir / Path(filename).stem
-        tar_path = self.storage_dir / filename
 
-        await self.source.async_download_file(dataset, filename, tar_path)
-        try:
-            new_frames = await self.hass.async_add_executor_job(
-                self._extract_decode_and_render, tar_path, run_dir, parameters, horizon_hours
+        if getattr(self.source, "provides_archive", True):
+            # KNMI: one .tar archive holds every lead-time member.
+            tar_path = self.storage_dir / filename
+            await self.source.async_download_file(dataset, filename, tar_path)
+            try:
+                member_paths = await self.hass.async_add_executor_job(
+                    self._extract_archive, tar_path, run_dir
+                )
+            finally:
+                await self.hass.async_add_executor_job(tar_path.unlink, True)
+        else:
+            # DWD: source fetches individual per-parameter/per-lead-time GRIB files.
+            member_paths = await self.source.async_download_run(
+                dataset, filename, run_dir, [p.key for p in parameters], horizon_hours
             )
-        finally:
-            await self.hass.async_add_executor_job(tar_path.unlink, True)
 
+        new_frames = await self.hass.async_add_executor_job(
+            self._decode_members, member_paths, run_dir, filename, parameters, horizon_hours
+        )
         self.frames = new_frames
 
-    def _extract_decode_and_render(
-        self,
-        tar_path: Path,
-        run_dir: Path,
-        parameters: list[GribParameter],
-        horizon_hours: float,
-    ) -> dict[str, list[Frame]]:
-        """Blocking: runs in the executor. Extracts, filters by horizon, decodes, renders."""
+    def _extract_archive(self, tar_path: Path, run_dir: Path) -> list[Path]:
+        """Blocking: extract every regular member of a run archive into run_dir."""
         run_dir.mkdir(parents=True, exist_ok=True)
-        new_frames: dict[str, list[Frame]] = {p.key: [] for p in parameters}
-        run_time: datetime | None = None
-
+        member_paths: list[Path] = []
         with tarfile.open(tar_path, "r") as tar:
             for member in tar.getmembers():
                 if not member.isfile():
@@ -228,33 +230,54 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                 extracted_path = run_dir / Path(member.name).name
                 with tar.extractfile(member) as src, extracted_path.open("wb") as dst:
                     shutil.copyfileobj(src, dst)
+                member_paths.append(extracted_path)
+        return member_paths
 
+    def _decode_members(
+        self,
+        member_paths: list[Path],
+        run_dir: Path,
+        run_filename: str,
+        parameters: list[GribParameter],
+        horizon_hours: float,
+    ) -> dict[str, list[Frame]]:
+        """Blocking: filter each member by horizon, decode+render every parameter it holds.
+
+        Works for both KNMI (each member is one lead time containing all
+        parameters) and DWD (each file is one parameter for one lead time);
+        parameters not present in a member just raise GribDecodeError and skip.
+        """
+        run_dir.mkdir(parents=True, exist_ok=True)
+        new_frames: dict[str, list[Frame]] = {p.key: [] for p in parameters}
+        run_time: datetime | None = None
+
+        for member_path in member_paths:
+            try:
+                valid_time, member_run_time = grib_decode.peek_valid_time(member_path)
+            except grib_decode.GribDecodeError as err:
+                _LOGGER.debug("Skipping unreadable member %s: %s", member_path.name, err)
+                member_path.unlink(missing_ok=True)
+                continue
+
+            run_time = run_time or member_run_time
+            if valid_time - member_run_time > timedelta(hours=horizon_hours):
+                member_path.unlink(missing_ok=True)
+                continue
+
+            for parameter in parameters:
                 try:
-                    valid_time, member_run_time = grib_decode.peek_valid_time(extracted_path)
+                    frame = self._process_parameter(parameter, member_path, run_dir)
                 except grib_decode.GribDecodeError as err:
-                    _LOGGER.debug("Skipping unreadable member %s: %s", member.name, err)
-                    extracted_path.unlink(missing_ok=True)
+                    _LOGGER.debug(
+                        "Parameter %s not in member %s: %s", parameter.key, member_path.name, err
+                    )
                     continue
-
-                run_time = run_time or member_run_time
-                if valid_time - member_run_time > timedelta(hours=horizon_hours):
-                    extracted_path.unlink(missing_ok=True)
-                    continue
-
-                for parameter in parameters:
-                    try:
-                        frame = self._process_parameter(parameter, extracted_path, run_dir)
-                    except grib_decode.GribDecodeError as err:
-                        _LOGGER.debug(
-                            "Parameter %s not in member %s: %s", parameter.key, member.name, err
-                        )
-                        continue
-                    new_frames[parameter.key].append(frame)
-                extracted_path.unlink(missing_ok=True)
+                new_frames[parameter.key].append(frame)
+            member_path.unlink(missing_ok=True)
 
         for frames in new_frames.values():
             frames.sort(key=lambda f: f.valid_time)
-        self._write_frames_manifest(run_dir, tar_path.name, new_frames)
+        self._write_frames_manifest(run_dir, run_filename, new_frames)
         return new_frames
 
     def _process_parameter(

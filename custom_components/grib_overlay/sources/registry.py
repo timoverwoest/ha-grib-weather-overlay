@@ -8,10 +8,12 @@ to change.
 from __future__ import annotations
 
 from .base import GribSource
+from .dwd import DwdSource
 from .knmi import KnmiSource
 
 SOURCE_REGISTRY: dict[str, type[GribSource]] = {
     KnmiSource.key: KnmiSource,
+    DwdSource.key: DwdSource,
 }
 
 

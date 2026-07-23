@@ -102,11 +102,35 @@ class GribSource(ABC):
     ) -> list[GribFileInfo]:
         """List available files (forecast runs) for a dataset, most recent first by default."""
 
+    # True when async_list_files returns a single archive per run (KNMI .tar,
+    # downloaded via async_download_file and extracted by the coordinator).
+    # False when the source instead delivers individual per-parameter GRIB files
+    # for a run, materialised by async_download_run (DWD).
+    provides_archive: bool = True
+
     @abstractmethod
     async def async_download_file(
         self, dataset: GribDatasetInfo, filename: str, destination: Path
     ) -> Path:
-        """Download one file to ``destination`` and return the path it was written to."""
+        """Download one file to ``destination`` and return the path it was written to.
+
+        Only meaningful for archive sources (``provides_archive`` True).
+        """
+
+    async def async_download_run(
+        self,
+        dataset: GribDatasetInfo,
+        run_id: str,
+        run_dir: Path,
+        param_keys: list[str],
+        horizon_hours: float,
+    ) -> list[Path]:
+        """Download a run's individual GRIB member files into ``run_dir``.
+
+        Returns the local paths (one GRIB file per parameter per lead time,
+        within ``horizon_hours``). Only used when ``provides_archive`` is False.
+        """
+        raise NotImplementedError
 
     # Optional: sources may push new-file notifications (e.g. KNMI's MQTT
     # Notification Service) so the coordinator doesn't have to wait for its

@@ -70,6 +70,31 @@ COLORMAPS: dict[str, tuple[ColorStop, ...]] = {
         ColorStop(0.66, (233, 216, 71)),
         ColorStop(1.0, (180, 30, 30)),
     ),
+    # Wave height: calm sea blue -> rising -> dangerous. Distinct from the wind
+    # ramp (starts deeper/oceanic).
+    "wave": (
+        ColorStop(0.0, (12, 44, 92)),
+        ColorStop(0.2, (32, 120, 180)),
+        ColorStop(0.4, (64, 190, 190)),
+        ColorStop(0.6, (240, 214, 106)),
+        ColorStop(0.8, (232, 120, 60)),
+        ColorStop(1.0, (150, 30, 90)),
+    ),
+    # Wave period: short (choppy) -> long (swell).
+    "wave_period": (
+        ColorStop(0.0, (69, 117, 180)),
+        ColorStop(0.4, (145, 191, 163)),
+        ColorStop(0.7, (254, 224, 139)),
+        ColorStop(1.0, (215, 48, 39)),
+    ),
+    # Direction (0-360 deg): cyclic, so 0 and 360 share a colour.
+    "direction": (
+        ColorStop(0.0, (215, 48, 39)),
+        ColorStop(0.25, (120, 190, 90)),
+        ColorStop(0.5, (60, 180, 200)),
+        ColorStop(0.75, (70, 90, 200)),
+        ColorStop(1.0, (215, 48, 39)),
+    ),
 }
 
 

@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import grib1, reproject
+from . import grib1, grib2, reproject
 from .sources.base import GribParameter
 
 
@@ -64,7 +64,22 @@ def _grib_datetime(date_int: int, time_int: int) -> datetime:
 _TIME_UNIT_HOURS = {0: 1 / 60, 1: 1, 2: 24, 10: 3, 11: 6, 12: 12, 13: 0.25}
 
 
-def _message_times(message: grib1.Grib1Message) -> tuple[datetime, datetime]:
+def _iter_messages(buf: bytes):
+    """Yield messages from a GRIB1 or GRIB2 buffer, dispatching on the edition."""
+    idx = buf.find(b"GRIB")
+    edition = buf[idx + 7] if idx >= 0 else 1
+    return (grib2 if edition == 2 else grib1).iter_messages(buf)
+
+
+def _to_grid(message):
+    """Grid extraction dispatched by message type (GRIB1 vs GRIB2)."""
+    module = grib2 if isinstance(message, grib2.Grib2Message) else grib1
+    return module.to_grid(message)
+
+
+def _message_times(message) -> tuple[datetime, datetime]:
+    if isinstance(message, grib2.Grib2Message):
+        return grib2.message_times(message)
     run_time = _grib_datetime(message.data_date, message.data_time)
     unit_hours = _TIME_UNIT_HOURS.get(message.unit_of_time_range, 1)
     # timeRangeIndicator 0/1 = instantaneous forecast valid at reference + P1.
@@ -76,8 +91,8 @@ def _message_times(message: grib1.Grib1Message) -> tuple[datetime, datetime]:
     return valid_time, run_time
 
 
-def _load_messages(path: Path) -> list[grib1.Grib1Message]:
-    return list(grib1.iter_messages(path.read_bytes()))
+def _load_messages(path: Path) -> list:
+    return list(_iter_messages(path.read_bytes()))
 
 
 def _find(messages: list[grib1.Grib1Message], filt: dict) -> grib1.Grib1Message | None:
@@ -92,7 +107,7 @@ def peek_valid_time(path: Path) -> tuple[datetime, datetime]:
     configured parameter out of it.
     """
     buf = path.read_bytes()
-    for message in grib1.iter_messages(buf):
+    for message in _iter_messages(buf):
         return _message_times(message)
     raise GribDecodeError(f"{path} contains no GRIB messages")
 
@@ -108,8 +123,8 @@ def decode_parameter(path: Path, parameter: GribParameter) -> DecodedField:
             raise GribDecodeError(
                 f"Vector parameter '{parameter.key}' missing u/v component in {path}"
             )
-        u_grid, lats, lons = grib1.to_grid(u_msg)
-        v_grid, _, _ = grib1.to_grid(v_msg)
+        u_grid, lats, lons = _to_grid(u_msg)
+        v_grid, _, _ = _to_grid(v_msg)
         valid_time, run_time = _message_times(u_msg)
         # Wind speed (magnitude) is rotation-invariant, so for the scalar field
         # we can resample it directly -- no need to rotate the components.
@@ -120,7 +135,7 @@ def decode_parameter(path: Path, parameter: GribParameter) -> DecodedField:
         msg = _find(messages, parameter.grib_filter)
         if msg is None:
             raise GribDecodeError(f"Parameter '{parameter.key}' not found in {path}")
-        grid, lats, lons = grib1.to_grid(msg)
+        grid, lats, lons = _to_grid(msg)
         valid_time, run_time = _message_times(msg)
         data = grid * parameter.scale + parameter.offset
         if msg.rotation is not None:
@@ -148,8 +163,8 @@ def decode_vector_components(path: Path, parameter: GribParameter) -> DecodedVec
         raise GribDecodeError(
             f"Vector parameter '{parameter.key}' missing u/v component in {path}"
         )
-    u_grid, lats, lons = grib1.to_grid(u_msg)
-    v_grid, _, _ = grib1.to_grid(v_msg)
+    u_grid, lats, lons = _to_grid(u_msg)
+    v_grid, _, _ = _to_grid(v_msg)
     valid_time, run_time = _message_times(u_msg)
     if u_msg.rotation is not None:
         # Rotated grid: resample AND rotate the components to true east/north so

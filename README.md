@@ -5,16 +5,23 @@ als kleurenlaag over een [OpenSeaMap](https://map.openseamap.org)-kaart in
 Home Assistant. Je kiest een tijdstip via een slider, of een begin/eind/stap
 om een animatie van de voorspelling af te spelen.
 
-Eerste databron: [KNMI Data Platform](https://dataplatform.knmi.nl/) (HARMONIE-AROME
-model, Nederland). De integratie is opgezet met een `GribSource`-interface
-zodat later andere bronnen toegevoegd kunnen worden zonder de kaart-kaart of
-de rest van de backend te hoeven aanpassen.
+Databronnen (via een `GribSource`-interface, zodat bronnen toegevoegd kunnen
+worden zonder de kaart of de rest van de backend te wijzigen):
+
+- [KNMI Data Platform](https://dataplatform.knmi.nl/) — HARMONIE-AROME
+  (Nederland en Europa/DINI), GRIB1. Vereist een gratis Open Data-sleutel.
+- [DWD Open Data](https://opendata.dwd.de/) — het **EWAM golfmodel** voor de
+  Europese zeeën (significante golfhoogte, gemiddelde golfrichting en -periode),
+  GRIB2, **zonder sleutel**.
 
 ## Features
 
 - Configureerbare parameters: wind (10m), windstoten, temperatuur (2m),
   dauwpunt (2m), relatieve luchtvochtigheid (2m), neerslag, luchtdruk
   (zeeniveau), zicht, bewolking.
+- **Golven** (DWD EWAM): significante golfhoogte, gemiddelde golfrichting en
+  golfperiode als kleurlaag over de Europese zeeën — met meteogram en
+  waarde-onder-de-muis, net als de andere parameters.
 - Eén-tijdstip-slider én een animatiemodus (begin, eind, stap, afspeelsnelheid).
 - **Windy.com-stijl geanimeerde deeltjes voor wind** (via de meegeleverde
   `leaflet-velocity`), naast de gekleurde raster-overlay. Kies "Wind (deeltjes)"
@@ -43,8 +50,9 @@ de rest van de backend te hoeven aanpassen.
 ## Vereisten
 
 - Home Assistant OS of Supervised. Alle dependencies zijn pure-Python /
-  universele wheels (`numpy`, `Pillow`, `paho-mqtt`); GRIB1 wordt door een
-  meegeleverde eigen decoder gelezen, dus er is géén `eccodes`/`cfgrib`
+  universele wheels (`numpy`, `Pillow`, `paho-mqtt`); zowel GRIB1 (KNMI) als
+  GRIB2 (DWD EWAM, simple packing) worden door een meegeleverde eigen decoder
+  gelezen, dus er is géén `eccodes`/`cfgrib`
   binaire library nodig (die heeft niet voor elke Python-versie/CPU een wheel
   en brak eerder de installatie).
 - Een gratis API-sleutel van het
@@ -69,12 +77,14 @@ de rest van de backend te hoeven aanpassen.
 
 1. Instellingen → Apparaten & diensten → Integratie toevoegen → "GRIB Weather
    Overlay".
-2. Kies de bron (KNMI Data Platform) en vul je Open Data API-sleutel in. Deze
-   sleutel wordt ook voor de push-notificaties (MQTT) gebruikt; het optionele
-   **Notification Service API-sleutel**-veld kun je leeg laten (alleen invullen
-   als je bewust een aparte sleutel wilt gebruiken).
-3. Kies een dataset: HARMONIE-AROME Cy43 **Nederland** (standaard) of **Europa
-   (DINI)** — dezelfde parameters, groter gebied (zie Bekende beperkingen).
+2. Kies de bron. Voor **KNMI Data Platform** vul je je Open Data API-sleutel in
+   (die wordt ook voor de push-notificaties/MQTT gebruikt; het optionele
+   **Notification Service API-sleutel**-veld kun je leeg laten). Voor **DWD Open
+   Data (golven)** laat je de sleutel-velden leeg — DWD heeft geen sleutel nodig.
+3. Kies een dataset. KNMI: HARMONIE-AROME Cy43 **Nederland** (standaard) of
+   **Europa (DINI)**. DWD: **EWAM** (Europese golven). Wil je zowel weer als
+   golven, voeg dan twee integratie-instanties toe (één per bron); in de kaart
+   wissel je tussen instanties.
 4. Kies welke parameters bijgehouden moeten worden.
 5. Optioneel: pas via de integratie-opties de voorspellingshorizon (default
    24 uur, max 60 uur — zo ver reikt de KNMI HARMONIE-voorspelling), het aantal
@@ -163,6 +173,10 @@ De legenda en het label in de parameterkeuze worden dan automatisch omgerekend.
   voorspellingshorizon niet hoger dan nodig.
 - De **ensemble**-variant `harmonie_arome_cy43_p4a` (EPS) wordt nog niet
   ondersteund; die vereist een keuze/aggregatie over de ensembleleden.
+- Van **DWD Open Data** wordt (voorlopig) alleen het **EWAM golfmodel**
+  ondersteund. EWAM gebruikt eenvoudige GRIB2-packing en is dus zonder binaire
+  library te lezen; andere DWD-modellen (bijv. ICON-EU) gebruiken vaak
+  CCSDS/AEC- of JPEG2000-compressie, wat wél zo'n library zou vereisen.
 
 ## Ontwikkelen & testen
 
