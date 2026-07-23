@@ -11,7 +11,10 @@ just numpy removes that fragile binary dependency entirely.
 Scope (verified bit-exact against ecCodes across every message in a real
 ``harmonie_arome_cy43_p1`` run):
 - GRIB edition 1 only.
-- Section 2 (GDS): regular lat/lon grid (data representation type 0).
+- Section 2 (GDS): regular lat/lon grid (data representation type 0) and
+  rotated lat/lon grid (type 10, used by the Europe ``p3`` dataset -- the
+  extra rotation-pole octets are read and exposed as ``rotation`` so callers
+  can reproject to a regular geographic grid; see reproject.py).
 - Section 3 (BMS): optional bitmap for missing values (in-line bitmap only,
   no predefined bitmap tables).
 - Section 4 (BDS): grid-point, simple packing; constant fields
@@ -62,6 +65,11 @@ class Grib1Message:
     scan_mode: int
     # Decoded data, flat, in the message's own scan order; NaN where missing.
     values: np.ndarray
+    # (south_pole_lat, south_pole_lon, angle_of_rotation) for a rotated lat/lon
+    # grid (data representation type 10), else None. lat1/lon1/lat2/lon2 above
+    # are then in the *rotated* coordinate system; reproject.py maps them back
+    # to geographic coordinates.
+    rotation: tuple[float, float, float] | None = None
 
     def matches(self, filt: dict) -> bool:
         """True if every (key, value) in ``filt`` matches this message's PDS.
@@ -159,10 +167,19 @@ def _parse_message(msg: bytes) -> Grib1Message:
     gds_len = _u(msg[o:o + 3])
     gds = msg[o:o + gds_len]
     data_rep_type = gds[5]
-    if data_rep_type != 0:
+    # 0 = regular lat/lon; 10 = rotated lat/lon (same octet layout up to the
+    # scan mode, with three extra rotation-pole fields at octets 33-42).
+    if data_rep_type not in (0, 10):
         raise Grib1Error(f"unsupported grid data representation type {data_rep_type}")
     ni = _u(gds[6:8])
     nj = _u(gds[8:10])
+    rotation = None
+    if data_rep_type == 10:
+        rotation = (
+            _signed(_u(gds[32:35]), 24) / 1000.0,  # latitude of the southern pole
+            _signed(_u(gds[35:38]), 24) / 1000.0,  # longitude of the southern pole
+            _ibm_hex_float(gds[38:42]),            # angle of rotation
+        )
     rec.update(
         ni=ni,
         nj=nj,
@@ -171,6 +188,7 @@ def _parse_message(msg: bytes) -> Grib1Message:
         lat2=_signed(_u(gds[17:20]), 24) / 1000.0,
         lon2=_signed(_u(gds[20:23]), 24) / 1000.0,
         scan_mode=gds[27],
+        rotation=rotation,
     )
     o += gds_len
 

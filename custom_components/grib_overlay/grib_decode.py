@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import grib1
+from . import grib1, reproject
 from .sources.base import GribParameter
 
 
@@ -111,8 +111,11 @@ def decode_parameter(path: Path, parameter: GribParameter) -> DecodedField:
         u_grid, lats, lons = grib1.to_grid(u_msg)
         v_grid, _, _ = grib1.to_grid(v_msg)
         valid_time, run_time = _message_times(u_msg)
-        magnitude = np.sqrt(u_grid**2 + v_grid**2)
-        data = magnitude * parameter.scale + parameter.offset
+        # Wind speed (magnitude) is rotation-invariant, so for the scalar field
+        # we can resample it directly -- no need to rotate the components.
+        data = np.sqrt(u_grid**2 + v_grid**2) * parameter.scale + parameter.offset
+        if u_msg.rotation is not None:
+            data, lats, lons = reproject.regrid_scalar(data, lats, lons, u_msg.rotation)
     else:
         msg = _find(messages, parameter.grib_filter)
         if msg is None:
@@ -120,6 +123,8 @@ def decode_parameter(path: Path, parameter: GribParameter) -> DecodedField:
         grid, lats, lons = grib1.to_grid(msg)
         valid_time, run_time = _message_times(msg)
         data = grid * parameter.scale + parameter.offset
+        if msg.rotation is not None:
+            data, lats, lons = reproject.regrid_scalar(data, lats, lons, msg.rotation)
 
     return DecodedField(
         parameter_key=parameter.key,
@@ -146,6 +151,12 @@ def decode_vector_components(path: Path, parameter: GribParameter) -> DecodedVec
     u_grid, lats, lons = grib1.to_grid(u_msg)
     v_grid, _, _ = grib1.to_grid(v_msg)
     valid_time, run_time = _message_times(u_msg)
+    if u_msg.rotation is not None:
+        # Rotated grid: resample AND rotate the components to true east/north so
+        # particle/vector directions (and the meteogram bearing) stay correct.
+        u_grid, v_grid, lats, lons = reproject.regrid_vector(
+            u_grid, v_grid, lats, lons, u_msg.rotation
+        )
     return DecodedVector(
         u=u_grid, v=v_grid, lats=lats, lons=lons, valid_time=valid_time, run_time=run_time
     )

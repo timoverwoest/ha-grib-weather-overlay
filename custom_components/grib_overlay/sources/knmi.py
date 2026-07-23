@@ -181,6 +181,29 @@ KNOWN_DATASETS: tuple[GribDatasetInfo, ...] = (
         forecast_horizon_hours=48,
         parameters=_HARMONIE_NL_PARAMETERS,
     ),
+    # Same model + KNMI GRIB1 parameter table as p1, but the deterministic
+    # Europe (DINI) domain on a *rotated* lat/lon grid at ~0.05 deg. The rotated
+    # grid is reprojected to a regular geographic grid at decode time
+    # (grib_decode.py -> reproject.py), so the rest of the pipeline is unchanged.
+    # bounds below are the approximate geographic extent of the DINI domain,
+    # used only for the default map view; each frame's real image bounds come
+    # from the reprojected grid.
+    GribDatasetInfo(
+        key="harmonie_arome_cy43_p3",
+        name="HARMONIE-AROME Cy43 - Europa (DINI), near-surface parameters",
+        version="1.0",
+        description=(
+            "Uurlijkse deterministische HARMONIE-AROME voorspelling voor het "
+            "Europese DINI-domein, rotated lat-lon grid (~0,05°), near-surface "
+            "parameters. Wordt bij het decoderen naar een regulier geografisch "
+            "grid geprojecteerd."
+        ),
+        grid_type="rotated_latlon",
+        bounds=(39.0, -25.0, 72.0, 40.0),
+        output_frequency_hours=1,
+        forecast_horizon_hours=60,
+        parameters=_HARMONIE_NL_PARAMETERS,
+    ),
 )
 
 

@@ -73,8 +73,8 @@ de rest van de backend te hoeven aanpassen.
    sleutel wordt ook voor de push-notificaties (MQTT) gebruikt; het optionele
    **Notification Service API-sleutel**-veld kun je leeg laten (alleen invullen
    als je bewust een aparte sleutel wilt gebruiken).
-3. Kies een dataset (standaard: HARMONIE-AROME Cy43, Nederland, near-surface
-   parameters).
+3. Kies een dataset: HARMONIE-AROME Cy43 **Nederland** (standaard) of **Europa
+   (DINI)** — dezelfde parameters, groter gebied (zie Bekende beperkingen).
 4. Kies welke parameters bijgehouden moeten worden.
 5. Optioneel: pas via de integratie-opties de voorspellingshorizon (default
    24 uur), het aantal bewaarde forecast-runs (default 2) en het poll-interval
@@ -153,10 +153,15 @@ De legenda en het label in de parameterkeuze worden dan automatisch omgerekend.
   hergebruikt (geen nieuwe download), en de eventuele download van een nieuwere
   run gebeurt op de achtergrond — de integratie is meteen na de start
   beschikbaar met de reeds gecachte beelden.
-- Op dit moment wordt alleen de `harmonie_arome_cy43_p1`-dataset (Nederland,
-  regular lat-lon grid) ondersteund. De Europese rotated-lat-lon varianten
-  vereisen een extra reprojectiestap die nog niet is geïmplementeerd.
-- De rotated-lat-lon Europa-varianten worden nog niet ondersteund (zie boven).
+- Ondersteunde datasets: `harmonie_arome_cy43_p1` (Nederland, regular lat-lon)
+  en `harmonie_arome_cy43_p3` (Europa/DINI-domein, deterministisch). Die laatste
+  staat op een **rotated lat-lon grid** en wordt bij het decoderen naar een
+  regulier geografisch grid geprojecteerd (inclusief het meedraaien van de
+  wind-u/v-componenten naar echt noord/oost). Het Europa-domein is groter, dus
+  download en verwerking kosten meer tijd/geheugen dan Nederland — zet de
+  voorspellingshorizon niet hoger dan nodig.
+- De **ensemble**-variant `harmonie_arome_cy43_p4a` (EPS) wordt nog niet
+  ondersteund; die vereist een keuze/aggregatie over de ensembleleden.
 
 ## Ontwikkelen & testen
 
