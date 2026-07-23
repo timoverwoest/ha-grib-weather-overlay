@@ -178,7 +178,7 @@ KNOWN_DATASETS: tuple[GribDatasetInfo, ...] = (
         grid_type="regular_latlon",
         bounds=(49.0, 0.0, 56.002, 11.281),
         output_frequency_hours=1,
-        forecast_horizon_hours=48,
+        forecast_horizon_hours=60,  # KNMI HARMONIE-AROME forecasts run to +60h
         parameters=_HARMONIE_NL_PARAMETERS,
     ),
     # Same model + KNMI GRIB1 parameter table as p1, but the deterministic

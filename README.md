@@ -77,8 +77,9 @@ de rest van de backend te hoeven aanpassen.
    (DINI)** — dezelfde parameters, groter gebied (zie Bekende beperkingen).
 4. Kies welke parameters bijgehouden moeten worden.
 5. Optioneel: pas via de integratie-opties de voorspellingshorizon (default
-   24 uur), het aantal bewaarde forecast-runs (default 2) en het poll-interval
-   (default 30 minuten) aan.
+   24 uur, max 60 uur — zo ver reikt de KNMI HARMONIE-voorspelling), het aantal
+   bewaarde forecast-runs (default 2) en het poll-interval (default 30 minuten)
+   aan.
 
 ## Kaart toevoegen aan een dashboard
 
