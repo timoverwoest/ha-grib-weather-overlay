@@ -1108,14 +1108,14 @@ class GribOverlayCard extends HTMLElement {
       const compassLbl = { 0: "N", 90: "O", 180: "Z", 270: "W", 360: "N" };
       // Major label per style: compass letters or the numeric bearing (0-360).
       const dirLabel = (d) => (dirMode === "deg" ? String(d) : compassLbl[d]);
-      // Right axis line + fine 5-deg minor ticks (longer at 45s) + 90-deg majors.
+      // Right axis line + 10-deg minor ticks (longer at 45s) + 90-deg majors.
       parts.push(`<line x1="${px1}" y1="${py0}" x2="${px1}" y2="${py1}" stroke="#e0a274"/>`);
-      for (let d = 5; d < 360; d += 5) {
+      for (let d = 10; d < 360; d += 10) {
         if (d % 90 === 0) continue; // majors drawn below
         const y = sy2(d).toFixed(1);
-        const medium = d % 45 === 0;
+        const medium = d % 30 === 0; // 30/60/120... slightly longer for orientation
         parts.push(
-          `<line x1="${px1}" y1="${y}" x2="${(px1 + (medium ? 3 : 1.5)).toFixed(1)}" y2="${y}" stroke="${medium ? "#f0b487" : "#f3c6a0"}"/>`
+          `<line x1="${px1}" y1="${y}" x2="${(px1 + (medium ? 4 : 2.5)).toFixed(1)}" y2="${y}" stroke="#f0b487"/>`
         );
       }
       for (let d = 0; d <= 360; d += 90) {
