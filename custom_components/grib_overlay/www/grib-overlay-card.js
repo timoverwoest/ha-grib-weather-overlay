@@ -1280,9 +1280,11 @@ class GribOverlayCard extends HTMLElement {
         .join("")
     );
 
+    // Primary series is wind speed or wave height, depending on the parameter.
+    const primaryLabel = sourceUnit === "m" ? "hoogte" : "snelheid";
     const legend = showDir
       ? `<div style="font-size:11px;margin-top:1px">` +
-        `<span style="color:var(--primary-color,#03a9f4)">━ snelheid (${unit})</span>` +
+        `<span style="color:var(--primary-color,#03a9f4)">━ ${primaryLabel} (${unit})</span>` +
         `&nbsp;&nbsp;<span style="color:${DIR_COLOR}">┅ richting (${dirMode === "deg" ? "°" : "kompas"})</span></div>`
       : "";
     return (

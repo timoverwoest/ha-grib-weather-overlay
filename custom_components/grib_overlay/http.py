@@ -236,6 +236,23 @@ class GribOverlayPointView(HomeAssistantView):
         # Wind parameters carry u/v grids, so we can add a direction series too.
         has_direction = any(wind_path is not None for _, _, wind_path in entries)
 
+        # Waves store height and direction as separate scalar parameters. For a
+        # non-direction parameter (e.g. wave height), attach the direction from a
+        # companion direction field (unit "deg") so its meteogram gets a second
+        # axis, just like wind's from-direction.
+        dir_by_time: dict[str, object] = {}
+        if unit != "°":
+            for key, comp_frames in coordinator.frames.items():
+                if key != parameter_key and comp_frames and comp_frames[0].legend.unit == "°":
+                    dir_by_time = {
+                        f.valid_time.isoformat(): f.field_path
+                        for f in comp_frames
+                        if f.field_path
+                    }
+                    break
+            if dir_by_time:
+                has_direction = True
+
         def _sample_all() -> list[dict]:
             series = []
             for valid_time, field_path, wind_path in entries:
@@ -253,6 +270,12 @@ class GribOverlayPointView(HomeAssistantView):
                     except (OSError, ValueError):
                         wind = None
                     point["direction"] = _wind_direction(wind, lat, lon) if wind else None
+                elif valid_time in dir_by_time:
+                    try:
+                        dfield = json.loads(dir_by_time[valid_time].read_text())
+                        point["direction"] = field_grid.sample_field(dfield, lat, lon)
+                    except (OSError, ValueError):
+                        point["direction"] = None
                 series.append(point)
             return series
 
