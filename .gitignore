@@ -16,3 +16,7 @@ dev/output/
 .claude/settings.local.json
 dev/wind_sample.json
 dev/field_*.json
+
+# Local-only conversation log; never pushed to GitHub.
+notes.md
+.claude/regenerate_notes.py
