@@ -88,6 +88,15 @@ COLORMAPS: dict[str, tuple[ColorStop, ...]] = {
         ColorStop(0.7, (254, 224, 139)),
         ColorStop(1.0, (215, 48, 39)),
     ),
+    # Ocean current speed: calm -> strong tidal stream.
+    "current": (
+        ColorStop(0.0, (20, 60, 110)),
+        ColorStop(0.25, (30, 150, 170)),
+        ColorStop(0.5, (110, 200, 120)),
+        ColorStop(0.7, (240, 214, 106)),
+        ColorStop(0.85, (232, 120, 60)),
+        ColorStop(1.0, (150, 30, 90)),
+    ),
     # Direction (0-360 deg): cyclic, so 0 and 360 share a colour.
     "direction": (
         ColorStop(0.0, (215, 48, 39)),

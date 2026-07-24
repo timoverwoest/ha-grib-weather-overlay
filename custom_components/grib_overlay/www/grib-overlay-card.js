@@ -356,8 +356,8 @@ class GribOverlayCard extends HTMLElement {
         <button class="mode-animate" data-mode="animate">Animatie</button>
         <select class="render-mode-select" title="Weergave">
           <option value="raster">Raster</option>
-          <option value="particles">Wind (deeltjes)</option>
-          <option value="vectors">Wind (vectoren)</option>
+          <option value="particles">Deeltjes (stroming)</option>
+          <option value="vectors">Vectoren (pijlen)</option>
           <option value="wavevectors">Golfrichting (pijlen)</option>
         </select>
       </div>
@@ -907,7 +907,7 @@ class GribOverlayCard extends HTMLElement {
       await loadLeafletVelocity();
       data = await this._fetchWind(frame.wind_url);
     } catch (err) {
-      this._els.note.textContent = "Kon winddata niet laden: " + (err.message || err);
+      this._els.note.textContent = "Kon vectordata niet laden: " + (err.message || err);
       return;
     }
     if (token !== this._windToken || this._windMode() !== "particles") return;
@@ -943,7 +943,7 @@ class GribOverlayCard extends HTMLElement {
     try {
       data = await this._fetchWind(frame.wind_url);
     } catch (err) {
-      this._els.note.textContent = "Kon winddata niet laden: " + (err.message || err);
+      this._els.note.textContent = "Kon vectordata niet laden: " + (err.message || err);
       return;
     }
     if (token !== this._windToken || this._windMode() !== "vectors") return;

@@ -13,6 +13,9 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 - [DWD Open Data](https://opendata.dwd.de/) — het **EWAM golfmodel** voor de
   Europese zeeën (significante golfhoogte, gemiddelde golfrichting en -periode),
   GRIB2, **zonder sleutel**.
+- [BSH](https://www.bsh.de/) — **zeestroming** (oppervlakte-u/v) voor de hele
+  Noordzee incl. de Nederlandse, Belgische en noord-Franse kust, 15-minuten-
+  stappen, GRIB1, **zonder sleutel** (open FTP).
 
 ## Features
 
@@ -22,6 +25,9 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 - **Golven** (DWD EWAM): significante golfhoogte, gemiddelde golfrichting en
   golfperiode als kleurlaag over de Europese zeeën — met meteogram en
   waarde-onder-de-muis, net als de andere parameters.
+- **Zeestroming** (BSH): oppervlakte-stroming (snelheid + richting) voor de
+  Noordzee als kleurlaag met deeltjes/pijlen — zoals wind, maar dan het water.
+  15-minuten-resolutie, dus fijne getijdetails.
 - Eén-tijdstip-slider én een animatiemodus (begin, eind, stap, afspeelsnelheid).
 - **Windy.com-stijl geanimeerde deeltjes voor wind** (via de meegeleverde
   `leaflet-velocity`), naast de gekleurde raster-overlay. Kies "Wind (deeltjes)"
@@ -177,6 +183,11 @@ De legenda en het label in de parameterkeuze worden dan automatisch omgerekend.
   ondersteund. EWAM gebruikt eenvoudige GRIB2-packing en is dus zonder binaire
   library te lezen; andere DWD-modellen (bijv. ICON-EU) gebruiken vaak
   CCSDS/AEC- of JPEG2000-compressie, wat wél zo'n library zou vereisen.
+- **BSH-zeestroming** is 15-minuten-data: één BSH-bestand bevat een heel etmaal
+  aan tijdstappen (96 per 24 u). De integratie splitst dat in losse tijdstappen,
+  maar houd er rekening mee dat een langere voorspellingshorizon veel frames
+  oplevert (24 u = 96 frames). Alleen het BSH-Noordzee-gebied wordt ondersteund
+  (dat dekt de NL/BE/FR-kust); de fijnere deelgebieden en de Oostzee nog niet.
 
 ## Ontwikkelen & testen
 

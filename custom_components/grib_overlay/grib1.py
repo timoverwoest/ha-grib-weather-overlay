@@ -133,6 +133,34 @@ def iter_messages(buf: bytes):
         pos = idx + total_len
 
 
+def iter_records(buf: bytes):
+    """Yield ``(raw_bytes, data_date, data_time)`` for each GRIB1 record.
+
+    Only the reference date/time is read from the PDS -- the data is not
+    decoded. Lets a caller regroup/split a multi-time file (e.g. BSH's 15-minute
+    current forecasts, all in one file) into per-time files by copying the raw
+    message bytes, no re-encoding required.
+    """
+    pos = 0
+    while True:
+        idx = buf.find(b"GRIB", pos)
+        if idx < 0:
+            return
+        total_len = _u(buf[idx + 4:idx + 7])
+        edition = buf[idx + 7]
+        if edition != 1 or total_len <= 0 or idx + total_len > len(buf):
+            return
+        msg = buf[idx:idx + total_len]
+        pds_len = _u(msg[8:11])
+        pds = msg[8:8 + pds_len]
+        century = pds[24] if pds_len > 24 else 21
+        year = (century - 1) * 100 + pds[12]
+        data_date = year * 10000 + pds[13] * 100 + pds[14]
+        data_time = pds[15] * 100 + pds[16]
+        yield msg, data_date, data_time
+        pos = idx + total_len
+
+
 def _parse_message(msg: bytes) -> Grib1Message:
     o = 8  # Section 0 (indicator) is 8 octets in edition 1
 
