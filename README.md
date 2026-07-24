@@ -104,8 +104,9 @@ de YAML-editor van een dashboard:
 
 ```yaml
 type: custom:grib-overlay-card
-# optioneel: vast een specifieke integratie-instantie/parameter kiezen
-# entry_id: <config entry id>
+# optioneel: vast een specifieke dataset/parameter kiezen bij het laden
+# dataset: bsh_current_northsea   # datasetsleutel, -naam of de titel uit de keuzelijst
+# entry_id: <config entry id>     # exacte config-entry (wint van dataset)
 # parameter: wind_10m
 # center: [52.1, 5.3]
 # zoom: 7
@@ -118,9 +119,14 @@ type: custom:grib-overlay-card
 # direction_unit: deg  # windrichting: compass (N/O/Z/W, standaard) of deg (0-360°)
 ```
 
-Zonder `entry_id`/`parameter` pakt de kaart automatisch de eerst
-geconfigureerde integratie en het eerste geselecteerde parametertype, en kun
-je in de kaart zelf wisselen.
+Met `dataset` kies je welke dataset de kaart bij het laden standaard toont;
+de waarde mag de datasetsleutel zijn (bv. `bsh_current_northsea`), de
+datasetnaam, of de titel zoals die in de keuzelijst van de kaart staat
+(hoofdletterongevoelig). Wil je in plaats daarvan een exacte config-instantie
+vastzetten, gebruik dan `entry_id` (die wint van `dataset`). Zonder
+`dataset`/`entry_id`/`parameter` pakt de kaart automatisch de eerst
+geconfigureerde dataset en het eerste geselecteerde parametertype, en kun je
+in de kaart zelf wisselen.
 
 ### Grootte / layout
 

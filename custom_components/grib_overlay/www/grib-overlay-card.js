@@ -514,12 +514,33 @@ class GribOverlayCard extends HTMLElement {
       opt.textContent = entry.title;
       this._els.entrySelect.appendChild(opt);
     }
-    const wanted = this._config.entry_id;
-    this._els.entrySelect.value = this._entries.some((e) => e.entry_id === wanted)
-      ? wanted
-      : this._entries[0].entry_id;
+    this._els.entrySelect.value =
+      this._resolveDefaultEntryId() || this._entries[0].entry_id;
 
     await this._onEntryChange();
+  }
+
+  // Which entry (dataset) to preselect when the card loads. `entry_id` (the exact
+  // config-entry id) wins; otherwise `dataset` matches an entry by its dataset
+  // key, its dataset name, or its title (as shown in the dropdown) -- all
+  // case-insensitive. Returns null when nothing matches, so the caller falls
+  // back to the first configured entry.
+  _resolveDefaultEntryId() {
+    const cfg = this._config || {};
+    if (cfg.entry_id && this._entries.some((e) => e.entry_id === cfg.entry_id)) {
+      return cfg.entry_id;
+    }
+    if (cfg.dataset) {
+      const want = String(cfg.dataset).trim().toLowerCase();
+      const match = this._entries.find(
+        (e) =>
+          (e.dataset.key || "").toLowerCase() === want ||
+          (e.dataset.name || "").toLowerCase() === want ||
+          (e.title || "").toLowerCase() === want,
+      );
+      if (match) return match.entry_id;
+    }
+    return null;
   }
 
   _currentEntry() {
