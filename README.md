@@ -38,8 +38,11 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   kaart getoond, in de ingestelde eenheden; voor wind ook de richting. **Klik/
   tik** zet de waarde vast in een popup, en **houd ingedrukt / rechtsklik**
   opent een wegklikbaar **meteogram** (waarde-over-tijd op dat punt) met major
-  gridlijnen en minor ticks op beide assen. Voor **wind en windstoten** toont
-  het meteogram tegelijk de **windrichting op een tweede y-as** (kompas N/O/Z/W).
+  gridlijnen en minor ticks op beide assen. Bij **wind** worden **wind én
+  windstoten samen** getekend op dezelfde snelheidsas — met een vlaag-envelop
+  (band tussen wind en stoot) — en op de **tweede y-as** zowel de **wind- als de
+  windstoot-richting** (kompas N/O/Z/W). Windstoten moeten daarvoor als parameter
+  aan staan.
 - Kaart-kaart met OpenStreetMap-basislaag + OpenSeaMap seamark-laag + de
   GRIB-overlay, volledig los van een internetverbinding voor de kaart-JS zelf
   (Leaflet wordt meegeleverd, geen CDN-afhankelijkheid voor de code — de

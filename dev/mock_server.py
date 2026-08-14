@@ -39,6 +39,11 @@ LEGENDS = {
         {"offset": 0.4, "color": "#f0de69"}, {"offset": 0.6, "color": "#ee9448"},
         {"offset": 0.8, "color": "#da4437"}, {"offset": 1.0, "color": "#89216d"},
     ]},
+    "wind_gust_10m": {"unit": "m/s", "min_value": 0, "max_value": 35, "stops": [
+        {"offset": 0.0, "color": "#62b5e5"}, {"offset": 0.2, "color": "#7fcb85"},
+        {"offset": 0.4, "color": "#f0de69"}, {"offset": 0.6, "color": "#ee9448"},
+        {"offset": 0.8, "color": "#da4437"}, {"offset": 1.0, "color": "#89216d"},
+    ]},
     "precipitation": {"unit": "mm", "min_value": 0, "max_value": 20, "stops": [
         {"offset": 0.0, "color": "#deebf7"}, {"offset": 0.3, "color": "#6badd6"},
         {"offset": 0.6, "color": "#2171b5"}, {"offset": 1.0, "color": "#08306b"},
@@ -61,6 +66,7 @@ LEGENDS = {
 ENTRY_ID = "mock_entry_1"
 PARAMETERS = [
     {"key": "wind_10m", "name": "Wind (10m)", "unit": "m/s", "colormap": "wind"},
+    {"key": "wind_gust_10m", "name": "Windstoten (10m)", "unit": "m/s", "colormap": "wind"},
     {"key": "precipitation", "name": "Neerslag", "unit": "mm", "colormap": "precipitation"},
     {"key": "temperature_2m", "name": "Temperatuur (2m)", "unit": "°C", "colormap": "temperature"},
     {"key": "wave_height", "name": "Golfhoogte (significant)", "unit": "m", "colormap": "wave"},
@@ -182,8 +188,10 @@ class Handler(BaseHTTPRequestHandler):
                 frac = 0.5 + 0.4 * math.sin(i / 2.0 + lat)
                 point = {"valid_time": vt.isoformat(), "value": round(lo + frac * (hi - lo), 1)}
                 if has_dir:
-                    # sweep direction so it crosses the 0/360 wrap (tests the break)
-                    point["direction"] = round((300 + i * 25) % 360, 0)
+                    # sweep direction so it crosses the 0/360 wrap (tests the break);
+                    # give gusts a small offset so wind vs gust direction are distinct.
+                    offset = 20 if parameter_key == "wind_gust_10m" else 0
+                    point["direction"] = round((300 + i * 25 + offset) % 360, 0)
                 series.append(point)
             payload = {"unit": unit, "series": series}
             if has_dir:

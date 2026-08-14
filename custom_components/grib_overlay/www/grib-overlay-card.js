@@ -1101,16 +1101,58 @@ class GribOverlayCard extends HTMLElement {
   async _onMapHold(latlng) {
     const paramKey = this._els.paramSelect.value;
     if (!paramKey || !this._frames.length) return;
-    let resp;
+
+    // Wind + gusts share the same speed unit; when both are configured, show
+    // them together (wind line + gust envelope) on one meteogram.
+    const pair = this._windGustPair(paramKey);
     try {
-      resp = await this._fetchPointSeries(paramKey, latlng);
+      if (pair) {
+        const [windResp, gustResp] = await Promise.all([
+          this._fetchPointSeries(pair.windKey, latlng),
+          this._fetchPointSeries(pair.gustKey, latlng),
+        ]);
+        const windSeries = (windResp && windResp.series) || [];
+        if (!windSeries.some((s) => s.value != null)) return;
+        const hasDir =
+          !!(windResp && windResp.direction_unit) && windSeries.some((s) => s.direction != null);
+        const svg = this._buildMeteogram(windSeries, windResp.unit, latlng, {
+          hasDirection: hasDir,
+          overlay: { series: (gustResp && gustResp.series) || [], label: "windstoten" },
+          title: this._paramLabel(pair.windKey),
+        });
+        this._openMeteogramPopup(latlng, svg);
+        return;
+      }
+
+      const resp = await this._fetchPointSeries(paramKey, latlng);
+      const series = (resp && resp.series) || [];
+      if (!series.some((s) => s.value != null)) return;
+      const hasDir = !!(resp && resp.direction_unit) && series.some((s) => s.direction != null);
+      const svg = this._buildMeteogram(series, resp.unit, latlng, { hasDirection: hasDir });
+      this._openMeteogramPopup(latlng, svg);
     } catch (err) {
       return;
     }
-    const series = (resp && resp.series) || [];
-    if (!series.some((s) => s.value != null)) return;
-    const hasDir = !!(resp && resp.direction_unit) && series.some((s) => s.direction != null);
-    const svg = this._buildMeteogram(series, resp.unit, latlng, hasDir);
+  }
+
+  // When the meteogram parameter is wind (or gusts) and both are configured on
+  // this entry, returns the two keys so the meteogram can combine them; else null.
+  _windGustPair(paramKey) {
+    if (paramKey !== "wind_10m" && paramKey !== "wind_gust_10m") return null;
+    const entry = this._currentEntry();
+    if (!entry) return null;
+    const has = (k) => entry.parameters.some((p) => p.key === k);
+    if (!has("wind_10m") || !has("wind_gust_10m")) return null;
+    return { windKey: "wind_10m", gustKey: "wind_gust_10m" };
+  }
+
+  _paramLabel(paramKey) {
+    const entry = this._currentEntry();
+    const p = entry && entry.parameters.find((x) => x.key === paramKey);
+    return p ? p.name : paramKey;
+  }
+
+  _openMeteogramPopup(latlng, svg) {
     this._pointPopup = window.L.popup({
       closeButton: true,
       autoPan: true,
@@ -1122,7 +1164,7 @@ class GribOverlayCard extends HTMLElement {
       .openOn(this._map);
   }
 
-  _buildMeteogram(series, sourceUnit, latlng, hasDirection = false) {
+  _buildMeteogram(series, sourceUnit, latlng, { hasDirection = false, overlay = null, title = null } = {}) {
     const conv = this._conversionFor(sourceUnit);
     const factor = conv ? conv.factor : 1;
     const unit = conv ? conv.label : sourceUnit;
@@ -1135,6 +1177,33 @@ class GribOverlayCard extends HTMLElement {
       .filter((p) => p.v != null);
     const showDir = hasDirection && pts.some((p) => p.dir != null);
     const dirMode = this._directionMode(); // "compass" | "deg"
+
+    // Optional second series (wind gusts): match each primary time to the gust
+    // value (same left/speed axis, drawn as a line + envelope band) and the gust
+    // from-direction (same right/direction axis, drawn as a second line).
+    let gustPts = null;
+    if (overlay && overlay.series) {
+      const gustByT = new Map(
+        overlay.series
+          .filter((s) => s.value != null)
+          .map((s) => [new Date(s.valid_time).getTime(), s.value * factor])
+      );
+      const gustDirByT = new Map(
+        overlay.series
+          .filter((s) => s.direction != null)
+          .map((s) => [new Date(s.valid_time).getTime(), s.direction])
+      );
+      const aligned = pts
+        .map((p) => ({
+          t: p.t,
+          v: p.v,
+          g: gustByT.has(p.t) ? gustByT.get(p.t) : null,
+          gdir: gustDirByT.has(p.t) ? gustDirByT.get(p.t) : null,
+        }))
+        .filter((p) => p.g != null);
+      if (aligned.length) gustPts = aligned;
+    }
+    const showGustDir = !!(gustPts && gustPts.some((p) => p.gdir != null));
     // Font sizes are in the SVG's own user units; the SVG then scales to fill the
     // popup width. Keep the viewBox modest and the fonts generous so the axis
     // labels stay readable on a phone instead of being scaled down to nothing.
@@ -1173,6 +1242,7 @@ class GribOverlayCard extends HTMLElement {
       yMinorStep = 30;
     } else {
       const vals = pts.map((p) => p.v);
+      if (gustPts) vals.push(...gustPts.map((p) => p.g)); // gusts sit above wind
       let dmin = Math.min(...vals);
       let dmax = Math.max(...vals);
       if (dmax - dmin < 1e-6) {
@@ -1290,6 +1360,53 @@ class GribOverlayCard extends HTMLElement {
           .map((p) => `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy2(p.dir).toFixed(1)}" r="2" fill="${DIR_COLOR}"/>`)
           .join("")
       );
+      // Gust from-direction on the same axis: a lighter, finely-dotted line with
+      // hollow dots, so it reads as the "gust" companion of the wind direction.
+      if (showGustDir) {
+        let gdpath = "";
+        let gprev = null;
+        for (const p of gustPts) {
+          if (p.gdir == null) {
+            gprev = null;
+            continue;
+          }
+          const cmd = gprev == null || Math.abs(p.gdir - gprev) > 180 ? "M" : "L";
+          gdpath += `${cmd}${sx(p.t).toFixed(1)},${sy2(p.gdir).toFixed(1)}`;
+          gprev = p.gdir;
+        }
+        parts.push(
+          `<path d="${gdpath}" fill="none" stroke="${DIR_COLOR}" stroke-width="1.3" stroke-dasharray="1.5 2.5" opacity="0.8"/>`
+        );
+        parts.push(
+          gustPts
+            .filter((p) => p.gdir != null)
+            .map((p) => `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy2(p.gdir).toFixed(1)}" r="1.6" fill="none" stroke="${DIR_COLOR}" stroke-width="1" opacity="0.8"/>`)
+            .join("")
+        );
+      }
+    }
+
+    // Wind-gust envelope: a light band between wind and gust speed, plus a
+    // dashed gust line, drawn under the wind line so the wind stays prominent.
+    if (gustPts) {
+      const up = gustPts.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.g).toFixed(1)}`).join(" ");
+      const down = gustPts
+        .slice()
+        .reverse()
+        .map((p) => `L${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`)
+        .join(" ");
+      parts.push(
+        `<path d="${up} ${down} Z" fill="var(--primary-color,#03a9f4)" fill-opacity="0.12" stroke="none"/>`
+      );
+      const gline = gustPts.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.g).toFixed(1)}`).join(" ");
+      parts.push(
+        `<path d="${gline}" fill="none" stroke="var(--primary-color,#03a9f4)" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.85"/>`
+      );
+      parts.push(
+        gustPts
+          .map((p) => `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy(p.g).toFixed(1)}" r="1.8" fill="var(--primary-color,#03a9f4)" opacity="0.85"/>`)
+          .join("")
+      );
     }
 
     // Data line + dots (speed, on top, left axis).
@@ -1303,13 +1420,29 @@ class GribOverlayCard extends HTMLElement {
 
     // Primary series is wind speed or wave height, depending on the parameter.
     const primaryLabel = sourceUnit === "m" ? "hoogte" : "snelheid";
-    const legend = showDir
-      ? `<div style="font-size:11px;margin-top:1px">` +
-        `<span style="color:var(--primary-color,#03a9f4)">━ ${primaryLabel} (${unit})</span>` +
-        `&nbsp;&nbsp;<span style="color:${DIR_COLOR}">┅ richting (${dirMode === "deg" ? "°" : "kompas"})</span></div>`
-      : "";
+    const legendItems = [
+      `<span style="color:var(--primary-color,#03a9f4)">━ ${primaryLabel} (${unit})</span>`,
+    ];
+    if (gustPts) {
+      legendItems.push(
+        `<span style="color:var(--primary-color,#03a9f4);opacity:.85">╌ ${overlay.label} (${unit})</span>`
+      );
+    }
+    if (showDir) {
+      const dirUnit = dirMode === "deg" ? "°" : "kompas";
+      legendItems.push(
+        `<span style="color:${DIR_COLOR}">┅ ${showGustDir ? "windrichting" : "richting"} (${dirUnit})</span>`
+      );
+      if (showGustDir) {
+        legendItems.push(`<span style="color:${DIR_COLOR};opacity:.8">⋯ stoot-richting</span>`);
+      }
+    }
+    const legend =
+      gustPts || showDir
+        ? `<div style="font-size:11px;margin-top:1px">${legendItems.join("&nbsp;&nbsp;")}</div>`
+        : "";
     return (
-      `<div style="width:290px;max-width:78vw;font:14px sans-serif"><b>${this._paramName()}</b> · ${unit}` +
+      `<div style="width:290px;max-width:78vw;font:14px sans-serif"><b>${title || this._paramName()}</b> · ${unit}` +
       `<div style="opacity:.6;font-size:12px">${latlng.lat.toFixed(2)}, ${latlng.lng.toFixed(2)}</div>` +
       legend +
       `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;margin-top:4px">` +
