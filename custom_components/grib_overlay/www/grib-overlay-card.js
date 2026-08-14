@@ -607,7 +607,10 @@ class GribOverlayCard extends HTMLElement {
       this._onMapHold(e.latlng);
     });
     // Screen-space overlays (arrows, isobars) are redrawn on every map move.
+    // Nothing to redraw until entries + frames have loaded (early invalidateSize
+    // events fire before then), so bail out to avoid touching unset state.
     this._map.on("moveend zoomend resize", () => {
+      if (!this._entries || !this._frames || !this._frames.length) return;
       const m = this._activeMode();
       if (m === "vectors" || m === "wavevectors") this._drawVectors();
       if (this._isobarsOn && this._pressureParam()) this._drawIsobars();
@@ -674,7 +677,8 @@ class GribOverlayCard extends HTMLElement {
   }
 
   _currentEntry() {
-    return this._entries.find((e) => e.entry_id === this._els.entrySelect.value);
+    // Guard against early calls (e.g. a map resize event) before entries load.
+    return (this._entries || []).find((e) => e.entry_id === this._els.entrySelect.value);
   }
 
   // Resolve a source unit ("m/s"/"km") to the configured display conversion,
