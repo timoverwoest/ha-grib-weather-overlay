@@ -83,6 +83,69 @@ function compass(deg) {
   return COMPASS8[Math.round(((deg % 360) / 45)) % 8];
 }
 
+// Separable Gaussian smoothing of a north-first scalar grid (the field_grid
+// dict), with `sigmaKm` the smoothing scale in kilometres. Null cells are
+// skipped and weights renormalised so gaps don't bleed. Used to bring the MSL
+// pressure field to a synoptic scale before drawing isobars and finding H/L
+// centres, so both are consistent and free of mesoscale noise.
+function smoothField(field, sigmaKm) {
+  const { nx, ny, lo1, la1, dx, dy, data } = field;
+  if (!(sigmaKm > 0) || nx < 3 || ny < 3) return field;
+  const KM_PER_DEG = 111.32;
+  const midLat = la1 - ((ny - 1) * dy) / 2;
+  const sy = sigmaKm / (dy * KM_PER_DEG);
+  const sx = sigmaKm / (dx * KM_PER_DEG * Math.max(0.1, Math.cos((midLat * Math.PI) / 180)));
+  const kernel = (s) => {
+    const rad = Math.max(1, Math.min(40, Math.ceil(s * 3)));
+    const w = [];
+    let sum = 0;
+    for (let i = -rad; i <= rad; i++) {
+      const v = Math.exp(-(i * i) / (2 * s * s));
+      w.push(v);
+      sum += v;
+    }
+    return { rad, w: w.map((v) => v / sum) };
+  };
+  const kx = kernel(sx);
+  const ky = kernel(sy);
+  const src = data.map((v) => (v == null || !isFinite(v) ? NaN : v));
+  const tmp = new Float64Array(nx * ny);
+  for (let y = 0; y < ny; y++) {
+    for (let x = 0; x < nx; x++) {
+      let acc = 0;
+      let wsum = 0;
+      for (let i = -kx.rad; i <= kx.rad; i++) {
+        const xx = x + i;
+        if (xx < 0 || xx >= nx) continue;
+        const v = src[y * nx + xx];
+        if (Number.isNaN(v)) continue;
+        const w = kx.w[i + kx.rad];
+        acc += v * w;
+        wsum += w;
+      }
+      tmp[y * nx + x] = wsum > 0 ? acc / wsum : NaN;
+    }
+  }
+  const out = new Array(nx * ny);
+  for (let y = 0; y < ny; y++) {
+    for (let x = 0; x < nx; x++) {
+      let acc = 0;
+      let wsum = 0;
+      for (let j = -ky.rad; j <= ky.rad; j++) {
+        const yy = y + j;
+        if (yy < 0 || yy >= ny) continue;
+        const v = tmp[yy * nx + x];
+        if (Number.isNaN(v)) continue;
+        const w = ky.w[j + ky.rad];
+        acc += v * w;
+        wsum += w;
+      }
+      out[y * nx + x] = wsum > 0 ? acc / wsum : null;
+    }
+  }
+  return { nx, ny, lo1, la1, dx, dy, data: out };
+}
+
 // Marching squares over a north-first scalar grid (the field_grid dict). Returns
 // contour segments [[lat1,lon1,lat2,lon2], ...] where the field crosses `level`.
 // Used to draw isobars from the MSL-pressure field.
@@ -1250,7 +1313,15 @@ class GribOverlayCard extends HTMLElement {
     svg.style.width = size.x + "px";
     svg.style.height = size.y + "px";
 
-    const field = this._isobarField;
+    const cfg = this._config || {};
+    // Smooth the pressure field to a synoptic scale before contouring. The SAME
+    // smoothed field feeds both the drawn isobars and the H/L detection, so they
+    // stay consistent. `isobar_smoothing` is the scale in km (0 = off). The
+    // default is moderate: heavier smoothing (e.g. 100-150) gives a cleaner
+    // synoptic look but can flatten a centre near the domain edge until the
+    // closed-isobar test drops it.
+    const sigmaKm = cfg.isobar_smoothing == null ? 60 : Number(cfg.isobar_smoothing);
+    const field = smoothField(this._isobarField, sigmaKm);
     let lo = Infinity;
     let hi = -Infinity;
     for (const v of field.data) {
@@ -1264,7 +1335,6 @@ class GribOverlayCard extends HTMLElement {
     // Which isobars to draw. `isobar_levels` (explicit hPa list) wins; otherwise
     // every `isobar_interval` hPa (default 4 -- the synoptic standard; use e.g. 2
     // for denser lines). Only levels inside the field's range are kept.
-    const cfg = this._config || {};
     let levels;
     if (Array.isArray(cfg.isobar_levels) && cfg.isobar_levels.length) {
       levels = cfg.isobar_levels
@@ -1343,47 +1413,77 @@ class GribOverlayCard extends HTMLElement {
     svg.appendChild(g);
   }
 
-  // High (H) and Low (L) pressure centres from the field's local extrema. To
-  // avoid clutter a centre must be the strict max/min within a +/-R window AND
-  // stand out from that window's mean by `minProminence` hPa (drops shallow noise
-  // wiggles); then only the few strongest per type are kept, well separated on
-  // screen. NOTE: interim heuristic -- the definitive H/L method is part of the
-  // separate weather-front analysis investigation.
+  // High (H) and Low (L) pressure centres on the SMOOTHED field, the way a
+  // synoptic chart decides to print them (Hanley & Caballero 2012): a strict
+  // local extremum that is enclosed by at least one closed isobar of interval
+  // `pressure_prominence` (default = the isobar interval). Concretely we flood
+  // from the extremum over cells within that interval of it; the centre counts
+  // only if the flood stays bounded (doesn't reach the domain edge) and contains
+  // no stronger cell. Survivors are then thinned by a ~400 km min-separation and
+  // capped per type. This drops the mesoscale "wiggle" centres that a naive
+  // local-extrema search prints.
   _drawPressureCentres(field, g, proj, size) {
     const svgns = "http://www.w3.org/2000/svg";
     const { nx, ny, lo1, la1, dx, dy, data } = field;
     const at = (x, y) => data[y * nx + x];
     const cfg = this._config || {};
-    const R = 4; // neighbourhood radius (cells) a centre must dominate
-    const minProminence = 0.5; // hPa the centre must stand out from its surroundings
-    const maxPerType = Math.max(1, Number(cfg.max_pressure_centres) || 3);
+    const interval = Math.max(0.5, Number(cfg.isobar_interval) || 4);
+    const dP = Math.max(0.5, Number(cfg.pressure_prominence) || interval); // hPa
+    const maxPerType = Math.max(1, Number(cfg.max_pressure_centres) || 4);
+    const MIN_SEP_KM = 400;
+    const KM_PER_DEG = 111.32;
 
-    const cand = { H: [], L: [] };
+    // Strict local extrema in a small window on the smoothed field.
+    const R = 2;
+    const cand = [];
     for (let y = R; y < ny - R; y++) {
       for (let x = R; x < nx - R; x++) {
         const c = at(x, y);
         if (c == null || !isFinite(c)) continue;
         let isMax = true;
         let isMin = true;
-        let sum = 0;
-        let count = 0;
-        for (let j = -R; j <= R; j++) {
+        for (let j = -R; j <= R && (isMax || isMin); j++) {
           for (let i = -R; i <= R; i++) {
             if (!i && !j) continue;
             const n = at(x + i, y + j);
             if (n == null || !isFinite(n)) continue;
             if (n > c) isMax = false;
             if (n < c) isMin = false;
-            sum += n;
-            count++;
           }
         }
-        if (isMax === isMin || !count) continue; // flat/saddle -> not a centre
-        const prominence = Math.abs(c - sum / count);
-        if (prominence < minProminence) continue;
-        cand[isMax ? "H" : "L"].push({ x, y, v: c, prominence });
+        if (isMax === isMin) continue; // flat/saddle
+        cand.push({ x, y, v: c, type: isMax ? "H" : "L" });
       }
     }
+
+    // Closed-isobar test: flood from the extremum over cells within dP of it.
+    const enclosed = (c) => {
+      const thr = c.type === "H" ? c.v - dP : c.v + dP;
+      const inside = (v) => (c.type === "H" ? v >= thr : v <= thr);
+      const stronger = (v) => (c.type === "H" ? v > c.v + 1e-6 : v < c.v - 1e-6);
+      const seen = new Set([c.y * nx + c.x]);
+      const stack = [[c.x, c.y]];
+      let touchedEdge = false;
+      while (stack.length) {
+        const [x, y] = stack.pop();
+        if (x === 0 || x === nx - 1 || y === 0 || y === ny - 1) touchedEdge = true;
+        for (const [ix, iy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const xx = x + ix;
+          const yy = y + iy;
+          if (xx < 0 || xx >= nx || yy < 0 || yy >= ny) continue;
+          const idx = yy * nx + xx;
+          if (seen.has(idx)) continue;
+          const v = at(xx, yy);
+          if (v == null || !isFinite(v)) continue;
+          if (stronger(v)) return false; // a deeper/higher centre owns this basin
+          if (inside(v)) {
+            seen.add(idx);
+            stack.push([xx, yy]);
+          }
+        }
+      }
+      return !touchedEdge;
+    };
 
     const label = (px, py, text, color, fontSize, weight, halo) => {
       const t = document.createElementNS(svgns, "text");
@@ -1402,17 +1502,31 @@ class GribOverlayCard extends HTMLElement {
       g.appendChild(t);
     };
 
-    // Keep the strongest few per type, well separated on screen.
-    const placed = [];
+    const geoKm = (a, b) => {
+      const latA = la1 - a.y * dy;
+      const latB = la1 - b.y * dy;
+      const midLat = ((latA + latB) / 2) * (Math.PI / 180);
+      const dLat = (latA - latB) * KM_PER_DEG;
+      const dLon = (a.x - b.x) * dx * KM_PER_DEG * Math.cos(midLat);
+      return Math.hypot(dLat, dLon);
+    };
+
     for (const type of ["H", "L"]) {
-      let kept = 0;
-      for (const c of cand[type].sort((a, b) => b.prominence - a.prominence)) {
-        if (kept >= maxPerType) break;
+      // Strongest first, keep only closed-isobar centres, thin by min separation.
+      const ranked = cand
+        .filter((c) => c.type === type && enclosed(c))
+        .sort((a, b) => (type === "H" ? b.v - a.v : a.v - b.v));
+      const chosen = [];
+      for (const c of ranked) {
+        if (chosen.some((q) => geoKm(q, c) < MIN_SEP_KM)) continue;
+        chosen.push(c);
+      }
+      let drawn = 0;
+      for (const c of chosen) {
+        if (drawn >= maxPerType) break;
         const p = proj(la1 - c.y * dy, lo1 + c.x * dx);
         if (p.x < 14 || p.x > size.x - 14 || p.y < 18 || p.y > size.y - 18) continue;
-        if (placed.some((q) => (q.x - p.x) ** 2 + (q.y - p.y) ** 2 < 70 * 70)) continue;
-        placed.push({ x: p.x, y: p.y });
-        kept++;
+        drawn++;
         const color = type === "H" ? "#1440a4" : "#d0021b";
         label(p.x, p.y, type, color, "20", "700", "3.5");
         label(p.x, p.y + 15, String(Math.round(c.v)), color, "10", "600", "2.6");

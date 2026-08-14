@@ -127,8 +127,10 @@ type: custom:grib-overlay-card
 # show_isobars: true           # start met de isobaren+drukcentra-laag aan
 # isobar_interval: 2           # hPa tussen de isobaren (standaard 4; kleiner = meer lijnen)
 # isobar_levels: [1000, 1005, 1010]  # of: exact deze isobaren (overschrijft isobar_interval)
+# isobar_smoothing: 60         # smoothing van het drukveld in km (standaard 60; 0 = uit; 100-150 = synoptischer)
 # show_pressure_centres: false # H/L-drukcentra verbergen (standaard aan)
-# max_pressure_centres: 2      # hoogstens zoveel H én zoveel L tonen (standaard 3)
+# pressure_prominence: 4       # hPa die een H/L moet "insluiten" om getoond te worden (standaard = isobar_interval)
+# max_pressure_centres: 3      # hoogstens zoveel H én zoveel L tonen (standaard 3)
 # center: [52.1, 5.3]
 # zoom: 7
 # grootte in een Secties-dashboard:
@@ -168,8 +170,17 @@ als **aparte laag** bovenop de gekozen weergave (dus niet een `render_mode`;
 in de kaart is dit het vinkje *Isobaren*). Deze laag verschijnt alleen als de
 dataset een luchtdruk-parameter heeft. Regel welke isobaren getekend worden met
 `isobar_interval` (hPa tussen de lijnen, standaard 4) of `isobar_levels` (een
-lijst met exacte hPa-waarden). De H/L-centra beperk je met `max_pressure_centres`
-of zet je uit met `show_pressure_centres: false`.
+lijst met exacte hPa-waarden). Met `isobar_smoothing` (km, standaard 60) strijk
+je het drukveld glad tot synoptische schaal — dat geeft nettere isobaren én
+betrouwbaardere H/L; hetzelfde gladgestreken veld voedt beide, dus ze blijven
+consistent (0 = niet gladstrijken, 100–150 = synoptischer).
+
+De **H/L-drukcentra** worden bepaald zoals op een echte weerkaart: een centrum
+wordt alleen getoond als het door minstens één gesloten isobaar wordt omsloten
+(instelbaar met `pressure_prominence`, standaard gelijk aan `isobar_interval`),
+plus een minimale onderlinge afstand en een maximum. Zo verdwijnen de vele kleine
+"ruis"-centra. Beperk ze verder met `max_pressure_centres` (standaard 3 per type)
+of zet ze uit met `show_pressure_centres: false`.
 
 ### Grootte / layout
 

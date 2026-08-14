@@ -91,9 +91,11 @@ def _synth_pressure_field() -> dict:
         lat = north - j * dy
         for i in range(nx):
             lon = west + i * dx
-            d_low = (lon - 2.0) ** 2 + (lat - 55.0) ** 2
-            d_high = (lon - 9.0) ** 2 + (lat - 50.0) ** 2
-            val = 1013.0 - 20.0 * math.exp(-d_low / 6.0) + 17.0 * math.exp(-d_high / 8.0)
+            d_low = (lon - 3.0) ** 2 + (lat - 54.0) ** 2
+            d_high = (lon - 7.5) ** 2 + (lat - 52.0) ** 2
+            # low + high, plus mild mesoscale wiggles so smoothing has an effect
+            noise = 1.2 * math.sin(lon * 2.5) * math.cos(lat * 2.2)
+            val = 1013.0 - 20.0 * math.exp(-d_low / 6.0) + 17.0 * math.exp(-d_high / 8.0) + noise
             data.append(round(val, 2))
     return {"nx": nx, "ny": ny, "lo1": west, "la1": north, "dx": dx, "dy": dy, "data": data}
 
