@@ -129,6 +129,33 @@ async def test_options_flow_stores_color_scales(hass: HomeAssistant) -> None:
     assert result["data"][CONF_COLOR_SCALES] == "wind_10m: 0:#2c7fb8, 20:#bd0026"
 
 
+async def test_options_flow_can_clear_color_scales(hass: HomeAssistant) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_SOURCE: "knmi",
+            CONF_API_KEY: "k",
+            CONF_DATASET: "harmonie_arome_cy43_p1",
+            CONF_PARAMETERS: ["wind_10m"],
+        },
+        options={CONF_COLOR_SCALES: "wind_10m: 0:#2c7fb8, 20:#bd0026"},
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_FORECAST_HORIZON_HOURS: 24,
+            CONF_RETAIN_RUNS: 2,
+            CONF_UPDATE_INTERVAL_MINUTES: 30,
+            CONF_COLOR_SCALES: "",  # emptied
+        },
+    )
+    assert result["type"] == "create_entry"
+    assert CONF_COLOR_SCALES not in result["data"]
+
+
 def test_source_uses_notification_key_for_mqtt() -> None:
     """The notification key (when set) is what MQTT authenticates with."""
     from custom_components.grib_overlay.sources.knmi import KnmiSource

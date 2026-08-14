@@ -153,6 +153,10 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 options[CONF_NOTIFICATION_API_KEY] = notification_key
             else:
                 options.pop(CONF_NOTIFICATION_API_KEY, None)
+            # Drop blank colour scales so an emptied field clears the option
+            # instead of persisting an empty string.
+            if not (options.get(CONF_COLOR_SCALES) or "").strip():
+                options.pop(CONF_COLOR_SCALES, None)
             return self.async_create_entry(title="", data=options)
 
         options = self._config_entry.options
@@ -180,9 +184,12 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 # Optional per-parameter colour scales. One parameter per line:
                 # "<param_key>: <value>:<#hex>, <value>:<#hex>, ..." with values
                 # in the parameter's own unit (m/s, degC, hPa, mm, m).
+                # `suggested_value` (not `default`) so an emptied field actually
+                # clears -- a `default` would refill the old value when the empty
+                # text selector submits nothing.
                 vol.Optional(
                     CONF_COLOR_SCALES,
-                    default=options.get(CONF_COLOR_SCALES, ""),
+                    description={"suggested_value": options.get(CONF_COLOR_SCALES, "")},
                 ): selector.TextSelector(
                     selector.TextSelectorConfig(multiline=True)
                 ),
