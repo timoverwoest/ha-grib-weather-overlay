@@ -107,8 +107,30 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 4. Kies welke parameters bijgehouden moeten worden.
 5. Optioneel: pas via de integratie-opties de voorspellingshorizon (default
    24 uur, max 60 uur — zo ver reikt de KNMI HARMONIE-voorspelling), het aantal
-   bewaarde forecast-runs (default 2) en het poll-interval (default 30 minuten)
-   aan.
+   bewaarde forecast-runs (default 2), het poll-interval (default 30 minuten) en
+   **eigen kleurschalen per parameter** (zie hieronder) aan.
+
+### Eigen kleurschalen
+
+In de integratie-opties kun je per parameter zelf bepalen tussen welke kleuren
+de overlay interpoleert — zo maak je bijvoorbeeld zichtbaar welke windsnelheid je
+nog acceptabel vindt en welke niet. Dit wordt **bij het renderen in de kaart
+(PNG) gebakken** op volle resolutie, dus de legenda én de pijltjes volgen de
+schaal automatisch.
+
+Het veld **"Eigen kleurschalen"** neemt één parameter per regel:
+
+```
+wind_10m: 0:#2c7fb8, 8:#7fcdbb, 12:#ffffb2, 16:#fd8d3c, 24:#bd0026
+temperature_2m: -10:#313695, 0:#ffffbf, 35:#a50026
+```
+
+- De **waarden staan in de eigen eenheid van de parameter** (m/s, °C, hPa, mm, m).
+- Onder de laagste en boven de hoogste stop wordt de kleur vastgehouden.
+- Een parameter zonder regel houdt de ingebouwde kleuren.
+- Een wijziging **rendert de huidige run opnieuw** (op de achtergrond) zodat de
+  nieuwe kleuren meteen doorkomen — dit is bedoeld als een instelling die je
+  zelden aanpast.
 
 ## Kaart toevoegen aan een dashboard
 

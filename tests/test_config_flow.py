@@ -7,12 +7,17 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.grib_overlay.const import (
     CONF_API_KEY,
+    CONF_COLOR_SCALES,
     CONF_DATASET,
+    CONF_FORECAST_HORIZON_HOURS,
     CONF_NOTIFICATION_API_KEY,
     CONF_PARAMETERS,
+    CONF_RETAIN_RUNS,
     CONF_SOURCE,
+    CONF_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
 )
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 FILES_URL = (
     "https://api.dataplatform.knmi.nl/open-data/v1/datasets/"
@@ -94,6 +99,34 @@ async def test_optional_notification_key_is_stored(hass: HomeAssistant, aioclien
     assert result["type"] == "create_entry"
     assert result["data"][CONF_API_KEY] == "data-key"
     assert result["data"][CONF_NOTIFICATION_API_KEY] == "notify-key"
+
+
+async def test_options_flow_stores_color_scales(hass: HomeAssistant) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_SOURCE: "knmi",
+            CONF_API_KEY: "k",
+            CONF_DATASET: "harmonie_arome_cy43_p1",
+            CONF_PARAMETERS: ["wind_10m", "temperature_2m"],
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "form" and result["step_id"] == "init"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_FORECAST_HORIZON_HOURS: 24,
+            CONF_RETAIN_RUNS: 2,
+            CONF_UPDATE_INTERVAL_MINUTES: 30,
+            CONF_COLOR_SCALES: "wind_10m: 0:#2c7fb8, 20:#bd0026",
+        },
+    )
+    assert result["type"] == "create_entry"
+    assert result["data"][CONF_COLOR_SCALES] == "wind_10m: 0:#2c7fb8, 20:#bd0026"
 
 
 def test_source_uses_notification_key_for_mqtt() -> None:

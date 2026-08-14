@@ -44,10 +44,12 @@
           "forecast_horizon_hours": "Forecast horizon (hours)",
           "retain_runs": "Number of forecast runs to keep cached",
           "update_interval_minutes": "Polling interval (minutes)",
-          "notification_api_key": "Notification Service API key (optional)"
+          "notification_api_key": "Notification Service API key (optional)",
+          "color_scales": "Custom colour scales (optional)"
         },
         "data_description": {
-          "notification_api_key": "Optional: a separate KNMI Notification Service key for instant push updates. Leave empty to rely on periodic polling."
+          "notification_api_key": "Optional: a separate KNMI Notification Service key for instant push updates. Leave empty to rely on periodic polling.",
+          "color_scales": "One parameter per line, e.g. `wind_10m: 0:#2c7fb8, 8:#7fcdbb, 12:#ffffb2, 16:#fd8d3c, 24:#bd0026`. Values are in the parameter's own unit (m/s, °C, hPa, mm, m). Your parameters: {parameters}. Leave empty to use the built-in colours. Changing this re-renders the current run."
         }
       }
     }

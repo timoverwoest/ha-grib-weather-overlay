@@ -34,6 +34,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from . import field_grid, grib_decode, render, velocity
 from .const import (
     CONF_API_KEY,
+    CONF_COLOR_SCALES,
     CONF_DATASET,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_NOTIFICATION_API_KEY,
@@ -120,6 +121,12 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             session, entry.data[CONF_API_KEY], notification_api_key=notification_key
         )
         self.storage_dir = Path(hass.config.path(DOMAIN, entry.entry_id))
+        # Optional per-parameter custom colour scales (baked into the PNG at
+        # render time). Parsed once; the coordinator is recreated on an options
+        # change, and a change invalidates cached runs so they re-render.
+        self._color_scales = render.parse_color_scales(
+            entry.options.get(CONF_COLOR_SCALES, "")
+        )
         # Raw per-file downloads (non-archive sources such as BSH/DWD) go to a
         # transient scratch dir OUTSIDE /config, so their churn never lands in a
         # backup even on cores that don't invoke the backup hooks. They are small
@@ -375,7 +382,10 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             field = grib_decode.decode_parameter(grib_path, parameter)
 
         frame_obj, legend = render.render_field(
-            field, colormap=parameter.colormap, value_range=parameter.value_range
+            field,
+            colormap=parameter.colormap,
+            value_range=parameter.value_range,
+            custom_colormap=self._color_scales.get(parameter.key),
         )
         stem = f"{parameter.key}_{field.valid_time:%Y%m%dT%H%M}"
         png_path = run_dir / f"{stem}.png"
@@ -407,12 +417,19 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
     # older version is re-processed so the corrected artifacts get generated.
     MANIFEST_VERSION = 3
 
+    def _color_scales_signature(self) -> str:
+        """Stable fingerprint of the active custom colour scales. A cached run
+        rendered with a different fingerprint is re-processed so the PNGs match.
+        Empty when no custom scales are set, so upgrades don't force a re-render."""
+        return json.dumps(self._color_scales, sort_keys=True) if self._color_scales else ""
+
     def _write_frames_manifest(
         self, run_dir: Path, run_filename: str, frames: dict[str, list[Frame]]
     ) -> None:
         """Persist frame metadata so a restart can rebuild self.frames from disk."""
         manifest = {
             "manifest_version": self.MANIFEST_VERSION,
+            "color_scales": self._color_scales_signature(),
             "run_filename": run_filename,
             "frames": {
                 key: [
@@ -453,6 +470,10 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             # Older manifests lack newer artifacts (e.g. field grids) -> skip so
             # the run is re-processed by the current code.
             if manifest.get("manifest_version", 1) < self.MANIFEST_VERSION:
+                continue
+            # A changed custom colour scale means the cached PNGs are stale ->
+            # skip so the run is re-rendered with the new colours.
+            if manifest.get("color_scales", "") != self._color_scales_signature():
                 continue
             frames: dict[str, list[Frame]] = {}
             valid = True

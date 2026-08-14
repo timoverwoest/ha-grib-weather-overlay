@@ -142,6 +142,72 @@ def _legend_stops(colormap: str) -> tuple[dict, ...]:
     )
 
 
+ColorScale = list[tuple[float, tuple[int, int, int]]]  # sorted (value, rgb) stops
+
+
+def parse_color_scale(text: str) -> ColorScale | None:
+    """Parse "<value>:<#hex>, <value>:<#hex>, ..." into sorted (value, rgb) stops.
+
+    Values are in the parameter's own unit. Returns None with fewer than two
+    valid stops (so the caller falls back to the built-in colormap).
+    """
+    if not text:
+        return None
+    stops: ColorScale = []
+    for part in text.replace(";", ",").split(","):
+        part = part.strip()
+        if ":" not in part:
+            continue
+        value_str, color_str = part.rsplit(":", 1)
+        color_str = color_str.strip().lstrip("#")
+        if len(color_str) != 6:
+            continue
+        try:
+            value = float(value_str.strip())
+            rgb = (int(color_str[0:2], 16), int(color_str[2:4], 16), int(color_str[4:6], 16))
+        except ValueError:
+            continue
+        stops.append((value, rgb))
+    stops.sort(key=lambda s: s[0])
+    return stops if len(stops) >= 2 else None
+
+
+def parse_color_scales(text: str) -> dict[str, ColorScale]:
+    """Parse the multi-line ``color_scales`` option into ``{param_key: stops}``.
+
+    One parameter per line: ``<param_key>: <value>:<#hex>, <value>:<#hex>, ...``.
+    """
+    out: dict[str, ColorScale] = {}
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        key, rest = line.split(":", 1)
+        stops = parse_color_scale(rest)
+        if key.strip() and stops:
+            out[key.strip()] = stops
+    return out
+
+
+def _custom_lut(stops: ColorScale, size: int = 256) -> np.ndarray:
+    vmin, vmax = stops[0][0], stops[-1][0]
+    span = (vmax - vmin) or 1.0
+    positions = [(v - vmin) / span for v, _ in stops]
+    colors = np.array([c for _, c in stops], dtype=np.float64)
+    xs = np.linspace(0, 1, size)
+    lut = np.empty((size, 3), dtype=np.uint8)
+    for channel in range(3):
+        lut[:, channel] = np.interp(xs, positions, colors[:, channel]).astype(np.uint8)
+    return lut
+
+
+def _custom_legend_stops(stops: ColorScale, vmin: float, vmax: float) -> tuple[dict, ...]:
+    span = (vmax - vmin) or 1.0
+    return tuple(
+        {"offset": (v - vmin) / span, "color": "#%02x%02x%02x" % c} for v, c in stops
+    )
+
+
 def _mercator_north_first_rows(south: float, north: float, nrows: int) -> np.ndarray:
     """Source-row indices remapping a south-first, latitude-linear grid to an
     image whose rows run north (top) -> south (bottom) *uniformly in Web
@@ -168,8 +234,14 @@ def render_field(
     colormap: str,
     value_range: tuple[float, float] | None,
     opacity: int = 200,
+    custom_colormap: ColorScale | None = None,
 ) -> tuple[RenderedFrame, Legend]:
-    """Render one DecodedField to an RGBA PNG + Leaflet imageOverlay bounds + legend."""
+    """Render one DecodedField to an RGBA PNG + Leaflet imageOverlay bounds + legend.
+
+    ``custom_colormap`` (sorted (value, rgb) stops in the field's unit) overrides
+    the built-in ``colormap`` name and ``value_range``: the scale then runs from
+    the first to the last stop's value, and the legend reports those same stops.
+    """
     south, north = float(field.lats.min()), float(field.lats.max())
     west, east = float(field.lons.min()), float(field.lons.max())
 
@@ -177,16 +249,24 @@ def render_field(
     # the PNG aligns with Leaflet's (Mercator) imageOverlay placement.
     data = field.data[_mercator_north_first_rows(south, north, field.data.shape[0])]
 
-    if value_range is None:
-        finite = data[np.isfinite(data)]
-        vmin, vmax = (float(finite.min()), float(finite.max())) if finite.size else (0.0, 1.0)
+    if custom_colormap:
+        vmin, vmax = custom_colormap[0][0], custom_colormap[-1][0]
+        if vmax <= vmin:
+            vmax = vmin + 1.0
+        lut = _custom_lut(custom_colormap)
+        legend_stops = _custom_legend_stops(custom_colormap, vmin, vmax)
     else:
-        vmin, vmax = value_range
-    if vmax <= vmin:
-        vmax = vmin + 1.0
+        if value_range is None:
+            finite = data[np.isfinite(data)]
+            vmin, vmax = (float(finite.min()), float(finite.max())) if finite.size else (0.0, 1.0)
+        else:
+            vmin, vmax = value_range
+        if vmax <= vmin:
+            vmax = vmin + 1.0
+        lut = _colormap_lut(colormap)
+        legend_stops = _legend_stops(colormap)
 
     normalized = np.clip((data - vmin) / (vmax - vmin), 0.0, 1.0)
-    lut = _colormap_lut(colormap)
     idx = np.nan_to_num(normalized, nan=0.0)
     idx = (idx * (len(lut) - 1)).astype(np.uint8)
 
@@ -208,6 +288,6 @@ def render_field(
         unit=field.unit,
         min_value=vmin,
         max_value=vmax,
-        stops=_legend_stops(colormap),
+        stops=legend_stops,
     )
     return frame, legend

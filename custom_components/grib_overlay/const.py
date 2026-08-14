@@ -11,6 +11,11 @@ CONF_PARAMETERS = "parameters"
 CONF_RETAIN_RUNS = "retain_runs"
 CONF_FORECAST_HORIZON_HOURS = "forecast_horizon_hours"
 CONF_UPDATE_INTERVAL_MINUTES = "update_interval_minutes"
+# Optional per-parameter custom colour scales, entered as text (one parameter per
+# line): "<param_key>: <value>:<#hex>, <value>:<#hex>, ...". Values are in the
+# parameter's own source unit (m/s, degC, hPa, mm, m). Baked into the PNG at
+# render time; an empty/absent entry uses the parameter's built-in colormap.
+CONF_COLOR_SCALES = "color_scales"
 
 DEFAULT_RETAIN_RUNS = 2
 DEFAULT_FORECAST_HORIZON_HOURS = 24

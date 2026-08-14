@@ -11,11 +11,12 @@ from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CONF_API_KEY,
+    CONF_COLOR_SCALES,
     CONF_DATASET,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_NOTIFICATION_API_KEY,
@@ -176,6 +177,20 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_NOTIFICATION_API_KEY, default=current_notification_key
                 ): str,
+                # Optional per-parameter colour scales. One parameter per line:
+                # "<param_key>: <value>:<#hex>, <value>:<#hex>, ..." with values
+                # in the parameter's own unit (m/s, degC, hPa, mm, m).
+                vol.Optional(
+                    CONF_COLOR_SCALES,
+                    default=options.get(CONF_COLOR_SCALES, ""),
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(multiline=True)
+                ),
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        enabled = ", ".join(data.get(CONF_PARAMETERS, []))
+        return self.async_show_form(
+            step_id="init",
+            data_schema=schema,
+            description_placeholders={"parameters": enabled or "-"},
+        )
