@@ -152,7 +152,7 @@ type: custom:grib-overlay-card
 # isobar_smoothing: 60         # smoothing van het drukveld in km (standaard 60; 0 = uit; 100-150 = synoptischer)
 # show_pressure_centres: false # H/L-drukcentra verbergen (standaard aan)
 # pressure_prominence: 4       # hPa die een H/L moet "insluiten" om getoond te worden (standaard = isobar_interval)
-# max_pressure_centres: 3      # hoogstens zoveel H én zoveel L tonen (standaard 3)
+# max_pressure_centres: 3      # hoogstens zoveel H én zoveel L tonen (standaard 4)
 # center: [52.1, 5.3]
 # zoom: 7
 # grootte in een Secties-dashboard:
@@ -201,7 +201,7 @@ De **H/L-drukcentra** worden bepaald zoals op een echte weerkaart: een centrum
 wordt alleen getoond als het door minstens één gesloten isobaar wordt omsloten
 (instelbaar met `pressure_prominence`, standaard gelijk aan `isobar_interval`),
 plus een minimale onderlinge afstand en een maximum. Zo verdwijnen de vele kleine
-"ruis"-centra. Beperk ze verder met `max_pressure_centres` (standaard 3 per type)
+"ruis"-centra. Beperk ze verder met `max_pressure_centres` (standaard 4 per type)
 of zet ze uit met `show_pressure_centres: false`.
 
 ### Grootte / layout
@@ -240,6 +240,126 @@ is puur een weergavekeuze in de kaart (de onderliggende data verandert niet):
   standaard) of `deg` (numeriek `0–360°`).
 
 De legenda en het label in de parameterkeuze worden dan automatisch omgerekend.
+
+## Alle instellingen — referentie
+
+Volledige, exacte lijst van alle sleutels en waarden die je in de integratie
+(config-flow/opties) en in de card-YAML kunt gebruiken. De sleutels zijn
+hoofdlettergevoelig; gebruik ze exact zoals hieronder.
+
+### Bronnen (`source`)
+
+| `source` | Naam | API-sleutel |
+| --- | --- | --- |
+| `knmi` | KNMI Data Platform | ja (Open Data-sleutel) |
+| `dwd` | DWD Open Data (golven) | nee |
+| `bsh` | BSH (zeestroming Noordzee) | nee |
+
+### Datasets (`dataset`)
+
+| Bron | `dataset` | Naam | Grid | Horizon (max) | Stap |
+| --- | --- | --- | --- | --- | --- |
+| `knmi` | `harmonie_arome_cy43_p1` | HARMONIE-AROME Cy43 — Nederland | regulier lat/lon | 60 u | 1 u |
+| `knmi` | `harmonie_arome_cy43_p3` | HARMONIE-AROME Cy43 — Europa (DINI) | rotated lat/lon | 60 u | 1 u |
+| `dwd` | `ewam` | DWD EWAM — Europese golven | regulier lat/lon | 78 u | 1 u |
+| `bsh` | `bsh_current_northsea` | BSH — Zeestroming Noordzee | regulier lat/lon | 48 u | 15 min |
+
+### Parameters (`parameter` / `parameters`)
+
+**KNMI** (`harmonie_arome_cy43_p1` en `harmonie_arome_cy43_p3`, identiek):
+
+| `parameter` | Naam | Eenheid | Type |
+| --- | --- | --- | --- |
+| `wind_10m` | Wind (10m) | m/s | vector |
+| `wind_gust_10m` | Windstoten (10m) | m/s | vector |
+| `temperature_2m` | Temperatuur (2m) | °C | scalar |
+| `dewpoint_2m` | Dauwpunt (2m) | °C | scalar |
+| `humidity_2m` | Relatieve luchtvochtigheid (2m) | % | scalar |
+| `precipitation` | Neerslag | mm | scalar |
+| `pressure_msl` | Luchtdruk (zeeniveau) | hPa | scalar |
+| `visibility` | Zicht | km | scalar |
+| `cloud_cover` | Bewolking | % | scalar |
+
+**DWD** (`ewam`):
+
+| `parameter` | Naam | Eenheid | Type |
+| --- | --- | --- | --- |
+| `wave_height` | Golfhoogte (significant) | m | scalar |
+| `wave_period` | Golfperiode (gemiddeld) | s | scalar |
+| `wave_direction` | Golfrichting (gemiddeld) | ° | scalar |
+
+**BSH** (`bsh_current_northsea`):
+
+| `parameter` | Naam | Eenheid | Type |
+| --- | --- | --- | --- |
+| `current` | Zeestroming (oppervlak) | m/s | vector |
+
+Het **type** bepaalt welke weergaven beschikbaar zijn: `vector`-parameters
+(`wind_10m`, `wind_gust_10m`, `current`) ondersteunen `particles`/`vectors`; een
+richting-parameter (eenheid °, dus `wave_direction`) schakelt `wavevectors` in;
+en `pressure_msl` (eenheid hPa) schakelt de isobaren-laag in.
+
+### Integratie: setup-velden (config-flow)
+
+| Sleutel | Waarden |
+| --- | --- |
+| `source` | `knmi`, `dwd` of `bsh` |
+| `api_key` | KNMI Open Data-sleutel (leeg laten voor DWD/BSH) |
+| `notification_api_key` | optioneel; KNMI push-sleutel (leeg = alleen pollen) |
+| `dataset` | een dataset-sleutel uit de tabel hierboven |
+| `parameters` | lijst van parameter-sleutels die je wilt bijhouden |
+
+### Integratie: opties (Configureren)
+
+| Sleutel | Type | Default | Bereik / vorm |
+| --- | --- | --- | --- |
+| `forecast_horizon_hours` | getal (uren) | `24` | 1–60 |
+| `retain_runs` | geheel getal | `2` | 1–10 |
+| `update_interval_minutes` | geheel getal (min) | `30` | 5–180 |
+| `notification_api_key` | tekst | (leeg) | KNMI push-sleutel |
+| `color_scales` | meerregelige tekst | (leeg) | per regel: `parameter: waarde:#hex, waarde:#hex, …` (waarden in de **eigen eenheid** van de parameter) |
+
+### Card-instellingen (Lovelace-YAML)
+
+| Sleutel | Type | Default | Waarden / betekenis |
+| --- | --- | --- | --- |
+| `dataset` | tekst | (eerste) | datasetsleutel, -naam of titel — welke dataset bij het laden |
+| `entry_id` | tekst | (eerste) | exacte config-entry-id (wint van `dataset`) |
+| `parameter` | tekst | (eerste) | parametersleutel — welke parameter bij het laden |
+| `render_mode` | tekst | `raster` | `raster`, `particles`, `vectors`, `wavevectors` (valt terug op `raster` als de parameter het niet ondersteunt) |
+| `arrow_halo_color` | hex-kleur | `#ffffff` | contour (halo) om de wind-pijlen |
+| `show_isobars` | bool | `false` | isobaren + H/L-drukcentra als aparte laag |
+| `isobar_interval` | getal (hPa) | `4` | afstand tussen isobaren |
+| `isobar_levels` | lijst getallen (hPa) | — | exacte isobaren (overschrijft `isobar_interval`) |
+| `isobar_smoothing` | getal (km) | `60` | gladstrijken drukveld (`0` = uit) |
+| `show_pressure_centres` | bool | `true` | H/L-drukcentra tonen |
+| `pressure_prominence` | getal (hPa) | = `isobar_interval` | insluit-drempel voor een H/L |
+| `max_pressure_centres` | geheel getal | `4` | max. aantal H én L |
+| `center` | `[lat, lon]` | `[52.1, 5.3]` | startpositie van de kaart |
+| `zoom` | getal | `7` | start-zoomniveau |
+| `columns` | `full` of getal | `full` | breedte in een Secties-dashboard |
+| `rows` | getal | — | hoogte in grid-rijen (masonry) / begingrootte |
+| `grid_options` | object | — | HA-eigen `{rows, columns}` (wint van `rows`/`columns`) |
+| `wind_unit` | tekst | `m/s` | `m/s`, `kn`, `km/h`, `mph` |
+| `visibility_unit` | tekst | `km` | `km`, `NM` |
+| `direction_unit` | tekst | `compass` | `compass`, `deg` |
+
+De oude schrijfwijze `renderMode` (camelCase) blijft ook werken naast
+`render_mode`.
+
+### Eenheden (geldige waarden + aliassen)
+
+- **`wind_unit`** — geldt voor alle m/s-parameters (wind, windstoten,
+  zeestroming): `m/s` (standaard), `kn` (knopen; ook `kt`, `kts`, `knots`,
+  `knopen`, `knoop`), `km/h` (ook `km/u`, `kmh`, `kph`), `mph`.
+- **`visibility_unit`** — geldt voor `visibility`: `km` (standaard), `NM`
+  (zeemijlen; ook `nm`, `zeemijl`, `zeemijlen`).
+- **`direction_unit`** — windrichting in de readout en op de meteogram-as:
+  `compass` (kompas `N/O/Z/W`, standaard), `deg` (`0–360°`; ook `degrees`,
+  `graden`, `360`, `0-360`, `°`).
+
+Eenheden zijn puur een weergavekeuze in de card (de onderliggende data en de
+kleurschaal veranderen niet; alleen de legenda-getallen en labels).
 
 ## Back-ups
 
