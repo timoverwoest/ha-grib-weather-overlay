@@ -53,6 +53,10 @@ LEGENDS = {
         {"offset": 0.5, "color": "#ffffbf"}, {"offset": 0.75, "color": "#fc8d59"},
         {"offset": 1.0, "color": "#a50026"},
     ]},
+    "pressure_msl": {"unit": "hPa", "min_value": 980, "max_value": 1040, "stops": [
+        {"offset": 0.0, "color": "#4575b4"}, {"offset": 0.5, "color": "#ffffbf"},
+        {"offset": 1.0, "color": "#d73027"},
+    ]},
     "wave_height": {"unit": "m", "min_value": 0, "max_value": 8, "stops": [
         {"offset": 0.0, "color": "#0c2c5c"}, {"offset": 0.4, "color": "#40bebe"},
         {"offset": 0.6, "color": "#f0d66a"}, {"offset": 1.0, "color": "#961a5a"},
@@ -69,9 +73,29 @@ PARAMETERS = [
     {"key": "wind_gust_10m", "name": "Windstoten (10m)", "unit": "m/s", "colormap": "wind"},
     {"key": "precipitation", "name": "Neerslag", "unit": "mm", "colormap": "precipitation"},
     {"key": "temperature_2m", "name": "Temperatuur (2m)", "unit": "°C", "colormap": "temperature"},
+    {"key": "pressure_msl", "name": "Luchtdruk (zeeniveau)", "unit": "hPa", "colormap": "pressure"},
     {"key": "wave_height", "name": "Golfhoogte (significant)", "unit": "m", "colormap": "wave"},
     {"key": "wave_direction", "name": "Golfrichting", "unit": "°", "colormap": "direction"},
 ]
+
+
+def _synth_pressure_field() -> dict:
+    """A smooth MSL-pressure grid (hPa) with a low over the NW and a high over the
+    SE, north-first, in the field_grid dict shape the card contours into isobars."""
+    south, west, north, east = BOUNDS
+    nx, ny = 48, 32
+    dx = (east - west) / (nx - 1)
+    dy = (north - south) / (ny - 1)
+    data: list[float] = []
+    for j in range(ny):  # row 0 = northernmost
+        lat = north - j * dy
+        for i in range(nx):
+            lon = west + i * dx
+            d_low = (lon - 2.0) ** 2 + (lat - 55.0) ** 2
+            d_high = (lon - 9.0) ** 2 + (lat - 50.0) ** 2
+            val = 1013.0 - 20.0 * math.exp(-d_low / 6.0) + 17.0 * math.exp(-d_high / 8.0)
+            data.append(round(val, 2))
+    return {"nx": nx, "ny": ny, "lo1": west, "la1": north, "dx": dx, "dy": dy, "data": data}
 
 
 def _frame_list(parameter_key: str) -> list[dict]:
@@ -168,7 +192,12 @@ class Handler(BaseHTTPRequestHandler):
         elif parts[:3] == ["api", "grib_overlay", "field"]:
             # /api/grib_overlay/field/{entry_id}/{parameter_key}/{frame_id}.json
             parameter_key = parts[4]
-            self._file(DEV_DIR / f"field_{parameter_key}.json", "application/json")
+            if parameter_key == "pressure_msl":
+                # Synthetic MSL-pressure field (a low + a high) so the isobars
+                # render mode has something to contour in the dev harness.
+                self._json(_synth_pressure_field())
+            else:
+                self._file(DEV_DIR / f"field_{parameter_key}.json", "application/json")
         elif parts[:3] == ["api", "grib_overlay", "point"]:
             # /api/grib_overlay/point/{entry_id}/{parameter_key}?lat=&lon=
             parameter_key = parts[4]

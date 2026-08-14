@@ -33,7 +33,17 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   `leaflet-velocity`), naast de gekleurde raster-overlay. Kies "Wind (deeltjes)"
   in de kaart bij een wind-parameter; de deeltjes stromen mee met de
   windrichting boven een gedimde snelheidskaart. Er is ook een
-  **"Wind (vectoren)"**-modus met pijltjes (richting + grootte).
+  **"Wind (vectoren)"**-modus met pijltjes (richting + grootte); de pijlen zijn
+  **gekleurd naar windsnelheid** (dezelfde kleuren als de raster-legenda) met een
+  witte contour, zodat ze contrast houden met de overlay.
+- **Isobaren + drukcentra** als aparte laag: zet het vinkje **"Isobaren"** aan
+  en er komen drukcontourlijnen om de 4 hPa (de ronde 20 hPa-lijnen dikker) met
+  waarde-labels bovenop, plus **H**oge- (blauw) en **L**agedrukcentra (rood) met
+  hun kerndruk. Dit legt zich **over elke andere overlay van dezelfde dataset**
+  (bv. wind + isobaren), zolang die dataset een luchtdruk-parameter heeft. De
+  druk wordt uit de druk-parameter van diezelfde integratie gehaald.
+  *(Fronten/occlusies worden door analisten getekend en zitten niet in de open
+  GRIB-data; die staan er bewust nog niet bij.)*
 - **Waarde onder de muis** (voor álle parameters) wordt live linksonder in de
   kaart getoond, in de ingestelde eenheden; voor wind ook de richting. **Klik/
   tik** zet de waarde vast in een popup, en **houd ingedrukt / rechtsklik**
@@ -111,6 +121,8 @@ type: custom:grib-overlay-card
 # dataset: bsh_current_northsea   # datasetsleutel, -naam of de titel uit de keuzelijst
 # entry_id: <config entry id>     # exacte config-entry (wint van dataset)
 # parameter: wind_10m
+# render_mode: vectors  # startweergave: raster (standaard), particles, vectors of wavevectors
+# show_isobars: true    # start met de isobaren+drukcentra-laag aan (alleen zinvol als de dataset luchtdruk heeft)
 # center: [52.1, 5.3]
 # zoom: 7
 # grootte in een Secties-dashboard:
@@ -129,7 +141,11 @@ datasetnaam, of de titel zoals die in de keuzelijst van de kaart staat
 vastzetten, gebruik dan `entry_id` (die wint van `dataset`). Zonder
 `dataset`/`entry_id`/`parameter` pakt de kaart automatisch de eerst
 geconfigureerde dataset en het eerste geselecteerde parametertype, en kun je
-in de kaart zelf wisselen.
+in de kaart zelf wisselen. Met `render_mode` kies je de startweergave
+(`raster`, `particles`, `vectors` of `wavevectors`); past die niet bij de
+gekozen parameter (bv. `vectors` zonder wind), dan valt de kaart terug op
+`raster`. Met `show_isobars: true` start de isobaren+drukcentra-laag aan (dat
+is een losse laag bovenop de weergave, niet een `render_mode`).
 
 ### Grootte / layout
 

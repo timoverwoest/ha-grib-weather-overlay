@@ -11,6 +11,11 @@ const LEAFLET_CSS_URL = "/grib_overlay_static/vendor/leaflet/leaflet.css";
 const VELOCITY_JS_URL = "/grib_overlay_static/vendor/leaflet-velocity/leaflet-velocity.js";
 const VELOCITY_CSS_URL = "/grib_overlay_static/vendor/leaflet-velocity/leaflet-velocity.css";
 
+// Base overlay render modes selectable in the card / settable via `render_mode`
+// config. Isobars are NOT a base mode -- they are a separate layer (a toggle)
+// that draws on top of whichever base mode is active.
+const RENDER_MODES = ["raster", "particles", "vectors", "wavevectors"];
+
 function loadScript(url, isReady) {
   if (isReady()) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -76,6 +81,54 @@ function sampleGrid(header, data, lat, lon) {
 const COMPASS8 = ["N", "NO", "O", "ZO", "Z", "ZW", "W", "NW"];
 function compass(deg) {
   return COMPASS8[Math.round(((deg % 360) / 45)) % 8];
+}
+
+// Marching squares over a north-first scalar grid (the field_grid dict). Returns
+// contour segments [[lat1,lon1,lat2,lon2], ...] where the field crosses `level`.
+// Used to draw isobars from the MSL-pressure field.
+function marchingSquares(field, level) {
+  const { nx, ny, lo1, la1, dx, dy, data } = field;
+  const segs = [];
+  const at = (x, y) => data[y * nx + x];
+  const lon = (x) => lo1 + x * dx;
+  const lat = (y) => la1 - y * dy; // row 0 = north
+  // Position where the edge from corner a (value va) to corner b (value vb)
+  // crosses `level`, linearly interpolated, as [lat, lon].
+  const cross = (xa, ya, va, xb, yb, vb) => {
+    const t = vb === va ? 0.5 : (level - va) / (vb - va);
+    return [lat(ya + (yb - ya) * t), lon(xa + (xb - xa) * t)];
+  };
+  for (let y = 0; y < ny - 1; y++) {
+    for (let x = 0; x < nx - 1; x++) {
+      const tl = at(x, y);
+      const tr = at(x + 1, y);
+      const br = at(x + 1, y + 1);
+      const bl = at(x, y + 1);
+      if (tl == null || tr == null || br == null || bl == null) continue;
+      let idx = 0;
+      if (tl >= level) idx |= 8;
+      if (tr >= level) idx |= 4;
+      if (br >= level) idx |= 2;
+      if (bl >= level) idx |= 1;
+      if (idx === 0 || idx === 15) continue;
+      const top = () => cross(x, y, tl, x + 1, y, tr);
+      const right = () => cross(x + 1, y, tr, x + 1, y + 1, br);
+      const bottom = () => cross(x, y + 1, bl, x + 1, y + 1, br);
+      const left = () => cross(x, y, tl, x, y + 1, bl);
+      const push = (a, b) => segs.push([a[0], a[1], b[0], b[1]]);
+      switch (idx) {
+        case 1: case 14: push(left(), bottom()); break;
+        case 2: case 13: push(bottom(), right()); break;
+        case 3: case 12: push(left(), right()); break;
+        case 4: case 11: push(top(), right()); break;
+        case 6: case 9: push(top(), bottom()); break;
+        case 7: case 8: push(left(), top()); break;
+        case 5: push(left(), top()); push(bottom(), right()); break;
+        case 10: push(top(), right()); push(left(), bottom()); break;
+      }
+    }
+  }
+  return segs;
 }
 
 function formatTime(isoString) {
@@ -360,6 +413,9 @@ class GribOverlayCard extends HTMLElement {
           <option value="vectors">Vectoren (pijlen)</option>
           <option value="wavevectors">Golfrichting (pijlen)</option>
         </select>
+        <label class="isobars-toggle-label" title="Isobaren + hoge-/lagedrukcentra bovenop de overlay">
+          <input type="checkbox" class="isobars-toggle" /> Isobaren
+        </label>
       </div>
       <div class="map-container"><div class="map"></div><div class="readout hidden"></div></div>
       <div class="time-controls single-controls">
@@ -391,6 +447,8 @@ class GribOverlayCard extends HTMLElement {
       modeSingleBtn: card.querySelector(".mode-single"),
       modeAnimateBtn: card.querySelector(".mode-animate"),
       renderModeSelect: card.querySelector(".render-mode-select"),
+      isobarsToggle: card.querySelector(".isobars-toggle"),
+      isobarsToggleLabel: card.querySelector(".isobars-toggle-label"),
       mapContainer: card.querySelector(".map-container"),
       mapDiv: card.querySelector(".map"),
       readout: card.querySelector(".readout"),
@@ -436,9 +494,16 @@ class GribOverlayCard extends HTMLElement {
       if (this._playTimer) this._startPlaybackTimer();
     });
     this._els.renderModeSelect.addEventListener("change", () => this._onRenderModeChange());
+    this._els.isobarsToggle.addEventListener("change", () => this._onIsobarsToggle());
 
     this._mode = "single";
-    this._renderMode = this._config?.renderMode === "particles" ? "particles" : "raster";
+    // Default base overlay mode: honour a configured `render_mode` (or the legacy
+    // `renderMode`) when it names a real mode; otherwise plain raster. The
+    // availability check downgrades to raster if the mode doesn't fit the data.
+    const wantedMode = this._config?.render_mode ?? this._config?.renderMode;
+    this._renderMode = RENDER_MODES.includes(wantedMode) ? wantedMode : "raster";
+    // Isobars + pressure centres are a separate overlay layer (default off).
+    this._isobarsOn = !!this._config?.show_isobars;
     this._frames = [];
     this._boundsFit = false;
     this._windCache = new Map(); // wind_url -> fetched velocity data
@@ -478,9 +543,11 @@ class GribOverlayCard extends HTMLElement {
       window.L.DomEvent.preventDefault(e.originalEvent);
       this._onMapHold(e.latlng);
     });
-    // Wind-vector arrows are redrawn whenever the map moves/zooms/resizes.
+    // Screen-space overlays (arrows, isobars) are redrawn on every map move.
     this._map.on("moveend zoomend resize", () => {
-      if (this._renderMode === "vectors" || this._renderMode === "wavevectors") this._drawVectors();
+      const m = this._activeMode();
+      if (m === "vectors" || m === "wavevectors") this._drawVectors();
+      if (this._isobarsOn && this._pressureParam()) this._drawIsobars();
     });
 
     // Observe resizes and force an initial re-measure, so tiles/overlay render
@@ -711,6 +778,11 @@ class GribOverlayCard extends HTMLElement {
       this._removeVectors();
     }
 
+    // Isobars + pressure centres are an independent layer on top of the base
+    // overlay above, drawn from the entry's pressure parameter for this time.
+    if (this._isobarsOn && this._pressureParam()) this._updateIsobarOverlay(frame);
+    else this._removeIsobars();
+
     const label = `${formatTime(frame.valid_time)} (run ${formatTime(frame.run_time)})`;
     this._els.singleTimeLabel.textContent = label;
     this._els.animateTimeLabel.textContent = label;
@@ -820,7 +892,15 @@ class GribOverlayCard extends HTMLElement {
     return !!this._directionParam();
   }
 
-  // The active overlay mode, honouring what the current data supports.
+  // The entry's mean-sea-level pressure parameter (unit hPa), or null. Isobars +
+  // pressure centres are drawn from it, independent of the selected parameter, so
+  // they can overlay any other overlay of the same dataset.
+  _pressureParam() {
+    const entry = this._currentEntry();
+    return (entry && entry.parameters.find((p) => p.unit === "hPa")) || null;
+  }
+
+  // The active base overlay mode, honouring what the current data supports.
   _activeMode() {
     if ((this._renderMode === "particles" || this._renderMode === "vectors") && this._paramHasWind()) {
       return this._renderMode;
@@ -979,12 +1059,55 @@ class GribOverlayCard extends HTMLElement {
     svg.setAttribute("class", "wind-vectors");
     svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;z-index:400;";
     const defs = document.createElementNS(svgns, "defs");
+    // Three arrowheads: a fixed dark one (wave arrows), a white one (the casing
+    // under coloured wind arrows) and one that inherits the line colour via
+    // context-stroke (the coloured head itself). Heads scale with stroke width,
+    // so the thicker white casing line yields a slightly larger head that reads
+    // as an outline around the coloured head on top.
+    // The coloured wind head and its white casing use userSpaceOnUse units so
+    // their size is fixed (not multiplied by the thick casing stroke width) --
+    // the casing head is only ~1px larger all round, so the halo hugs the head
+    // tightly instead of ballooning. The dark head (wave arrows) is unchanged.
     defs.innerHTML =
       '<marker id="gribArrowHead" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto">' +
-      '<path d="M0,0 L4,2 L0,4 Z" fill="#12324f"/></marker>';
+      '<path d="M0,0 L4,2 L0,4 Z" fill="#12324f"/></marker>' +
+      '<marker id="gribArrowHeadCasing" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" refX="8.4" refY="4.3" orient="auto">' +
+      '<path d="M0,0 L8.4,4.3 L0,8.6 Z" fill="#ffffff"/></marker>' +
+      '<marker id="gribArrowHeadColor" markerUnits="userSpaceOnUse" markerWidth="7.4" markerHeight="7.4" refX="7" refY="3.5" orient="auto">' +
+      '<path d="M0,0 L7,3.5 L0,7 Z" fill="context-stroke"/></marker>';
     svg.appendChild(defs);
     this._map.getContainer().appendChild(svg);
     this._vectorSvg = svg;
+  }
+
+  // Build a value -> CSS colour function from a legend's colour stops, so the
+  // wind arrows can be tinted by speed with exactly the raster's colours.
+  _colorFromLegend(legend) {
+    if (!legend || !legend.stops || legend.stops.length === 0) return null;
+    const { min_value: lo, max_value: hi, stops } = legend;
+    const span = hi - lo || 1;
+    const hex = (c) => {
+      const m = /^#?([0-9a-f]{6})$/i.exec(c);
+      if (!m) return [0, 0, 0];
+      const n = parseInt(m[1], 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    };
+    const rgb = stops.map((s) => ({ off: s.offset, c: hex(s.color) }));
+    return (value) => {
+      const t = Math.max(0, Math.min(1, (value - lo) / span));
+      let a = rgb[0];
+      let b = rgb[rgb.length - 1];
+      for (let i = 0; i < rgb.length - 1; i++) {
+        if (t >= rgb[i].off && t <= rgb[i + 1].off) {
+          a = rgb[i];
+          b = rgb[i + 1];
+          break;
+        }
+      }
+      const f = b.off === a.off ? 0 : (t - a.off) / (b.off - a.off);
+      const mix = (i) => Math.round(a.c[i] + (b.c[i] - a.c[i]) * f);
+      return `rgb(${mix(0)},${mix(1)},${mix(2)})`;
+    };
   }
 
   _drawVectors() {
@@ -1011,6 +1134,24 @@ class GribOverlayCard extends HTMLElement {
     svg.style.height = size.y + "px";
     const spacing = 44; // px between arrows on screen -> uniform coverage at any zoom
     const scale = 3.4; // px per m/s
+    // Wind arrows are tinted by speed (with the raster's own colours) over a white
+    // casing so they keep contrast against the dimmed overlay. Wave arrows stay a
+    // single dark colour (their "speed" isn't wind speed).
+    const colorFn = m === "vectors" ? this._colorFromLegend(this._currentLegend) : null;
+    const svgns = "http://www.w3.org/2000/svg";
+    const addLine = (px, py, x2, y2, stroke, width, marker, opacity) => {
+      const line = document.createElementNS(svgns, "line");
+      line.setAttribute("x1", px.toFixed(1));
+      line.setAttribute("y1", py.toFixed(1));
+      line.setAttribute("x2", x2.toFixed(1));
+      line.setAttribute("y2", y2.toFixed(1));
+      line.setAttribute("stroke", stroke);
+      line.setAttribute("stroke-width", width);
+      line.setAttribute("stroke-linecap", "round");
+      line.setAttribute("marker-end", marker);
+      line.setAttribute("opacity", opacity);
+      g.appendChild(line);
+    };
 
     // Place arrows on a regular SCREEN grid and interpolate the wind there, so
     // the whole visible overlay is covered evenly regardless of zoom level.
@@ -1026,16 +1167,12 @@ class GribOverlayCard extends HTMLElement {
         // East = +x, north = -y (screen y points down).
         const x2 = px + (uu / speed) * len;
         const y2 = py - (vv / speed) * len;
-        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        line.setAttribute("x1", px.toFixed(1));
-        line.setAttribute("y1", py.toFixed(1));
-        line.setAttribute("x2", x2.toFixed(1));
-        line.setAttribute("y2", y2.toFixed(1));
-        line.setAttribute("stroke", "#12324f");
-        line.setAttribute("stroke-width", "1.6");
-        line.setAttribute("marker-end", "url(#gribArrowHead)");
-        line.setAttribute("opacity", "0.9");
-        g.appendChild(line);
+        if (colorFn) {
+          addLine(px, py, x2, y2, "#ffffff", "3.6", "url(#gribArrowHeadCasing)", "0.85");
+          addLine(px, py, x2, y2, colorFn(speed), "1.7", "url(#gribArrowHeadColor)", "1");
+        } else {
+          addLine(px, py, x2, y2, "#12324f", "1.6", "url(#gribArrowHead)", "0.9");
+        }
       }
     }
     svg.appendChild(g);
@@ -1047,6 +1184,203 @@ class GribOverlayCard extends HTMLElement {
       this._vectorSvg = null;
     }
     this._vectorData = null;
+  }
+
+  // -- isobars + pressure centres (a layer on top of the base overlay) -------
+  // Drawn from the dataset's pressure parameter for the current valid time, so
+  // they can sit over any other overlay (wind, temperature, ...) of that dataset.
+
+  async _updateIsobarOverlay(frame) {
+    const pParam = this._pressureParam();
+    if (!pParam) {
+      this._removeIsobars();
+      return;
+    }
+    const token = (this._isobarToken = (this._isobarToken || 0) + 1);
+    let field = null;
+    try {
+      // Find the pressure frame at the same valid time as the shown frame.
+      let pf = frame;
+      if (pParam.key !== this._els.paramSelect.value) {
+        const pframes = await this._fetchParamFrames(pParam.key);
+        pf = pframes.find((f) => f.valid_time === frame.valid_time) || null;
+      }
+      if (pf && pf.field_url) field = await this._fetchJson(pf.field_url, this._fieldCache);
+    } catch (err) {
+      field = null;
+    }
+    if (token !== this._isobarToken || !this._isobarsOn) return;
+    this._isobarField = field;
+    if (field) this._drawIsobars();
+    else this._removeIsobars();
+  }
+
+  _ensureIsobarSvg() {
+    if (this._isobarSvg) return;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "isobar-overlay");
+    // z-index 405 sits above the raster image overlay (Leaflet's overlayPane at
+    // 400) and the wind arrows (400), so the isobars + H/L labels stay readable.
+    svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;z-index:405;";
+    this._map.getContainer().appendChild(svg);
+    this._isobarSvg = svg;
+  }
+
+  _removeIsobars() {
+    if (this._isobarSvg) {
+      this._isobarSvg.remove();
+      this._isobarSvg = null;
+    }
+    this._isobarField = null;
+  }
+
+  _drawIsobars() {
+    if (!this._isobarField || !this._isobarsOn) return;
+    this._ensureIsobarSvg();
+    const svg = this._isobarSvg;
+    const svgns = "http://www.w3.org/2000/svg";
+    [...svg.querySelectorAll("g")].forEach((el) => el.remove());
+    const g = document.createElementNS(svgns, "g");
+    const size = this._map.getSize();
+    svg.setAttribute("width", size.x);
+    svg.setAttribute("height", size.y);
+    svg.setAttribute("viewBox", `0 0 ${size.x} ${size.y}`);
+    svg.style.width = size.x + "px";
+    svg.style.height = size.y + "px";
+
+    const field = this._isobarField;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const v of field.data) {
+      if (v != null && isFinite(v)) {
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+    }
+    if (!isFinite(lo) || hi <= lo) return;
+
+    const INTERVAL = 4; // hPa between isobars (standard synoptic spacing)
+    const proj = (lat, lon) => this._map.latLngToContainerPoint([lat, lon]);
+    const cx = size.x / 2;
+    const cy = size.y / 2;
+    const placed = []; // label anchor points, to avoid clutter
+    const first = Math.ceil(lo / INTERVAL) * INTERVAL;
+
+    for (let level = first; level <= hi; level += INTERVAL) {
+      const segs = marchingSquares(field, level);
+      if (!segs.length) continue;
+      let d = "";
+      let best = null; // segment midpoint nearest screen centre -> label anchor
+      for (const s of segs) {
+        const p1 = proj(s[0], s[1]);
+        const p2 = proj(s[2], s[3]);
+        d += `M${p1.x.toFixed(1)},${p1.y.toFixed(1)}L${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+        const mx = (p1.x + p2.x) / 2;
+        const my = (p1.y + p2.y) / 2;
+        if (mx > 24 && mx < size.x - 24 && my > 16 && my < size.y - 16) {
+          const dist = (mx - cx) ** 2 + (my - cy) ** 2;
+          if (!best || dist < best.dist) best = { x: mx, y: my, dist };
+        }
+      }
+      const bold = level % 20 === 0; // emphasise round 20-hPa isobars
+      const casing = document.createElementNS(svgns, "path");
+      casing.setAttribute("d", d);
+      casing.setAttribute("fill", "none");
+      casing.setAttribute("stroke", "#ffffff");
+      casing.setAttribute("stroke-width", bold ? "3.4" : "2.6");
+      casing.setAttribute("stroke-opacity", "0.7");
+      casing.setAttribute("stroke-linejoin", "round");
+      casing.setAttribute("stroke-linecap", "round");
+      g.appendChild(casing);
+      const line = document.createElementNS(svgns, "path");
+      line.setAttribute("d", d);
+      line.setAttribute("fill", "none");
+      line.setAttribute("stroke", "#20344a");
+      line.setAttribute("stroke-width", bold ? "1.7" : "1");
+      line.setAttribute("stroke-linejoin", "round");
+      line.setAttribute("stroke-linecap", "round");
+      g.appendChild(line);
+
+      // One value label per isobar, near screen centre, spaced from other labels.
+      if (best && !placed.some((p) => (p.x - best.x) ** 2 + (p.y - best.y) ** 2 < 44 * 44)) {
+        placed.push(best);
+        const t = document.createElementNS(svgns, "text");
+        t.setAttribute("x", best.x.toFixed(1));
+        t.setAttribute("y", best.y.toFixed(1));
+        t.setAttribute("text-anchor", "middle");
+        t.setAttribute("dominant-baseline", "middle");
+        t.setAttribute("font-family", "sans-serif");
+        t.setAttribute("font-size", "11");
+        t.setAttribute("font-weight", bold ? "700" : "600");
+        t.setAttribute("fill", "#20344a");
+        t.setAttribute("stroke", "#ffffff");
+        t.setAttribute("stroke-width", "3");
+        t.setAttribute("paint-order", "stroke");
+        t.textContent = String(Math.round(level));
+        g.appendChild(t);
+      }
+    }
+
+    this._drawPressureCentres(field, g, proj, size);
+    svg.appendChild(g);
+  }
+
+  // High (H) and Low (L) pressure centres from the field's local extrema. A
+  // point is a centre when it is the max/min within a small neighbourhood; close
+  // duplicates are dropped so the map stays legible.
+  _drawPressureCentres(field, g, proj, size) {
+    const svgns = "http://www.w3.org/2000/svg";
+    const { nx, ny, lo1, la1, dx, dy, data } = field;
+    const at = (x, y) => data[y * nx + x];
+    const R = 3; // neighbourhood radius (cells) a centre must dominate
+    const centres = [];
+    for (let y = R; y < ny - R; y++) {
+      for (let x = R; x < nx - R; x++) {
+        const c = at(x, y);
+        if (c == null || !isFinite(c)) continue;
+        let isMax = true;
+        let isMin = true;
+        for (let j = -R; j <= R && (isMax || isMin); j++) {
+          for (let i = -R; i <= R; i++) {
+            if (!i && !j) continue;
+            const n = at(x + i, y + j);
+            if (n == null || !isFinite(n)) continue;
+            if (n > c) isMax = false;
+            if (n < c) isMin = false;
+          }
+        }
+        if (isMax === isMin) continue; // flat patch or saddle -> not a centre
+        centres.push({ x, y, v: c, type: isMax ? "H" : "L" });
+      }
+    }
+
+    const placed = [];
+    const label = (px, py, text, color, fontSize, weight, halo) => {
+      const t = document.createElementNS(svgns, "text");
+      t.setAttribute("x", px.toFixed(1));
+      t.setAttribute("y", py.toFixed(1));
+      t.setAttribute("text-anchor", "middle");
+      t.setAttribute("dominant-baseline", "central");
+      t.setAttribute("font-family", "sans-serif");
+      t.setAttribute("font-weight", weight);
+      t.setAttribute("font-size", fontSize);
+      t.setAttribute("fill", color);
+      t.setAttribute("stroke", "#ffffff");
+      t.setAttribute("stroke-width", halo);
+      t.setAttribute("paint-order", "stroke");
+      t.textContent = text;
+      g.appendChild(t);
+    };
+
+    for (const c of centres) {
+      const p = proj(la1 - c.y * dy, lo1 + c.x * dx);
+      if (p.x < 14 || p.x > size.x - 14 || p.y < 18 || p.y > size.y - 18) continue;
+      if (placed.some((q) => (q.x - p.x) ** 2 + (q.y - p.y) ** 2 < 48 * 48)) continue;
+      placed.push({ x: p.x, y: p.y });
+      const color = c.type === "H" ? "#1440a4" : "#d0021b";
+      label(p.x, p.y, c.type, color, "20", "700", "3.5");
+      label(p.x, p.y + 15, String(Math.round(c.v)), color, "10", "600", "2.6");
+    }
   }
 
   // -- point value (click) + meteogram (hold) --------------------------------
@@ -1453,12 +1787,18 @@ class GribOverlayCard extends HTMLElement {
 
   _onRenderModeChange() {
     const v = this._els.renderModeSelect.value;
-    this._renderMode = ["particles", "vectors", "wavevectors"].includes(v) ? v : "raster";
+    this._renderMode = RENDER_MODES.includes(v) ? v : "raster";
     if (this._frames.length) this._showFrame(this._frameIndex || 0);
   }
 
-  // Enable/disable overlay modes based on the available data: wind modes need a
-  // wind (u/v) parameter, the wave-arrow mode needs a wave-direction parameter.
+  _onIsobarsToggle() {
+    this._isobarsOn = this._els.isobarsToggle.checked;
+    if (this._frames.length) this._showFrame(this._frameIndex || 0);
+  }
+
+  // Enable/disable overlays based on the available data: wind modes need a wind
+  // (u/v) parameter, the wave-arrow mode a wave-direction parameter, and the
+  // isobars layer a mean-sea-level pressure parameter on the current dataset.
   _syncRenderModeAvailability() {
     const hasWind = this._paramHasWind();
     for (const value of ["particles", "vectors"]) {
@@ -1476,6 +1816,12 @@ class GribOverlayCard extends HTMLElement {
       this._renderMode = "raster";
     }
     this._els.renderModeSelect.value = this._renderMode;
+
+    // The isobars layer is available whenever the dataset carries pressure.
+    const hasPressure = !!this._pressureParam();
+    this._els.isobarsToggle.disabled = !hasPressure;
+    this._els.isobarsToggleLabel.style.opacity = hasPressure ? "" : "0.4";
+    this._els.isobarsToggle.checked = this._isobarsOn && hasPressure;
   }
 
   _updateLegend() {
