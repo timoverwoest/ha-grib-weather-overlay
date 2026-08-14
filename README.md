@@ -165,6 +165,26 @@ is puur een weergavekeuze in de kaart (de onderliggende data verandert niet):
 
 De legenda en het label in de parameterkeuze worden dan automatisch omgerekend.
 
+## Back-ups
+
+De integratie cachet zijn werkbestanden onder `/config/grib_overlay/…`, en Home
+Assistant neemt heel `/config` mee in een back-up. Omdat de integratie continu
+nieuwe GRIB-bestanden downloadt en oude weggooit, kan een bestand precies tussen
+"back-up inventariseert" en "back-up schrijft" verdwijnen — dan faalde vroeger de
+héle back-up met `FileNotFoundError`. Dat is nu opgelost:
+
+- **Pauze tijdens de back-up.** Via HA's back-up-platform (`async_pre_backup` /
+  `async_post_backup`) pauzeert de integratie het verwerken en opruimen van runs
+  zolang een back-up loopt; een lopende verwerking wordt eerst netjes afgerond
+  vóór het archiveren begint. De eerstvolgende poll ná de back-up pakt een nieuwe
+  run alsnog op. Dit gebruikt hetzelfde mechanisme als de recorder en vereist
+  HA's back-up-systeem van **2025.1+** (zowel core- als HAOS-back-ups).
+- **Ruwe downloads buiten de back-up.** Losse per-bestand-bronnen (BSH, DWD)
+  downloaden hun ruwe GRIB-bestanden naar `/tmp` (buiten `/config`), zodat die
+  transiënte bestanden sowieso nooit in een back-up belanden. De grote
+  KNMI-tar (~850MB) blijft op schijf onder `/config` — in RAM (`/tmp` is vaak
+  tmpfs) zou die te groot zijn — en wordt door de pauze hierboven beschermd.
+
 ## Bekende beperkingen
 
 - Eén HARMONIE-forecast-run bij KNMI is een tar-archief van ~850MB (alle

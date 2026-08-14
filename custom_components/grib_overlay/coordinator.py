@@ -12,10 +12,13 @@ count) to keep bandwidth/disk bounded -- a HARMONIE run archive is roughly
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import shutil
 import tarfile
+import tempfile
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -66,6 +69,34 @@ class Frame:
 class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
     """One coordinator per config entry; owns one source + one dataset."""
 
+    # Shared across all entries, toggled by the backup platform (backup.py).
+    # Home Assistant archives the whole /config folder for a backup; because this
+    # integration constantly downloads and deletes GRIB working files under
+    # /config, a file removed between the backup's file listing and the tar write
+    # aborts the whole backup with FileNotFoundError. While a backup runs we skip
+    # processing a new run (and thus any deletion) entirely; the next poll after
+    # the backup picks the run up. See backup.py.
+    _backup_active: bool = False
+    _backup_since: float = 0.0
+    # Safety net: if async_post_backup never fires (e.g. a crashed/aborted
+    # backup) resume normal operation after this long rather than pausing
+    # downloads forever.
+    _BACKUP_MAX_SECONDS = 1800
+
+    @classmethod
+    def set_backup_active(cls, active: bool) -> None:
+        cls._backup_active = active
+        cls._backup_since = time.monotonic() if active else 0.0
+
+    @classmethod
+    def backup_in_progress(cls) -> bool:
+        if not cls._backup_active:
+            return False
+        if time.monotonic() - cls._backup_since > cls._BACKUP_MAX_SECONDS:
+            cls._backup_active = False
+            return False
+        return True
+
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         update_minutes = entry.options.get(
             CONF_UPDATE_INTERVAL_MINUTES, DEFAULT_UPDATE_INTERVAL_MINUTES
@@ -89,6 +120,16 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             session, entry.data[CONF_API_KEY], notification_api_key=notification_key
         )
         self.storage_dir = Path(hass.config.path(DOMAIN, entry.entry_id))
+        # Raw per-file downloads (non-archive sources such as BSH/DWD) go to a
+        # transient scratch dir OUTSIDE /config, so their churn never lands in a
+        # backup even on cores that don't invoke the backup hooks. They are small
+        # (individual GRIB files), so a possibly tmpfs /tmp is safe. KNMI's large
+        # (~850 MB) tar archive stays under storage_dir on disk and is protected
+        # instead by pausing processing during a backup (see backup.py).
+        self._raw_dir = Path(tempfile.gettempdir()) / DOMAIN / entry.entry_id
+        # Serialises run processing so the backup platform can wait for an
+        # in-flight run to finish its file churn before the archive is walked.
+        self._process_lock = asyncio.Lock()
         self._current_run_filename: str | None = None
         # frames[parameter_key] = list[Frame] sorted by valid_time
         self.frames: dict[str, list[Frame]] = {}
@@ -175,14 +216,26 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             raise UpdateFailed("Source returned no files for this dataset")
 
         latest = files[0]
-        if latest.filename != self._current_run_filename:
-            _LOGGER.debug("New run detected for %s: %s", dataset.key, latest.filename)
-            try:
-                await self._process_new_run(dataset, latest.filename)
-            except GribSourceError as err:
-                raise UpdateFailed(str(err)) from err
-            self._current_run_filename = latest.filename
-            await self.hass.async_add_executor_job(self._cleanup_old_runs)
+        if latest.filename != self._current_run_filename and not self.backup_in_progress():
+            async with self._process_lock:
+                # A backup may have started while we waited for the lock; the
+                # download/decode below deletes files under /config, so bail and
+                # let the next poll after the backup handle this run.
+                if not self.backup_in_progress():
+                    _LOGGER.debug(
+                        "New run detected for %s: %s", dataset.key, latest.filename
+                    )
+                    try:
+                        await self._process_new_run(dataset, latest.filename)
+                    except GribSourceError as err:
+                        raise UpdateFailed(str(err)) from err
+                    self._current_run_filename = latest.filename
+                    await self.hass.async_add_executor_job(self._cleanup_old_runs)
+        elif latest.filename != self._current_run_filename:
+            _LOGGER.debug(
+                "Backup in progress; deferring new run %s until it finishes",
+                latest.filename,
+            )
 
         return {"run_filename": self._current_run_filename, "dataset": dataset.key}
 
@@ -197,9 +250,12 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             CONF_FORECAST_HORIZON_HOURS, DEFAULT_FORECAST_HORIZON_HOURS
         )
         run_dir = self.storage_dir / Path(filename).stem
+        raw_dir: Path | None = None
 
         if getattr(self.source, "provides_archive", True):
-            # KNMI: one .tar archive holds every lead-time member.
+            # KNMI: one .tar archive holds every lead-time member. It is large
+            # (~850 MB), so it stays on disk under storage_dir rather than in a
+            # possibly RAM-backed /tmp; the backup pause guards its churn.
             tar_path = self.storage_dir / filename
             await self.source.async_download_file(dataset, filename, tar_path)
             try:
@@ -209,15 +265,25 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             finally:
                 await self.hass.async_add_executor_job(tar_path.unlink, True)
         else:
-            # DWD: source fetches individual per-parameter/per-lead-time GRIB files.
+            # DWD/BSH: individual per-parameter/per-lead-time GRIB files. These
+            # are small, so download them to a transient dir outside /config
+            # (kept out of backups entirely); the rendered PNGs/JSON below still
+            # land in run_dir under /config for the fast-restart cache.
+            raw_dir = self._raw_dir / Path(filename).stem
             member_paths = await self.source.async_download_run(
-                dataset, filename, run_dir, [p.key for p in parameters], horizon_hours
+                dataset, filename, raw_dir, [p.key for p in parameters], horizon_hours
             )
 
         new_frames = await self.hass.async_add_executor_job(
             self._decode_members, member_paths, run_dir, filename, parameters, horizon_hours
         )
         self.frames = new_frames
+        if raw_dir is not None:
+            # The raw GRIB members have been decoded into run_dir; drop the /tmp
+            # scratch copy. ignore_errors: a member may already be gone.
+            await self.hass.async_add_executor_job(
+                shutil.rmtree, raw_dir, True
+            )
 
     def _extract_archive(self, tar_path: Path, run_dir: Path) -> list[Path]:
         """Blocking: extract every regular member of a run archive into run_dir."""
