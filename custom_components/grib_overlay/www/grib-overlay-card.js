@@ -1072,7 +1072,7 @@ class GribOverlayCard extends HTMLElement {
       '<marker id="gribArrowHead" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto">' +
       '<path d="M0,0 L4,2 L0,4 Z" fill="#12324f"/></marker>' +
       '<marker id="gribArrowHeadCasing" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" refX="8.4" refY="4.3" orient="auto">' +
-      '<path d="M0,0 L8.4,4.3 L0,8.6 Z" fill="#ffffff"/></marker>' +
+      '<path d="M0,0 L8.4,4.3 L0,8.6 Z" fill="context-stroke"/></marker>' +
       '<marker id="gribArrowHeadColor" markerUnits="userSpaceOnUse" markerWidth="7.4" markerHeight="7.4" refX="7" refY="3.5" orient="auto">' +
       '<path d="M0,0 L7,3.5 L0,7 Z" fill="context-stroke"/></marker>';
     svg.appendChild(defs);
@@ -1134,10 +1134,12 @@ class GribOverlayCard extends HTMLElement {
     svg.style.height = size.y + "px";
     const spacing = 44; // px between arrows on screen -> uniform coverage at any zoom
     const scale = 3.4; // px per m/s
-    // Wind arrows are tinted by speed (with the raster's own colours) over a white
-    // casing so they keep contrast against the dimmed overlay. Wave arrows stay a
-    // single dark colour (their "speed" isn't wind speed).
+    // Wind arrows are tinted by speed (with the raster's own colours) over a
+    // casing so they keep contrast against the dimmed overlay. The casing colour
+    // (halo) is configurable via `arrow_halo_color` (default white). Wave arrows
+    // stay a single dark colour (their "speed" isn't wind speed).
     const colorFn = m === "vectors" ? this._colorFromLegend(this._currentLegend) : null;
+    const haloColor = this._config?.arrow_halo_color || "#ffffff";
     const svgns = "http://www.w3.org/2000/svg";
     const addLine = (px, py, x2, y2, stroke, width, marker, opacity) => {
       const line = document.createElementNS(svgns, "line");
@@ -1168,7 +1170,7 @@ class GribOverlayCard extends HTMLElement {
         const x2 = px + (uu / speed) * len;
         const y2 = py - (vv / speed) * len;
         if (colorFn) {
-          addLine(px, py, x2, y2, "#ffffff", "3.6", "url(#gribArrowHeadCasing)", "0.85");
+          addLine(px, py, x2, y2, haloColor, "3.6", "url(#gribArrowHeadCasing)", "0.85");
           addLine(px, py, x2, y2, colorFn(speed), "1.7", "url(#gribArrowHeadColor)", "1");
         } else {
           addLine(px, py, x2, y2, "#12324f", "1.6", "url(#gribArrowHead)", "0.9");
@@ -1259,14 +1261,30 @@ class GribOverlayCard extends HTMLElement {
     }
     if (!isFinite(lo) || hi <= lo) return;
 
-    const INTERVAL = 4; // hPa between isobars (standard synoptic spacing)
+    // Which isobars to draw. `isobar_levels` (explicit hPa list) wins; otherwise
+    // every `isobar_interval` hPa (default 4 -- the synoptic standard; use e.g. 2
+    // for denser lines). Only levels inside the field's range are kept.
+    const cfg = this._config || {};
+    let levels;
+    if (Array.isArray(cfg.isobar_levels) && cfg.isobar_levels.length) {
+      levels = cfg.isobar_levels
+        .map(Number)
+        .filter((l) => isFinite(l) && l >= lo && l <= hi)
+        .sort((a, b) => a - b);
+    } else {
+      const interval = Math.max(0.5, Number(cfg.isobar_interval) || 4);
+      levels = [];
+      for (let level = Math.ceil(lo / interval) * interval; level <= hi; level += interval) {
+        levels.push(level);
+      }
+    }
+
     const proj = (lat, lon) => this._map.latLngToContainerPoint([lat, lon]);
     const cx = size.x / 2;
     const cy = size.y / 2;
     const placed = []; // label anchor points, to avoid clutter
-    const first = Math.ceil(lo / INTERVAL) * INTERVAL;
 
-    for (let level = first; level <= hi; level += INTERVAL) {
+    for (const level of levels) {
       const segs = marchingSquares(field, level);
       if (!segs.length) continue;
       let d = "";
@@ -1321,40 +1339,52 @@ class GribOverlayCard extends HTMLElement {
       }
     }
 
-    this._drawPressureCentres(field, g, proj, size);
+    if (cfg.show_pressure_centres !== false) this._drawPressureCentres(field, g, proj, size);
     svg.appendChild(g);
   }
 
-  // High (H) and Low (L) pressure centres from the field's local extrema. A
-  // point is a centre when it is the max/min within a small neighbourhood; close
-  // duplicates are dropped so the map stays legible.
+  // High (H) and Low (L) pressure centres from the field's local extrema. To
+  // avoid clutter a centre must be the strict max/min within a +/-R window AND
+  // stand out from that window's mean by `minProminence` hPa (drops shallow noise
+  // wiggles); then only the few strongest per type are kept, well separated on
+  // screen. NOTE: interim heuristic -- the definitive H/L method is part of the
+  // separate weather-front analysis investigation.
   _drawPressureCentres(field, g, proj, size) {
     const svgns = "http://www.w3.org/2000/svg";
     const { nx, ny, lo1, la1, dx, dy, data } = field;
     const at = (x, y) => data[y * nx + x];
-    const R = 3; // neighbourhood radius (cells) a centre must dominate
-    const centres = [];
+    const cfg = this._config || {};
+    const R = 4; // neighbourhood radius (cells) a centre must dominate
+    const minProminence = 0.5; // hPa the centre must stand out from its surroundings
+    const maxPerType = Math.max(1, Number(cfg.max_pressure_centres) || 3);
+
+    const cand = { H: [], L: [] };
     for (let y = R; y < ny - R; y++) {
       for (let x = R; x < nx - R; x++) {
         const c = at(x, y);
         if (c == null || !isFinite(c)) continue;
         let isMax = true;
         let isMin = true;
-        for (let j = -R; j <= R && (isMax || isMin); j++) {
+        let sum = 0;
+        let count = 0;
+        for (let j = -R; j <= R; j++) {
           for (let i = -R; i <= R; i++) {
             if (!i && !j) continue;
             const n = at(x + i, y + j);
             if (n == null || !isFinite(n)) continue;
             if (n > c) isMax = false;
             if (n < c) isMin = false;
+            sum += n;
+            count++;
           }
         }
-        if (isMax === isMin) continue; // flat patch or saddle -> not a centre
-        centres.push({ x, y, v: c, type: isMax ? "H" : "L" });
+        if (isMax === isMin || !count) continue; // flat/saddle -> not a centre
+        const prominence = Math.abs(c - sum / count);
+        if (prominence < minProminence) continue;
+        cand[isMax ? "H" : "L"].push({ x, y, v: c, prominence });
       }
     }
 
-    const placed = [];
     const label = (px, py, text, color, fontSize, weight, halo) => {
       const t = document.createElementNS(svgns, "text");
       t.setAttribute("x", px.toFixed(1));
@@ -1372,14 +1402,21 @@ class GribOverlayCard extends HTMLElement {
       g.appendChild(t);
     };
 
-    for (const c of centres) {
-      const p = proj(la1 - c.y * dy, lo1 + c.x * dx);
-      if (p.x < 14 || p.x > size.x - 14 || p.y < 18 || p.y > size.y - 18) continue;
-      if (placed.some((q) => (q.x - p.x) ** 2 + (q.y - p.y) ** 2 < 48 * 48)) continue;
-      placed.push({ x: p.x, y: p.y });
-      const color = c.type === "H" ? "#1440a4" : "#d0021b";
-      label(p.x, p.y, c.type, color, "20", "700", "3.5");
-      label(p.x, p.y + 15, String(Math.round(c.v)), color, "10", "600", "2.6");
+    // Keep the strongest few per type, well separated on screen.
+    const placed = [];
+    for (const type of ["H", "L"]) {
+      let kept = 0;
+      for (const c of cand[type].sort((a, b) => b.prominence - a.prominence)) {
+        if (kept >= maxPerType) break;
+        const p = proj(la1 - c.y * dy, lo1 + c.x * dx);
+        if (p.x < 14 || p.x > size.x - 14 || p.y < 18 || p.y > size.y - 18) continue;
+        if (placed.some((q) => (q.x - p.x) ** 2 + (q.y - p.y) ** 2 < 70 * 70)) continue;
+        placed.push({ x: p.x, y: p.y });
+        kept++;
+        const color = type === "H" ? "#1440a4" : "#d0021b";
+        label(p.x, p.y, type, color, "20", "700", "3.5");
+        label(p.x, p.y + 15, String(Math.round(c.v)), color, "10", "600", "2.6");
+      }
     }
   }
 

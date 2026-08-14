@@ -122,7 +122,13 @@ type: custom:grib-overlay-card
 # entry_id: <config entry id>     # exacte config-entry (wint van dataset)
 # parameter: wind_10m
 # render_mode: vectors  # startweergave: raster (standaard), particles, vectors of wavevectors
-# show_isobars: true    # start met de isobaren+drukcentra-laag aan (alleen zinvol als de dataset luchtdruk heeft)
+# arrow_halo_color: "#ffffff"  # kleur van de contour (halo) om de wind-pijlen (standaard wit)
+# isobaren-laag (alleen zinvol als de dataset luchtdruk heeft):
+# show_isobars: true           # start met de isobaren+drukcentra-laag aan
+# isobar_interval: 2           # hPa tussen de isobaren (standaard 4; kleiner = meer lijnen)
+# isobar_levels: [1000, 1005, 1010]  # of: exact deze isobaren (overschrijft isobar_interval)
+# show_pressure_centres: false # H/L-drukcentra verbergen (standaard aan)
+# max_pressure_centres: 2      # hoogstens zoveel H én zoveel L tonen (standaard 3)
 # center: [52.1, 5.3]
 # zoom: 7
 # grootte in een Secties-dashboard:
@@ -141,11 +147,29 @@ datasetnaam, of de titel zoals die in de keuzelijst van de kaart staat
 vastzetten, gebruik dan `entry_id` (die wint van `dataset`). Zonder
 `dataset`/`entry_id`/`parameter` pakt de kaart automatisch de eerst
 geconfigureerde dataset en het eerste geselecteerde parametertype, en kun je
-in de kaart zelf wisselen. Met `render_mode` kies je de startweergave
-(`raster`, `particles`, `vectors` of `wavevectors`); past die niet bij de
-gekozen parameter (bv. `vectors` zonder wind), dan valt de kaart terug op
-`raster`. Met `show_isobars: true` start de isobaren+drukcentra-laag aan (dat
-is een losse laag bovenop de weergave, niet een `render_mode`).
+in de kaart zelf wisselen.
+
+**`render_mode` — startweergave.** Bepaalt met welke weergave de kaart opent
+(je kunt in de kaart altijd wisselen via de weergave-keuzelijst). Keuzes:
+
+- `raster` — gekleurde vlakvulling van de parameter (**standaard**).
+- `particles` — windy.com-achtige geanimeerde deeltjes boven een gedimde
+  raster; **alleen voor wind**.
+- `vectors` — pijltjes (richting + grootte), gekleurd naar windsnelheid met een
+  contour; **alleen voor wind**.
+- `wavevectors` — pijltjes voor de golfrichting; **alleen voor golven**.
+
+Past de gekozen modus niet bij de parameter (bijv. `vectors` terwijl er geen
+wind is), dan valt de kaart automatisch terug op `raster`. De contourkleur van
+de wind-pijlen stel je in met `arrow_halo_color` (standaard wit).
+
+**Isobaren-laag.** `show_isobars: true` opent met de isobaren + H/L-drukcentra
+als **aparte laag** bovenop de gekozen weergave (dus niet een `render_mode`;
+in de kaart is dit het vinkje *Isobaren*). Deze laag verschijnt alleen als de
+dataset een luchtdruk-parameter heeft. Regel welke isobaren getekend worden met
+`isobar_interval` (hPa tussen de lijnen, standaard 4) of `isobar_levels` (een
+lijst met exacte hPa-waarden). De H/L-centra beperk je met `max_pressure_centres`
+of zet je uit met `show_pressure_centres: false`.
 
 ### Grootte / layout
 
