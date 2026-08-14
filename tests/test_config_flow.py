@@ -173,6 +173,19 @@ def test_source_uses_notification_key_for_mqtt() -> None:
     assert with_notify._mqtt_client_id != without_notify._mqtt_client_id
 
 
+def test_mqtt_client_id_is_stable_per_instance() -> None:
+    """A given instance_id (config entry id) yields a stable client id across
+    reloads, so the broker reuses one session instead of piling up new ones."""
+    from custom_components.grib_overlay.sources.knmi import KnmiSource
+
+    a = KnmiSource(object(), "k", instance_id="entry-123")
+    b = KnmiSource(object(), "k", instance_id="entry-123")
+    assert a._mqtt_client_id == b._mqtt_client_id == "ha-grib-overlay-entry-123"
+    # Different entries differ; no instance_id falls back to a random unique id.
+    assert KnmiSource(object(), "k", instance_id="other")._mqtt_client_id != a._mqtt_client_id
+    assert KnmiSource(object(), "k")._mqtt_client_id != KnmiSource(object(), "k")._mqtt_client_id
+
+
 async def test_invalid_auth_shows_error(hass: HomeAssistant, aioclient_mock) -> None:
     aioclient_mock.get(FILES_URL, status=401)
 

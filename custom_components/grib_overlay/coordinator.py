@@ -118,7 +118,10 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             CONF_NOTIFICATION_API_KEY
         ) or entry.data.get(CONF_NOTIFICATION_API_KEY)
         self.source: GribSource = source_cls(
-            session, entry.data[CONF_API_KEY], notification_api_key=notification_key
+            session,
+            entry.data[CONF_API_KEY],
+            notification_api_key=notification_key,
+            instance_id=entry.entry_id,  # stable MQTT client id across reloads
         )
         self.storage_dir = Path(hass.config.path(DOMAIN, entry.entry_id))
         # Optional per-parameter custom colour scales (baked into the PNG at

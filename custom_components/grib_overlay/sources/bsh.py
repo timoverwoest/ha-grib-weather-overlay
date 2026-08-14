@@ -86,8 +86,8 @@ class BshSource(GribSource):
     provides_archive = False
 
     def __init__(self, session=None, api_key: str | None = None,
-                 notification_api_key: str | None = None) -> None:
-        pass  # anonymous FTP: no session or key
+                 notification_api_key: str | None = None, instance_id: str | None = None) -> None:
+        pass  # anonymous FTP: no session, key or push
 
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
         return list(KNOWN_DATASETS)

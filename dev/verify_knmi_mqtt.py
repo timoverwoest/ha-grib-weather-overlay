@@ -60,7 +60,16 @@ def main(api_key: str, dataset_key: str, dataset_version: str) -> None:
         protocol=mqtt.MQTTProtocolVersion.MQTTv5,
     )
     client.username_pw_set(username="token", password=api_key)
-    client.tls_set()
+    # tls_set() with no args uses the OS trust store. On a python.org macOS build
+    # that store is often empty ("certificate verify failed: unable to get local
+    # issuer certificate"), so prefer the certifi CA bundle when available. (Home
+    # Assistant OS has system certs, so the integration itself needs no certifi.)
+    try:
+        import certifi
+
+        client.tls_set(ca_certs=certifi.where())
+    except ImportError:
+        client.tls_set()
     client.ws_set_options(path=MQTT_WS_PATH)
     client.on_connect = on_connect
     client.on_message = on_message

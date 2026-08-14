@@ -219,6 +219,7 @@ class KnmiSource(GribSource):
         session: aiohttp.ClientSession,
         api_key: str,
         notification_api_key: str | None = None,
+        instance_id: str | None = None,
     ) -> None:
         self._session = session
         self._api_key = api_key
@@ -226,8 +227,12 @@ class KnmiSource(GribSource):
         # API. Use a dedicated notification key for MQTT when provided; otherwise
         # fall back to the Open Data key (best-effort -- it may be rejected).
         self._notification_api_key = notification_api_key or api_key
-        # Unique, stable-per-instance MQTT client id (KNMI requires one).
-        self._mqtt_client_id = f"ha-grib-overlay-{uuid.uuid4()}"
+        # KNMI requires a unique client id. Derive it from the config entry id so
+        # it is STABLE across reloads/restarts: reconnecting then resumes the same
+        # broker session (and the broker drops the previous connection) instead of
+        # leaving a new persistent session behind on every reload -- a pile-up of
+        # those can make the broker start rejecting connects ("Not authorized").
+        self._mqtt_client_id = f"ha-grib-overlay-{instance_id or uuid.uuid4()}"
         self._mqtt_client: mqtt.Client | None = None
         self._notify_auth_logged = False
 
