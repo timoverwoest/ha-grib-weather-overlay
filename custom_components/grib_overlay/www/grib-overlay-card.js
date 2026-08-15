@@ -499,6 +499,12 @@ class GribOverlayCard extends HTMLElement {
         padding: 6px 12px; border-bottom: 1px solid var(--divider-color, #e2e2e2);
         font: 12px/1.4 sans-serif;
       }
+      .grib-detail-tools .resctl { display: flex; align-items: center; gap: 5px; }
+      .grib-detail-tools .resselect {
+        font: inherit; padding: 1px 6px; border-radius: 6px; color: inherit;
+        border: 1px solid var(--divider-color, #c7ccd1);
+        background: var(--card-background-color, #fff);
+      }
       .grib-detail-tools .hint { opacity: 0.6; }
       .grib-detail-tools .chips { display: flex; gap: 6px; flex-wrap: wrap; }
       .grib-detail-tools .chip, .grib-detail-tools .showall {
@@ -2134,6 +2140,9 @@ class GribOverlayCard extends HTMLElement {
       return;
     }
     if (!this._detailModal) return; // closed while loading
+    // Keep the fetched data so the resolution control can re-render without refetching.
+    this._detailGroups = groups;
+    this._detailLatlng = latlng;
     this._setDetailBody(this._buildDetailTable(groups, latlng));
     // Apply the configured default selection: rows whose parameter isn't in the
     // list start hidden (the user can still bring any back via the chips).
@@ -2202,6 +2211,7 @@ class GribOverlayCard extends HTMLElement {
     this._closeDetailMeteogram();
     this._detailHidden = new Set(); // rows the user has temporarily hidden
     this._detailRowNames = new Map();
+    this._detailResolution = this._normalizeResolution((this._config || {}).meteogram_resolution);
     const backdrop = document.createElement("div");
     backdrop.className = "grib-detail-backdrop";
     backdrop.innerHTML =
@@ -2212,6 +2222,13 @@ class GribOverlayCard extends HTMLElement {
       `<button class="grib-detail-close" title="Sluiten" aria-label="Sluiten">&#10005;</button>` +
       `</div>` +
       `<div class="grib-detail-tools">` +
+      `<label class="resctl">Kolommen` +
+      `<select class="resselect">` +
+      `<option value="quarter">kwartier</option>` +
+      `<option value="hour">uur</option>` +
+      `<option value="3h">3 uur</option>` +
+      `<option value="day">dag (gemiddeld)</option>` +
+      `</select></label>` +
       `<span class="hint">Tik een rijlabel om die rij te verbergen</span>` +
       `<span class="chips"></span>` +
       `<button class="showall hidden">Alle rijen tonen</button>` +
@@ -2239,12 +2256,34 @@ class GribOverlayCard extends HTMLElement {
       this._detailHidden.clear();
       this._applyDetailHidden();
     });
+    const resSel = backdrop.querySelector(".resselect");
+    resSel.value = this._detailResolution;
+    resSel.addEventListener("change", () => {
+      this._detailResolution = this._normalizeResolution(resSel.value);
+      this._rerenderDetail();
+    });
     this._detailEsc = (ev) => {
       if (ev.key === "Escape") this._closeDetailMeteogram();
     };
     document.addEventListener("keydown", this._detailEsc);
     this.shadowRoot.appendChild(backdrop);
     this._detailModal = backdrop;
+  }
+
+  // Canonical column resolution from the card option / selector, with aliases.
+  _normalizeResolution(v) {
+    const raw = String(v == null ? "" : v).toLowerCase().replace(/\s+/g, "");
+    if (["kwartier", "kwart", "quarter", "15", "15m", "15min"].includes(raw)) return "quarter";
+    if (["3uur", "3u", "3h", "3", "180", "3hour", "3hourly"].includes(raw)) return "3h";
+    if (["dag", "day", "daily", "24h", "24u", "24uur", "1440"].includes(raw)) return "day";
+    return "hour"; // uur / hour / 1h / 60 and the default
+  }
+
+  // Rebuild the table from the cached data at the current resolution (no refetch).
+  _rerenderDetail() {
+    if (!this._detailModal || !this._detailGroups) return;
+    this._setDetailBody(this._buildDetailTable(this._detailGroups, this._detailLatlng));
+    this._applyDetailHidden();
   }
 
   // Show/hide one parameter's rows (its value row plus any direction row).
@@ -2295,6 +2334,8 @@ class GribOverlayCard extends HTMLElement {
       this._detailModal.remove();
       this._detailModal = null;
     }
+    this._detailGroups = null;
+    this._detailLatlng = null;
   }
 
   _buildDetailTable(groups, latlng) {
@@ -2313,58 +2354,149 @@ class GribOverlayCard extends HTMLElement {
       return `<div class="grib-detail-loading">Geen gegevens beschikbaar op dit punt.</div>` + note;
     }
 
-    // Shared time axis = union of all valid_times across every source, sorted.
-    const timeSet = new Set();
+    // Column resolution: raw timestamps are floored to a bucket (kwartier / uur /
+    // 3 uur / dag). For dag each parameter is AVERAGED over the day (circular mean
+    // for directions); for kwartier/uur/3 uur the actual value at that step is
+    // shown (the sample nearest the bucket start), not an average. The shared axis
+    // is the union of bucket-starts across every source.
+    const res = this._detailResolution || "hour";
+    const keySet = new Set();
     for (const g of active) {
       for (const r of g.seriesByKey.values()) {
         if (r && r.series) {
-          for (const s of r.series) if (s.value != null) timeSet.add(s.valid_time);
+          for (const s of r.series) {
+            if (s.value != null) keySet.add(this._bucketStart(new Date(s.valid_time), res));
+          }
         }
       }
     }
-    const times = [...timeSet].sort();
-    const dates = times.map((t) => new Date(t));
+    const columns = [...keySet].sort((a, b) => a - b);
+    const dates = columns.map((ms) => new Date(ms));
 
-    // Day boundaries (for separators/grouped day headers) + "now" column.
-    const sepAt = dates.map((d, i) => i > 0 && d.toDateString() !== dates[i - 1].toDateString());
-    const now = Date.now();
-    let nowIdx = -1;
-    let nowBest = Infinity;
-    dates.forEach((d, i) => {
-      const gap = Math.abs(d.getTime() - now);
-      if (gap < nowBest) {
-        nowBest = gap;
-        nowIdx = i;
-      }
-    });
-    if (nowBest > 3 * 3600000) nowIdx = -1; // only mark "now" if the run spans it
+    // Row-1 groups by a coarser unit than the columns: day for sub-day columns,
+    // month for day columns. Separators + the "now" column follow the same grid.
+    const g1key = (d) => (res === "day" ? `${d.getFullYear()}-${d.getMonth()}` : d.toDateString());
+    const sepAt = dates.map((d, i) => i > 0 && g1key(d) !== g1key(dates[i - 1]));
+    const nowIdx = columns.indexOf(this._bucketStart(new Date(), res));
     const cls = (i) => `cell${sepAt[i] ? " daysep" : ""}${i === nowIdx ? " nowcol" : ""}`;
 
-    // Header: a day row (weekday spanning its hours) + an hour row.
-    const dayFmt = new Intl.DateTimeFormat("nl-NL", { weekday: "short", day: "numeric", month: "short" });
-    let dayRow = `<th class="rowlabel"></th>`;
-    for (let i = 0; i < times.length; ) {
+    // Header: a group row (spanning its columns) + a per-column label row, both
+    // adapting to the resolution (day columns show the date; finer ones the hour).
+    const grpFmt =
+      res === "day"
+        ? new Intl.DateTimeFormat("nl-NL", { month: "long", year: "numeric" })
+        : new Intl.DateTimeFormat("nl-NL", { weekday: "short", day: "numeric", month: "short" });
+    const dayFmt = new Intl.DateTimeFormat("nl-NL", { weekday: "short", day: "numeric" });
+    const colLabel = (d) => {
+      if (res === "day") return dayFmt.format(d);
+      const hh = String(d.getHours()).padStart(2, "0");
+      return res === "quarter" ? `${hh}:${String(d.getMinutes()).padStart(2, "0")}` : hh;
+    };
+    let groupRow = `<th class="rowlabel"></th>`;
+    for (let i = 0; i < dates.length; ) {
       let span = 1;
-      while (i + span < times.length && dates[i + span].toDateString() === dates[i].toDateString()) {
-        span++;
-      }
-      dayRow += `<th colspan="${span}" class="dayhead${i > 0 ? " daysep" : ""}">${dayFmt.format(dates[i])}</th>`;
+      while (i + span < dates.length && g1key(dates[i + span]) === g1key(dates[i])) span++;
+      groupRow += `<th colspan="${span}" class="dayhead${i > 0 ? " daysep" : ""}">${grpFmt.format(dates[i])}</th>`;
       i += span;
     }
-    let hourRow = `<th class="rowlabel">tijd</th>`;
-    times.forEach((t, i) => {
-      const hh = String(dates[i].getHours()).padStart(2, "0");
-      hourRow += `<th class="${cls(i)}">${hh}</th>`;
+    let colRow = `<th class="rowlabel">tijd</th>`;
+    dates.forEach((d, i) => {
+      colRow += `<th class="${cls(i)}">${colLabel(d)}</th>`;
     });
 
-    const ctx = { times, cls, colCount: times.length };
+    const ctx = { columns, cls, colCount: columns.length, resolution: res };
     const body = active.map((g) => this._buildEntryRows(g, ctx)).join("");
     return (
       `<table class="grib-detail-table">` +
-      `<thead><tr>${dayRow}</tr><tr>${hourRow}</tr></thead>` +
+      `<thead><tr>${groupRow}</tr><tr>${colRow}</tr></thead>` +
       `<tbody>${body}</tbody></table>` +
       note
     );
+  }
+
+  // Floor a timestamp to the start of its column bucket, in local time.
+  _bucketStart(d, res) {
+    const x = new Date(d.getTime());
+    if (res === "day") {
+      x.setHours(0, 0, 0, 0);
+    } else if (res === "3h") {
+      x.setMinutes(0, 0, 0);
+      x.setHours(x.getHours() - (x.getHours() % 3));
+    } else if (res === "hour") {
+      x.setMinutes(0, 0, 0);
+    } else {
+      // quarter: 15-minute grid (BSH's finest step; hourly data lands on :00).
+      x.setSeconds(0, 0);
+      x.setMinutes(x.getMinutes() - (x.getMinutes() % 15));
+    }
+    return x.getTime();
+  }
+
+  // Reduce a parameter's raw series to one entry per column bucket. Accumulation
+  // parameters (`sum`, e.g. precipitation) are TOTALLED over each bucket at every
+  // resolution. Otherwise: for "day" the value is the arithmetic mean and the
+  // direction the circular (vector) mean over the whole day; for the finer
+  // resolutions the actual sample nearest the bucket start is used (no averaging).
+  // Keys are bucket-start epochs; values stay in the series' source units.
+  // Returns Map(bucketMs -> {value, direction}).
+  _aggregateSeries(series, res, sum) {
+    if (sum) {
+      const acc = new Map();
+      for (const s of series || []) {
+        if (s.value == null) continue;
+        const key = this._bucketStart(new Date(s.valid_time), res);
+        acc.set(key, (acc.get(key) || 0) + s.value);
+      }
+      const out = new Map();
+      for (const [key, v] of acc) out.set(key, { value: v, direction: null });
+      return out;
+    }
+    if (res === "day") {
+      const acc = new Map();
+      for (const s of series || []) {
+        if (s.value == null && s.direction == null) continue;
+        const key = this._bucketStart(new Date(s.valid_time), res);
+        let a = acc.get(key);
+        if (!a) {
+          a = { vSum: 0, vN: 0, sin: 0, cos: 0, dN: 0 };
+          acc.set(key, a);
+        }
+        if (s.value != null) {
+          a.vSum += s.value;
+          a.vN += 1;
+        }
+        if (s.direction != null) {
+          const r = (s.direction * Math.PI) / 180;
+          a.sin += Math.sin(r);
+          a.cos += Math.cos(r);
+          a.dN += 1;
+        }
+      }
+      const out = new Map();
+      for (const [key, a] of acc) {
+        out.set(key, {
+          value: a.vN ? a.vSum / a.vN : null,
+          direction: a.dN ? ((Math.atan2(a.sin, a.cos) * 180) / Math.PI + 360) % 360 : null,
+        });
+      }
+      return out;
+    }
+    // kwartier / uur / 3 uur: keep the actual value at the step (the sample whose
+    // time is nearest the bucket start), not an average.
+    const best = new Map();
+    for (const s of series || []) {
+      if (s.value == null && s.direction == null) continue;
+      const t = new Date(s.valid_time).getTime();
+      const key = this._bucketStart(new Date(t), res);
+      const dist = Math.abs(t - key);
+      const cur = best.get(key);
+      if (!cur || dist < cur.dist) {
+        best.set(key, { dist, value: s.value ?? null, direction: s.direction ?? null });
+      }
+    }
+    const out = new Map();
+    for (const [key, b] of best) out.set(key, { value: b.value, direction: b.direction });
+    return out;
   }
 
   // A footer note naming configured sources that returned no data at this point,
@@ -2385,7 +2517,7 @@ class GribOverlayCard extends HTMLElement {
 
   // Rows for one entry: a source/dataset header, then a colour-coded value row
   // per parameter (with a wind/wave from-direction arrow row above where present).
-  _buildEntryRows(group, { times, cls, colCount }) {
+  _buildEntryRows(group, { columns, cls, colCount, resolution }) {
     const { entry, seriesByKey, legendByKey } = group;
     const rows = [];
     const src = String(entry.source || "").toUpperCase();
@@ -2402,7 +2534,9 @@ class GribOverlayCard extends HTMLElement {
       if (!resp || !resp.series || !resp.series.some((s) => s.value != null)) continue;
       if (p.unit === "°") continue; // a standalone direction is drawn as arrows on its companion
 
-      const byT = new Map(resp.series.map((s) => [s.valid_time, s]));
+      // Precipitation (and any mm accumulation) is totalled per bucket; other
+      // parameters are averaged (day) or sampled (finer) -- see _aggregateSeries.
+      const byBucket = this._aggregateSeries(resp.series, resolution, resp.unit === "mm");
       const conv = this._conversionFor(resp.unit);
       const factor = conv ? conv.factor : 1;
       const dispUnit = conv ? conv.label : resp.unit;
@@ -2414,14 +2548,14 @@ class GribOverlayCard extends HTMLElement {
       // Direction arrow row: the arrow points the way the wind/waves travel, with
       // the from-direction printed below it in the card's chosen unit (compass or
       // 0-360 degrees), so it reads both at a glance and exactly.
-      if (resp.direction_unit && resp.series.some((s) => s.direction != null)) {
+      if (resp.direction_unit && [...byBucket.values()].some((b) => b.direction != null)) {
         let cells = `<td class="rowlabel" data-grp="${grp}" title="Klik om te verbergen">${p.name}<span class="ru">richting</span></td>`;
-        times.forEach((t, i) => {
-          const s = byT.get(t);
-          if (s && s.direction != null) {
-            const toDir = ((s.direction + 180) % 360).toFixed(0);
-            const label = this._formatDirection(s.direction);
-            const title = `${compass(s.direction)} (${Math.round(s.direction)}°)`;
+        columns.forEach((key, i) => {
+          const b = byBucket.get(key);
+          if (b && b.direction != null) {
+            const toDir = ((b.direction + 180) % 360).toFixed(0);
+            const label = this._formatDirection(b.direction);
+            const title = `${compass(b.direction)} (${Math.round(b.direction)}°)`;
             cells +=
               `<td class="${cls(i)} arrowcell" title="${title}">` +
               `<span class="arw" style="transform:rotate(${toDir}deg)">&#8593;</span>` +
@@ -2435,12 +2569,12 @@ class GribOverlayCard extends HTMLElement {
 
       // Value row: each cell tinted by the parameter's own colour scale.
       let cells = `<td class="rowlabel" data-grp="${grp}" title="Klik om te verbergen">${p.name}<span class="ru">${dispUnit}</span></td>`;
-      times.forEach((t, i) => {
-        const s = byT.get(t);
-        if (s && s.value != null) {
-          const bg = legend ? this._lerpLegendColor(legend, s.value) : null;
+      columns.forEach((key, i) => {
+        const b = byBucket.get(key);
+        if (b && b.value != null) {
+          const bg = legend ? this._lerpLegendColor(legend, b.value) : null;
           const style = bg ? ` style="background:${bg};color:${this._readableText(bg)}"` : "";
-          cells += `<td class="${cls(i)}"${style}>${this._fmtCell(resp.unit, s.value * factor)}</td>`;
+          cells += `<td class="${cls(i)}"${style}>${this._fmtCell(resp.unit, b.value * factor)}</td>`;
         } else {
           cells += `<td class="${cls(i)}">–</td>`;
         }

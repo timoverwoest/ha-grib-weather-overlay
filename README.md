@@ -66,9 +66,16 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   **Tik een rijlabel** om die rij tijdelijk te verbergen (zodat je een beperkte
   set naast elkaar ziet); verborgen rijen komen terug via de chips bovenin of
   **“Alle rijen tonen”**. De standaard-selectie leg je vast met de card-optie
-  [`meteogram_parameters`](#card-instellingen-lovelace-yaml). Tijdens het
-  samenstellen toont de popup een **laadindicator**; de data wordt per bron in
-  **één verzoek** opgehaald (`point_all`-endpoint), zodat het openen snel blijft.
+  [`meteogram_parameters`](#card-instellingen-lovelace-yaml). Met de keuze
+  **“Kolommen”** bovenin (of de card-optie `meteogram_resolution`) kies je de
+  tijdstap van de kolommen: **kwartier, uur, 3 uur of dag**. Bij kwartier/uur/
+  3 uur wordt de **werkelijke waarde op dat tijdstip** getoond (geen gemiddelde);
+  bij **dag** het **daggemiddelde** van alle data die dag (voor richting een
+  vector-/kompasgemiddelde). **Neerslag** is hierop de uitzondering: die wordt per
+  kolom **opgeteld** (de som over die periode), niet gemiddeld. Tijdens het
+  samenstellen toont de popup een
+  **laadindicator**; de data wordt per bron in **één verzoek** opgehaald
+  (`point_all`-endpoint), zodat het openen snel blijft.
 - Kaart-kaart met OpenStreetMap-basislaag + OpenSeaMap seamark-laag + de
   GRIB-overlay, volledig los van een internetverbinding voor de kaart-JS zelf
   (Leaflet wordt meegeleverd, geen CDN-afhankelijkheid voor de code — de
@@ -184,6 +191,7 @@ type: custom:grib-overlay-card
 # direction_unit: deg  # windrichting: compass (N/O/Z/W, standaard) of deg (0-360°)
 # uitgebreid meteogram — standaard zichtbare rijen (rest start verborgen; leeg = alles):
 # meteogram_parameters: [wind_10m, wind_gust_10m, temperature_2m, precipitation]
+# meteogram_resolution: uur   # kolom-tijdstap: kwartier, uur, 3uur of dag (dag = gemiddeld; neerslag = som)
 ```
 
 Met `dataset` kies je welke dataset de kaart bij het laden standaard toont;
@@ -372,6 +380,7 @@ en `pressure_msl` (eenheid hPa) schakelt de isobaren-laag in.
 | `visibility_unit` | tekst | `km` | `km`, `NM` |
 | `direction_unit` | tekst | `compass` | `compass`, `deg` |
 | `meteogram_parameters` | lijst of tekst | — | parametersleutels die in het uitgebreide meteogram **standaard zichtbaar** zijn; de rest start verborgen (in te schakelen via de chips). Leeg = alle rijen tonen. Match op parametersleutel, dus geldt voor álle bronnen |
+| `meteogram_resolution` | tekst | `uur` | tijdstap van de meteogram-kolommen: `kwartier`, `uur`, `3uur` of `dag`. Bij `dag` het daggemiddelde (neerslag: dagsom); fijner = waarde op dat tijdstip. In het venster zelf ook via “Kolommen” te wisselen |
 
 De oude schrijfwijze `renderMode` (camelCase) blijft ook werken naast
 `render_mode`. `meteogram_parameters` mag zowel een YAML-lijst als een door
