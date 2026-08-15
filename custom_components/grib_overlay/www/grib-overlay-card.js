@@ -2433,18 +2433,33 @@ class GribOverlayCard extends HTMLElement {
   }
 
   // Reduce a parameter's raw series to one entry per column bucket. Accumulation
-  // parameters (`sum`, e.g. precipitation) are TOTALLED over each bucket at every
-  // resolution. Otherwise: for "day" the value is the arithmetic mean and the
-  // direction the circular (vector) mean over the whole day; for the finer
-  // resolutions the actual sample nearest the bucket start is used (no averaging).
-  // Keys are bucket-start epochs; values stay in the series' source units.
-  // Returns Map(bucketMs -> {value, direction}).
-  _aggregateSeries(series, res, sum) {
+  // parameters (`sum`, e.g. precipitation) are TOTALLED over the period ENDING at
+  // each column: a sample is credited to the first column at/after its time, so
+  // e.g. the 03:00 column sums 01/02/03 and the 00:00 column sums the previous
+  // 22/23 plus 00 (day columns keep the calendar-day total). Otherwise: for "day"
+  // the value is the arithmetic mean and the direction the circular (vector) mean
+  // over the whole day; for the finer resolutions the actual sample nearest the
+  // bucket start is used (no averaging). Keys are bucket-start epochs; values stay
+  // in the series' source units. Returns Map(bucketMs -> {value, direction}).
+  _aggregateSeries(series, res, sum, columns) {
     if (sum) {
       const acc = new Map();
       for (const s of series || []) {
         if (s.value == null) continue;
-        const key = this._bucketStart(new Date(s.valid_time), res);
+        const t = new Date(s.valid_time).getTime();
+        let key;
+        if (res === "day") {
+          key = this._bucketStart(new Date(t), res);
+        } else {
+          key = null;
+          for (const c of columns) {
+            if (c >= t) {
+              key = c;
+              break;
+            }
+          }
+          if (key == null) continue; // beyond the last column: drop the partial tail
+        }
         acc.set(key, (acc.get(key) || 0) + s.value);
       }
       const out = new Map();
@@ -2534,9 +2549,10 @@ class GribOverlayCard extends HTMLElement {
       if (!resp || !resp.series || !resp.series.some((s) => s.value != null)) continue;
       if (p.unit === "°") continue; // a standalone direction is drawn as arrows on its companion
 
-      // Precipitation (and any mm accumulation) is totalled per bucket; other
-      // parameters are averaged (day) or sampled (finer) -- see _aggregateSeries.
-      const byBucket = this._aggregateSeries(resp.series, resolution, resp.unit === "mm");
+      // Precipitation (and any mm accumulation) is totalled over the period ending
+      // at each column; other parameters are averaged (day) or sampled (finer) --
+      // see _aggregateSeries.
+      const byBucket = this._aggregateSeries(resp.series, resolution, resp.unit === "mm", columns);
       const conv = this._conversionFor(resp.unit);
       const factor = conv ? conv.factor : 1;
       const dispUnit = conv ? conv.label : resp.unit;

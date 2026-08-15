@@ -72,8 +72,9 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   3 uur wordt de **werkelijke waarde op dat tijdstip** getoond (geen gemiddelde);
   bij **dag** het **daggemiddelde** van alle data die dag (voor richting een
   vector-/kompasgemiddelde). **Neerslag** is hierop de uitzondering: die wordt per
-  kolom **opgeteld** (de som over die periode), niet gemiddeld. Tijdens het
-  samenstellen toont de popup een
+  kolom **opgeteld** — de som over de periode die *eindigt* op die kolom (bv. de
+  3-uurskolom `03` = neerslag van 01+02+03; de kolom `00` = 22+23 van de vorige
+  dag plus 00), en bij dag de dagsom. Tijdens het samenstellen toont de popup een
   **laadindicator**; de data wordt per bron in **één verzoek** opgehaald
   (`point_all`-endpoint), zodat het openen snel blijft.
 - Kaart-kaart met OpenStreetMap-basislaag + OpenSeaMap seamark-laag + de
