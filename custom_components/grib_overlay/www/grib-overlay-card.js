@@ -822,7 +822,15 @@ class GribOverlayCard extends HTMLElement {
 
     // In an overlay mode the coloured raster stays as a dimmed background under
     // the particles/arrows (the windy.com look); otherwise it's the overlay.
-    const opacity = mode ? 0.45 : 0.75;
+    // Particles dim the raster more so they stay visible against it (a common
+    // mobile problem); `particle_base_opacity` overrides that dimming.
+    let opacity = 0.75;
+    if (mode === "particles") {
+      const d = Number(this._config && this._config.particle_base_opacity);
+      opacity = d >= 0 && d <= 1 ? d : 0.35;
+    } else if (mode) {
+      opacity = 0.45;
+    }
     if (!this._imageOverlay) {
       this._imageOverlay = window.L.imageOverlay(frame.image_url, bounds, { opacity }).addTo(this._map);
     } else {
@@ -1081,15 +1089,31 @@ class GribOverlayCard extends HTMLElement {
     if (token !== this._windToken || this._windMode() !== "particles") return;
 
     if (!this._windLayer) {
-      this._windLayer = window.L.velocityLayer({
-        displayValues: false, // our own cursor readout handles this, for all params
-        data,
-        maxVelocity: 30,
-        velocityScale: 0.01,
-      }).addTo(this._map);
+      this._windLayer = window.L.velocityLayer(this._velocityOptions(data)).addTo(this._map);
     } else {
       this._windLayer.setData(data);
     }
+  }
+
+  // Particle options, with contrast-oriented defaults (thicker lines than the
+  // library default of 1) and card overrides: `particle_width` (line width) and
+  // `particle_color` (a single #hex makes the particles that one colour instead
+  // of the velocity-coloured default -- often easier to see, e.g. on mobile).
+  _velocityOptions(data) {
+    const cfg = this._config || {};
+    const opts = {
+      displayValues: false, // our own cursor readout handles this, for all params
+      data,
+      maxVelocity: 30,
+      velocityScale: 0.01,
+      lineWidth: Number(cfg.particle_width) > 0 ? Number(cfg.particle_width) : 2,
+    };
+    const pc = String(cfg.particle_color || "").trim();
+    if (/^#?[0-9a-f]{6}$/i.test(pc)) {
+      const hex = pc.startsWith("#") ? pc : "#" + pc;
+      opts.colorScale = [hex, hex]; // uniform colour across the whole speed range
+    }
+    return opts;
   }
 
   _removeWindLayer() {

@@ -145,6 +145,10 @@ type: custom:grib-overlay-card
 # parameter: wind_10m
 # render_mode: vectors  # startweergave: raster (standaard), particles, vectors of wavevectors
 # arrow_halo_color: "#ffffff"  # kleur van de contour (halo) om de wind-pijlen (standaard wit)
+# deeltjes-weergave (contrast t.o.v. de laag erachter):
+# particle_color: "#0b1f3a"    # één vaste kleur i.p.v. velocity-kleuren (hoog contrast, bv. op mobiel)
+# particle_width: 2            # lijndikte van de deeltjes (standaard 2)
+# particle_base_opacity: 0.35  # hoe sterk de raster eronder gedimd wordt (0-1; standaard 0.35)
 # isobaren-laag (alleen zinvol als de dataset luchtdruk heeft):
 # show_isobars: true           # start met de isobaren+drukcentra-laag aan
 # isobar_interval: 2           # hPa tussen de isobaren (standaard 4; kleiner = meer lijnen)
@@ -178,7 +182,10 @@ in de kaart zelf wisselen.
 
 - `raster` — gekleurde vlakvulling van de parameter (**standaard**).
 - `particles` — windy.com-achtige geanimeerde deeltjes boven een gedimde
-  raster; **alleen voor wind**.
+  raster; **alleen voor wind**. Zie ze slecht tegen de laag erachter (vooral op
+  mobiel)? Verhoog het contrast met `particle_color` (één vaste kleur i.p.v. de
+  velocity-kleuren — bv. `#0b1f3a` donker of `#ffffff` wit), `particle_width`
+  (dikkere lijnen) en/of `particle_base_opacity` (raster verder dimmen).
 - `vectors` — pijltjes (richting + grootte), gekleurd naar windsnelheid met een
   contour; **alleen voor wind**.
 - `wavevectors` — pijltjes voor de golfrichting; **alleen voor golven**.
@@ -328,6 +335,9 @@ en `pressure_msl` (eenheid hPa) schakelt de isobaren-laag in.
 | `parameter` | tekst | (eerste) | parametersleutel — welke parameter bij het laden |
 | `render_mode` | tekst | `raster` | `raster`, `particles`, `vectors`, `wavevectors` (valt terug op `raster` als de parameter het niet ondersteunt) |
 | `arrow_halo_color` | hex-kleur | `#ffffff` | contour (halo) om de wind-pijlen |
+| `particle_color` | hex-kleur | (velocity-kleuren) | één vaste deeltjeskleur voor hoog contrast |
+| `particle_width` | getal | `2` | lijndikte van de deeltjes |
+| `particle_base_opacity` | getal `0`–`1` | `0.35` | dimming van de raster onder de deeltjes |
 | `show_isobars` | bool | `false` | isobaren + H/L-drukcentra als aparte laag |
 | `isobar_interval` | getal (hPa) | `4` | afstand tussen isobaren |
 | `isobar_levels` | lijst getallen (hPa) | — | exacte isobaren (overschrijft `isobar_interval`) |
