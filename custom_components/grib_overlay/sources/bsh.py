@@ -19,7 +19,6 @@ from __future__ import annotations
 import asyncio
 import bz2
 import ftplib
-import math
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -77,6 +76,44 @@ def _valid_dt(data_date: int, data_time: int) -> datetime:
     return datetime(y, m, d, data_time // 100, data_time % 100, tzinfo=timezone.utc)
 
 
+def _run_dt(run_id: str) -> datetime:
+    return datetime.strptime(run_id, "%Y%m%d%H").replace(tzinfo=timezone.utc)
+
+
+def _run_day(run_id: str) -> datetime:
+    return _run_dt(run_id).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _plan_blocks(
+    run_id: str, available: dict[str, set[int]], horizon_hours: float
+) -> list[tuple[str, int]]:
+    """Pick the (run, block) files to download to cover ``[run, run+horizon]``.
+
+    BSH numbers each ``.grb.bz2`` block by forecast *day*: block ``vv`` of a run
+    spans the calendar day ``run_date + vv``. The newest run can be published out
+    of order and is sometimes momentarily missing its near-term (today) block,
+    while the *previous* run still serves that day. So for every calendar day in
+    the window we take the block from the newest run that actually has it
+    (preferring the requested run), and simply skip a day that no run covers --
+    instead of assuming blocks start at 0 and aborting at the first gap.
+    """
+    target = _run_dt(run_id)
+    window_end = target + timedelta(hours=horizon_hours)
+    candidates = [run_id] + sorted((r for r in available if r != run_id), reverse=True)
+    plan: list[tuple[str, int]] = []
+    day = _run_day(run_id)
+    while day < window_end:
+        day_end = day + timedelta(days=1)
+        if day_end > target:  # this calendar day overlaps the forecast window
+            for rid in candidates:
+                vv = (day - _run_day(rid)).days
+                if vv >= 0 and vv in available.get(rid, set()):
+                    plan.append((rid, vv))
+                    break
+        day = day_end
+    return plan
+
+
 class BshSource(GribSource):
     """GribSource for BSH's open FTP North Sea current forecasts (GRIB1)."""
 
@@ -116,30 +153,38 @@ class BshSource(GribSource):
         raise GribSourceError("BSH delivers per-time files; use async_download_run")
 
     def _download_split(self, run_id: str, run_dir: Path, horizon_hours: float) -> list[Path]:
-        run_dt = datetime.strptime(run_id, "%Y%m%d%H").replace(tzinfo=timezone.utc)
+        target = _run_dt(run_id)
+        window_end = target + timedelta(hours=horizon_hours)
         run_dir.mkdir(parents=True, exist_ok=True)
-        horizon = timedelta(hours=horizon_hours)
-        n_blocks = max(1, math.ceil(horizon_hours / _BLOCK_HOURS))
         paths: list[Path] = []
+        seen: set[tuple[int, int]] = set()  # dedupe valid times when runs overlap
         try:
             with ftplib.FTP(_HOST, timeout=60) as ftp:
                 ftp.login()
-                for vv in range(n_blocks):
-                    fn = f"Current_{_AREA}_{run_id}_{vv:02d}.grb.bz2"
+                # Which blocks each run actually publishes -- BSH omits/reorders them.
+                available: dict[str, set[int]] = {}
+                for name in ftp.nlst(_DIR):
+                    if (m := _FILE_RE.search(name)):
+                        available.setdefault(m.group(1), set()).add(int(m.group(2)))
+                for source_run, vv in _plan_blocks(run_id, available, horizon_hours):
+                    fn = f"Current_{_AREA}_{source_run}_{vv:02d}.grb.bz2"
                     chunks = bytearray()
                     try:
                         ftp.retrbinary(f"RETR {_DIR}/{fn}", chunks.extend)
                     except ftplib.error_perm:
-                        break  # block not published (yet)
+                        continue  # block vanished between listing and fetch; skip the gap
                     raw = bz2.decompress(bytes(chunks))
-                    # Group the raw records by valid time, keep those in horizon.
+                    # Group the raw records by valid time, keep those in the window.
                     groups: dict[tuple[int, int], bytearray] = {}
                     for rec, ddate, dtime in grib1.iter_records(raw):
                         groups.setdefault((ddate, dtime), bytearray()).extend(rec)
                     for (ddate, dtime), rec_bytes in groups.items():
-                        valid = _valid_dt(ddate, dtime)
-                        if valid < run_dt or valid - run_dt > horizon:
+                        if (ddate, dtime) in seen:
                             continue
+                        valid = _valid_dt(ddate, dtime)
+                        if valid < target or valid > window_end:
+                            continue
+                        seen.add((ddate, dtime))
                         dest = run_dir / f"current_{ddate:08d}{dtime:04d}.grib"
                         dest.write_bytes(bytes(rec_bytes))
                         paths.append(dest)

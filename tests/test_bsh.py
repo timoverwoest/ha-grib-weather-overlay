@@ -9,7 +9,7 @@ hand-crafted GRIB1 records (no network).
 from __future__ import annotations
 
 from custom_components.grib_overlay import grib1
-from custom_components.grib_overlay.sources.bsh import KNOWN_DATASETS
+from custom_components.grib_overlay.sources.bsh import KNOWN_DATASETS, _plan_blocks
 
 
 def _u3(n: int) -> bytes:
@@ -89,6 +89,37 @@ def test_regroup_by_time_roundtrips_through_decoder() -> None:
     assert len(msgs) == 2
     assert msgs[0].matches({"indicatorOfParameter": 49, "indicatorOfTypeOfLevel": 160, "level": 1})
     assert msgs[1].matches({"indicatorOfParameter": 50, "indicatorOfTypeOfLevel": 160, "level": 1})
+
+
+def test_plan_blocks_fills_missing_near_term_from_previous_run() -> None:
+    # Live BSH state observed 2026-08-15: the 12Z run is missing its today-block
+    # (00) -- still served by the 00Z run -- and carries tomorrow-onward (1,2,3).
+    available = {"2026081500": {0}, "2026081512": {1, 2, 3}}
+    plan = _plan_blocks("2026081512", available, 48)
+    # today's block comes from the previous (00Z) run; the next days from 12Z.
+    assert plan == [("2026081500", 0), ("2026081512", 1), ("2026081512", 2)]
+
+
+def test_plan_blocks_prefers_the_requested_run() -> None:
+    available = {"2026081500": {0}, "2026081512": {0, 1}}
+    # block 0 exists in both runs -> the requested (newest) run wins.
+    assert _plan_blocks("2026081512", available, 24) == [
+        ("2026081512", 0),
+        ("2026081512", 1),
+    ]
+
+
+def test_plan_blocks_skips_a_day_no_run_covers() -> None:
+    # block 1 (tomorrow) is missing everywhere -> that day is skipped, not aborted.
+    available = {"2026081512": {0, 2}}
+    assert _plan_blocks("2026081512", available, 72) == [
+        ("2026081512", 0),
+        ("2026081512", 2),
+    ]
+
+
+def test_plan_blocks_empty_when_nothing_available() -> None:
+    assert _plan_blocks("2026081512", {}, 48) == []
 
 
 def test_bsh_dataset_registered() -> None:

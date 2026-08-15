@@ -287,7 +287,20 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         new_frames = await self.hass.async_add_executor_job(
             self._decode_members, member_paths, run_dir, filename, parameters, horizon_hours
         )
-        self.frames = new_frames
+        if any(new_frames.values()):
+            self.frames = new_frames
+        else:
+            # A run that decoded to nothing (e.g. a provider briefly missing its
+            # near-term files) must not blank a working source: keep the previous
+            # run's frames and drop the empty run dir so it can't shadow the good
+            # run on restore (_load_cached_frames requires non-empty frames) or
+            # get retained in its place.
+            _LOGGER.warning(
+                "Run %s for %s produced no frames; keeping the previous run",
+                filename,
+                dataset.key,
+            )
+            await self.hass.async_add_executor_job(shutil.rmtree, run_dir, True)
         if raw_dir is not None:
             # The raw GRIB members have been decoded into run_dir; drop the /tmp
             # scratch copy. ignore_errors: a member may already be gone.
