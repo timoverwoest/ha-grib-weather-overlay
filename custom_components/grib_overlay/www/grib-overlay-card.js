@@ -588,6 +588,14 @@ class GribOverlayCard extends HTMLElement {
       center: this._config.center || [52.1, 5.3],
       zoom: this._config.zoom || 7,
     });
+    // Our arrows/isobars live in this pane so they sit above the raster
+    // (overlayPane, z-index 400) but below Leaflet's popups (popupPane, 700) --
+    // otherwise the click/meteogram popups render behind them. It is inside the
+    // (transformed) map pane, so the overlays are drawn in layer coordinates.
+    this._map.createPane("gribOverlay");
+    const overlayPane = this._map.getPane("gribOverlay");
+    overlayPane.style.zIndex = "450";
+    overlayPane.style.pointerEvents = "none"; // clicks fall through to the map
     window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "&copy; OpenStreetMap contributors",
       maxZoom: 19,
@@ -1148,7 +1156,8 @@ class GribOverlayCard extends HTMLElement {
     const svgns = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(svgns, "svg");
     svg.setAttribute("class", "wind-vectors");
-    svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;z-index:400;";
+    // In the gribOverlay pane (z-index handled there); positioned per redraw.
+    svg.style.cssText = "position:absolute;pointer-events:none;";
     const defs = document.createElementNS(svgns, "defs");
     // Three arrowheads: a fixed dark one (wave arrows), a white one (the casing
     // under coloured wind arrows) and one that inherits the line colour via
@@ -1167,7 +1176,7 @@ class GribOverlayCard extends HTMLElement {
       '<marker id="gribArrowHeadColor" markerUnits="userSpaceOnUse" markerWidth="7.4" markerHeight="7.4" refX="7" refY="3.5" orient="auto">' +
       '<path d="M0,0 L7,3.5 L0,7 Z" fill="context-stroke"/></marker>';
     svg.appendChild(defs);
-    this._map.getContainer().appendChild(svg);
+    this._map.getPane("gribOverlay").appendChild(svg);
     this._vectorSvg = svg;
   }
 
@@ -1214,15 +1223,7 @@ class GribOverlayCard extends HTMLElement {
     const u = this._vectorData[0].data;
     const v = this._vectorData[1].data;
     const size = this._map.getSize();
-    // Size the SVG to the whole map. Without explicit width/height an inline SVG
-    // falls back to its 300x150 default and clips everything outside the top-left
-    // corner (arrows only showed there); matching the map size makes 1 user unit
-    // = 1 container pixel so the arrows land where we compute them.
-    svg.setAttribute("width", size.x);
-    svg.setAttribute("height", size.y);
-    svg.setAttribute("viewBox", `0 0 ${size.x} ${size.y}`);
-    svg.style.width = size.x + "px";
-    svg.style.height = size.y + "px";
+    this._positionOverlaySvg(svg, size);
     const spacing = 44; // px between arrows on screen -> uniform coverage at any zoom
     const scale = 3.4; // px per m/s
     // Wind arrows are tinted by speed (with the raster's own colours) over a
@@ -1312,11 +1313,26 @@ class GribOverlayCard extends HTMLElement {
     if (this._isobarSvg) return;
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("class", "isobar-overlay");
-    // z-index 405 sits above the raster image overlay (Leaflet's overlayPane at
-    // 400) and the wind arrows (400), so the isobars + H/L labels stay readable.
-    svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;z-index:405;";
-    this._map.getContainer().appendChild(svg);
+    // In the gribOverlay pane; appended after the wind arrows so the isobars +
+    // H/L labels read on top of them. Positioned per redraw.
+    svg.style.cssText = "position:absolute;pointer-events:none;";
+    this._map.getPane("gribOverlay").appendChild(svg);
     this._isobarSvg = svg;
+  }
+
+  // Position a screen-space overlay SVG inside the (transformed) gribOverlay pane
+  // so plain container-pixel drawing still lines up: place its top-left at the
+  // layer point of the container's top-left corner, with a 0..size viewBox. The
+  // pane's z-index (< popupPane) keeps click/meteogram popups above the overlay.
+  _positionOverlaySvg(svg, size) {
+    const tl = this._map.containerPointToLayerPoint([0, 0]);
+    svg.setAttribute("width", size.x);
+    svg.setAttribute("height", size.y);
+    svg.setAttribute("viewBox", `0 0 ${size.x} ${size.y}`);
+    svg.style.width = size.x + "px";
+    svg.style.height = size.y + "px";
+    svg.style.left = tl.x + "px";
+    svg.style.top = tl.y + "px";
   }
 
   _removeIsobars() {
@@ -1335,11 +1351,7 @@ class GribOverlayCard extends HTMLElement {
     [...svg.querySelectorAll("g")].forEach((el) => el.remove());
     const g = document.createElementNS(svgns, "g");
     const size = this._map.getSize();
-    svg.setAttribute("width", size.x);
-    svg.setAttribute("height", size.y);
-    svg.setAttribute("viewBox", `0 0 ${size.x} ${size.y}`);
-    svg.style.width = size.x + "px";
-    svg.style.height = size.y + "px";
+    this._positionOverlaySvg(svg, size);
 
     const cfg = this._config || {};
     // Smooth the pressure field to a synoptic scale before contouring. The SAME
