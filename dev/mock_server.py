@@ -30,7 +30,10 @@ DEV_DIR = REPO_ROOT / "dev"
 BOUNDS = (49.0, 0.0, 56.002, 11.281)  # south, west, north, east
 FRAME_COUNT = 6
 FRAME_STEP_HOURS = 1
-BASE_RUN_TIME = datetime(2026, 7, 18, 2, 0, tzinfo=timezone.utc)
+# Anchor the mock run around "now" so the meteogram's now-column marker shows.
+BASE_RUN_TIME = (
+    datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0) - timedelta(hours=2)
+)
 
 # Mirrors the real colormap stops from render.py so the legend looks right.
 LEGENDS = {
@@ -78,6 +81,47 @@ PARAMETERS = [
     {"key": "wave_direction", "name": "Golfrichting", "unit": "°", "colormap": "direction"},
 ]
 
+# A second source with its own (coarser, 2-hourly) time axis, so the detailed
+# meteogram's multi-source layout + union time-axis can be exercised.
+PARAMETERS_DWD = [
+    {"key": "wind_10m", "name": "Wind (10m)", "unit": "m/s", "colormap": "wind"},
+    {"key": "wind_gust_10m", "name": "Windstoten (10m)", "unit": "m/s", "colormap": "wind"},
+    {"key": "temperature_2m", "name": "Temperatuur (2m)", "unit": "°C", "colormap": "temperature"},
+    {"key": "precipitation", "name": "Neerslag", "unit": "mm", "colormap": "precipitation"},
+    {"key": "pressure_msl", "name": "Luchtdruk (zeeniveau)", "unit": "hPa", "colormap": "pressure"},
+]
+
+# entry_id -> config. Each entry may carry its own frame_count/step so the shared
+# time axis in the detailed meteogram is a genuine union of differing model steps.
+ENTRIES = {
+    ENTRY_ID: {
+        "entry_id": ENTRY_ID,
+        "title": "KNMI - HARMONIE-AROME (mock)",
+        "source": "knmi",
+        "dataset": {
+            "key": "harmonie_arome_cy43_p1",
+            "name": "HARMONIE-AROME Cy43 - Nederland",
+            "bounds": list(BOUNDS),
+        },
+        "parameters": PARAMETERS,
+        "frame_count": FRAME_COUNT,
+        "step_hours": FRAME_STEP_HOURS,
+    },
+    "mock_entry_2": {
+        "entry_id": "mock_entry_2",
+        "title": "DWD - ICON-EU (mock)",
+        "source": "dwd",
+        "dataset": {
+            "key": "icon_eu",
+            "name": "ICON-EU - Europa",
+            "bounds": [40.0, -10.0, 62.0, 20.0],
+        },
+        "parameters": PARAMETERS_DWD,
+        "frame_count": 5,
+        "step_hours": 2,
+    },
+}
+
 
 def _synth_pressure_field() -> dict:
     """A smooth MSL-pressure grid (hPa) with a low over the NW and a high over the
@@ -100,13 +144,48 @@ def _synth_pressure_field() -> dict:
     return {"nx": nx, "ny": ny, "lo1": west, "la1": north, "dx": dx, "dy": dy, "data": data}
 
 
-def _frame_list(parameter_key: str) -> list[dict]:
+def _public_entry(entry: dict) -> dict:
+    """The subset of an ENTRIES config that the /entries endpoint exposes."""
+    return {k: entry[k] for k in ("entry_id", "title", "source", "dataset", "parameters")}
+
+
+def _point_payload(entry: dict, parameter_key: str, lat: float) -> dict:
+    """A synthetic value series + colour legend for one parameter at a point.
+
+    Mirrors the real point/point_all endpoints so the meteogram/value UI can be
+    tested: a smooth series, a per-entry phase shift so the two sources differ,
+    and a companion from-direction for wind/waves.
+    """
+    legend = LEGENDS.get(parameter_key, {})
+    lo = legend.get("min_value", 0)
+    hi = legend.get("max_value", 20)
+    has_dir = parameter_key in ("wind_10m", "wind_gust_10m", "wave_height")
+    phase = 0.0 if entry["entry_id"] == ENTRY_ID else 1.1
+    series = []
+    for i in range(entry["frame_count"]):
+        vt = BASE_RUN_TIME + timedelta(hours=i * entry["step_hours"])
+        frac = 0.5 + 0.4 * math.sin(i / 2.0 + lat + phase)
+        point = {"valid_time": vt.isoformat(), "value": round(lo + frac * (hi - lo), 1)}
+        if has_dir:
+            # sweep direction so it crosses the 0/360 wrap (tests the break);
+            # give gusts a small offset so wind vs gust direction are distinct.
+            offset = 20 if parameter_key == "wind_gust_10m" else 0
+            point["direction"] = round((300 + i * 25 + offset) % 360, 0)
+        series.append(point)
+    payload = {"unit": legend.get("unit", ""), "legend": legend, "series": series}
+    if has_dir:
+        payload["direction_unit"] = "°"
+    return payload
+
+
+def _frame_list(entry: dict, parameter_key: str) -> list[dict]:
     frames = []
-    for i in range(FRAME_COUNT):
-        valid_time = BASE_RUN_TIME + timedelta(hours=i * FRAME_STEP_HOURS)
+    eid = entry["entry_id"]
+    for i in range(entry["frame_count"]):
+        valid_time = BASE_RUN_TIME + timedelta(hours=i * entry["step_hours"])
         frame_id = f"{parameter_key}_{valid_time:%Y%m%dT%H%M}"
         wind_url = (
-            f"/api/grib_overlay/wind/{ENTRY_ID}/{parameter_key}/{frame_id}.json"
+            f"/api/grib_overlay/wind/{eid}/{parameter_key}/{frame_id}.json"
             if parameter_key == "wind_10m"
             else None
         )
@@ -115,10 +194,10 @@ def _frame_list(parameter_key: str) -> list[dict]:
                 "frame_id": frame_id,
                 "valid_time": valid_time.isoformat(),
                 "run_time": BASE_RUN_TIME.isoformat(),
-                "bounds": list(BOUNDS),
-                "image_url": f"/api/grib_overlay/frame/{ENTRY_ID}/{parameter_key}/{frame_id}.png",
+                "bounds": entry["dataset"]["bounds"],
+                "image_url": f"/api/grib_overlay/frame/{eid}/{parameter_key}/{frame_id}.png",
                 "wind_url": wind_url,
-                "field_url": f"/api/grib_overlay/field/{ENTRY_ID}/{parameter_key}/{frame_id}.json",
+                "field_url": f"/api/grib_overlay/field/{eid}/{parameter_key}/{frame_id}.json",
                 "legend": LEGENDS[parameter_key],
             }
         )
@@ -157,32 +236,20 @@ class Handler(BaseHTTPRequestHandler):
             content_type = "text/css" if rel.suffix == ".css" else "application/javascript"
             self._file(WWW_DIR / rel, content_type)
         elif parsed.path == "/api/grib_overlay/entries":
-            self._json(
-                {
-                    "entries": [
-                        {
-                            "entry_id": ENTRY_ID,
-                            "title": "KNMI - HARMONIE-AROME (mock)",
-                            "source": "knmi",
-                            "dataset": {
-                                "key": "harmonie_arome_cy43_p1",
-                                "name": "HARMONIE-AROME Cy43 - Nederland",
-                                "bounds": list(BOUNDS),
-                            },
-                            "parameters": PARAMETERS,
-                        }
-                    ]
-                }
-            )
+            self._json({"entries": [_public_entry(e) for e in ENTRIES.values()]})
         elif parts[:2] == ["api", "grib_overlay"] and len(parts) >= 3 and parts[2] == "frames":
             entry_id = parts[3]
+            entry = ENTRIES.get(entry_id)
+            if entry is None:
+                self._json({"error": "unknown entry_id"}, status=404)
+                return
             query = parse_qs(parsed.query)
             only_param = query.get("parameter", [None])[0]
             result = {}
-            for param in PARAMETERS:
+            for param in entry["parameters"]:
                 if only_param and param["key"] != only_param:
                     continue
-                result[param["key"]] = _frame_list(param["key"])
+                result[param["key"]] = _frame_list(entry, param["key"])
             self._json(result)
         elif parts[:3] == ["api", "grib_overlay", "frame"]:
             # /api/grib_overlay/frame/{entry_id}/{parameter_key}/{frame_id}.png
@@ -200,34 +267,21 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(_synth_pressure_field())
             else:
                 self._file(DEV_DIR / f"field_{parameter_key}.json", "application/json")
-        elif parts[:3] == ["api", "grib_overlay", "point"]:
-            # /api/grib_overlay/point/{entry_id}/{parameter_key}?lat=&lon=
-            parameter_key = parts[4]
-            unit = LEGENDS.get(parameter_key, {}).get("unit", "")
-            lo, hi = (
-                LEGENDS.get(parameter_key, {}).get("min_value", 0),
-                LEGENDS.get(parameter_key, {}).get("max_value", 20),
-            )
+        elif parts[:3] == ["api", "grib_overlay", "point_all"]:
+            # /api/grib_overlay/point_all/{entry_id}?lat=&lon=
+            entry = ENTRIES.get(parts[3], ENTRIES[ENTRY_ID])
             q = parse_qs(parsed.query)
             lat = float(q.get("lat", [52.0])[0])
-            # wind (u/v) and wave height both get a companion direction series
-            has_dir = parameter_key in ("wind_10m", "wind_gust_10m", "wave_height")
-            # a smooth synthetic series so the meteogram/value UI can be tested
-            series = []
-            for i in range(FRAME_COUNT):
-                vt = BASE_RUN_TIME + timedelta(hours=i * FRAME_STEP_HOURS)
-                frac = 0.5 + 0.4 * math.sin(i / 2.0 + lat)
-                point = {"valid_time": vt.isoformat(), "value": round(lo + frac * (hi - lo), 1)}
-                if has_dir:
-                    # sweep direction so it crosses the 0/360 wrap (tests the break);
-                    # give gusts a small offset so wind vs gust direction are distinct.
-                    offset = 20 if parameter_key == "wind_gust_10m" else 0
-                    point["direction"] = round((300 + i * 25 + offset) % 360, 0)
-                series.append(point)
-            payload = {"unit": unit, "series": series}
-            if has_dir:
-                payload["direction_unit"] = "°"
-            self._json(payload)
+            params = {
+                p["key"]: _point_payload(entry, p["key"], lat) for p in entry["parameters"]
+            }
+            self._json({"params": params})
+        elif parts[:3] == ["api", "grib_overlay", "point"]:
+            # /api/grib_overlay/point/{entry_id}/{parameter_key}?lat=&lon=
+            entry = ENTRIES.get(parts[3], ENTRIES[ENTRY_ID])
+            q = parse_qs(parsed.query)
+            lat = float(q.get("lat", [52.0])[0])
+            self._json(_point_payload(entry, parts[4], lat))
         else:
             self.send_response(404)
             self.end_headers()

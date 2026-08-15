@@ -53,6 +53,22 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   (band tussen wind en stoot) — en op de **tweede y-as** zowel de **wind- als de
   windstoot-richting** (kompas N/O/Z/W). Windstoten moeten daarvoor als parameter
   aan staan.
+- **Uitgebreid meteogram (alle parameters & bronnen).** Onderin elke waarde- en
+  meteogram-popup staat de link **“Alle parameters & bronnen ▸”**. Die opent een
+  Windy-achtig **tabel-meteogram**: één rij per parameter, gekleurde waarde-cellen
+  en alle rijen op **dezelfde tijd-as** (kolommen). Het toont **alle beschikbare
+  GRIB-data op dat punt uit álle geconfigureerde integraties** (KNMI, DWD, BSH …),
+  per bron gegroepeerd; bronnen met een afwijkende tijdstap vullen simpelweg de
+  bijbehorende kolommen (de rest blijft leeg). De cel-kleuren en eenheden volgen
+  exact de in de card/integratie ingestelde **kleurschalen** (incl. eigen
+  `color_scales`) en **eenheden** (`wind_unit`, `visibility_unit`,
+  `direction_unit`); richtingen staan als **pijl én als getal** (kompas of 0–360°).
+  **Tik een rijlabel** om die rij tijdelijk te verbergen (zodat je een beperkte
+  set naast elkaar ziet); verborgen rijen komen terug via de chips bovenin of
+  **“Alle rijen tonen”**. De standaard-selectie leg je vast met de card-optie
+  [`meteogram_parameters`](#card-instellingen-lovelace-yaml). Tijdens het
+  samenstellen toont de popup een **laadindicator**; de data wordt per bron in
+  **één verzoek** opgehaald (`point_all`-endpoint), zodat het openen snel blijft.
 - Kaart-kaart met OpenStreetMap-basislaag + OpenSeaMap seamark-laag + de
   GRIB-overlay, volledig los van een internetverbinding voor de kaart-JS zelf
   (Leaflet wordt meegeleverd, geen CDN-afhankelijkheid voor de code — de
@@ -166,6 +182,8 @@ type: custom:grib-overlay-card
 # wind_unit: kn        # wind + windstoten: m/s (standaard), kn, km/h of mph
 # visibility_unit: NM  # zicht: km (standaard) of NM (zeemijlen)
 # direction_unit: deg  # windrichting: compass (N/O/Z/W, standaard) of deg (0-360°)
+# uitgebreid meteogram — standaard zichtbare rijen (rest start verborgen; leeg = alles):
+# meteogram_parameters: [wind_10m, wind_gust_10m, temperature_2m, precipitation]
 ```
 
 Met `dataset` kies je welke dataset de kaart bij het laden standaard toont;
@@ -353,9 +371,14 @@ en `pressure_msl` (eenheid hPa) schakelt de isobaren-laag in.
 | `wind_unit` | tekst | `m/s` | `m/s`, `kn`, `km/h`, `mph` |
 | `visibility_unit` | tekst | `km` | `km`, `NM` |
 | `direction_unit` | tekst | `compass` | `compass`, `deg` |
+| `meteogram_parameters` | lijst of tekst | — | parametersleutels die in het uitgebreide meteogram **standaard zichtbaar** zijn; de rest start verborgen (in te schakelen via de chips). Leeg = alle rijen tonen. Match op parametersleutel, dus geldt voor álle bronnen |
 
 De oude schrijfwijze `renderMode` (camelCase) blijft ook werken naast
-`render_mode`.
+`render_mode`. `meteogram_parameters` mag zowel een YAML-lijst als een door
+komma’s/spaties gescheiden tekst zijn; bv. `[wind_10m, wind_gust_10m,
+temperature_2m]` of `"wind_10m, wind_gust_10m, temperature_2m"`. De verborgen/
+zichtbare keuze die je daarná in het meteogram zelf maakt (rijlabel tikken,
+chips, “Alle rijen tonen”) geldt tijdelijk, voor dat geopende venster.
 
 ### Eenheden (geldige waarden + aliassen)
 

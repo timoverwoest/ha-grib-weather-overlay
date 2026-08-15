@@ -16,12 +16,77 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
 from . import field_grid
-from .const import CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_PATH, HTTP_WIND_PATH
+from .const import CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_ALL_PATH, HTTP_POINT_PATH, HTTP_WIND_PATH
 from .coordinator import GribOverlayCoordinator
 
 
 def _coordinator(hass: HomeAssistant, entry_id: str) -> GribOverlayCoordinator | None:
     return hass.data.get(DOMAIN, {}).get(entry_id)
+
+
+def _point_payload(coordinator: GribOverlayCoordinator, key: str, lat: float, lon: float) -> dict:
+    """Sample one parameter's time-series at (lat, lon), plus its colour legend.
+
+    Runs off the event loop (reads the cached per-frame field JSON files). The
+    legend lets the card colour cells without a separate frames request, and a
+    from-direction series is attached for wind (u/v) and for a scalar that has a
+    companion direction parameter (unit "°"), matching the single-point view.
+    """
+    frames = coordinator.frames.get(key, [])
+    if not frames:
+        return {"unit": None, "series": []}
+    legend = frames[0].legend
+    unit = legend.unit
+    entries = [
+        (f.valid_time.isoformat(), f.field_path, f.wind_path) for f in frames if f.field_path
+    ]
+    has_direction = any(wind_path is not None for _, _, wind_path in entries)
+
+    dir_by_time: dict[str, object] = {}
+    if unit != "°":
+        for other_key, comp_frames in coordinator.frames.items():
+            if other_key != key and comp_frames and comp_frames[0].legend.unit == "°":
+                dir_by_time = {
+                    f.valid_time.isoformat(): f.field_path for f in comp_frames if f.field_path
+                }
+                break
+        if dir_by_time:
+            has_direction = True
+
+    series = []
+    for valid_time, field_path, wind_path in entries:
+        try:
+            field = json.loads(field_path.read_text())
+        except (OSError, ValueError):
+            continue
+        point = {"valid_time": valid_time, "value": field_grid.sample_field(field, lat, lon)}
+        if wind_path is not None and wind_path.exists():
+            try:
+                wind = json.loads(wind_path.read_text())
+            except (OSError, ValueError):
+                wind = None
+            point["direction"] = _wind_direction(wind, lat, lon) if wind else None
+        elif valid_time in dir_by_time:
+            try:
+                dfield = json.loads(dir_by_time[valid_time].read_text())
+                point["direction"] = field_grid.sample_field(dfield, lat, lon)
+            except (OSError, ValueError):
+                point["direction"] = None
+        series.append(point)
+
+    payload = {
+        "unit": unit,
+        "legend": {
+            "unit": legend.unit,
+            "min_value": legend.min_value,
+            "max_value": legend.max_value,
+            "stops": list(legend.stops),
+        },
+        "series": series,
+    }
+    if has_direction:
+        payload["direction_unit"] = "°"
+    return payload
 
 
 def _wind_direction(wind, lat: float, lon: float) -> float | None:
@@ -228,62 +293,42 @@ class GribOverlayPointView(HomeAssistantView):
         except (KeyError, ValueError):
             return web.json_response({"error": "lat/lon required"}, status=400)
 
-        frames = coordinator.frames.get(parameter_key, [])
-        unit = frames[0].legend.unit if frames else None
-        entries = [
-            (f.valid_time.isoformat(), f.field_path, f.wind_path) for f in frames if f.field_path
-        ]
-        # Wind parameters carry u/v grids, so we can add a direction series too.
-        has_direction = any(wind_path is not None for _, _, wind_path in entries)
-
-        # Waves store height and direction as separate scalar parameters. For a
-        # non-direction parameter (e.g. wave height), attach the direction from a
-        # companion direction field (unit "deg") so its meteogram gets a second
-        # axis, just like wind's from-direction.
-        dir_by_time: dict[str, object] = {}
-        if unit != "°":
-            for key, comp_frames in coordinator.frames.items():
-                if key != parameter_key and comp_frames and comp_frames[0].legend.unit == "°":
-                    dir_by_time = {
-                        f.valid_time.isoformat(): f.field_path
-                        for f in comp_frames
-                        if f.field_path
-                    }
-                    break
-            if dir_by_time:
-                has_direction = True
-
-        def _sample_all() -> list[dict]:
-            series = []
-            for valid_time, field_path, wind_path in entries:
-                try:
-                    field = json.loads(field_path.read_text())
-                except (OSError, ValueError):
-                    continue
-                point = {
-                    "valid_time": valid_time,
-                    "value": field_grid.sample_field(field, lat, lon),
-                }
-                if wind_path is not None and wind_path.exists():
-                    try:
-                        wind = json.loads(wind_path.read_text())
-                    except (OSError, ValueError):
-                        wind = None
-                    point["direction"] = _wind_direction(wind, lat, lon) if wind else None
-                elif valid_time in dir_by_time:
-                    try:
-                        dfield = json.loads(dir_by_time[valid_time].read_text())
-                        point["direction"] = field_grid.sample_field(dfield, lat, lon)
-                    except (OSError, ValueError):
-                        point["direction"] = None
-                series.append(point)
-            return series
-
-        series = await hass.async_add_executor_job(_sample_all)
-        payload = {"unit": unit, "series": series}
-        if has_direction:
-            payload["direction_unit"] = "°"
+        payload = await hass.async_add_executor_job(
+            _point_payload, coordinator, parameter_key, lat, lon
+        )
         return web.json_response(payload)
+
+
+class GribOverlayPointAllView(HomeAssistantView):
+    """Returns EVERY parameter's time-series + legend at a lat/lon in one request.
+
+    Backs the detailed (all-parameters) meteogram: one round trip per entry, and
+    the field files are read once inside a single executor job, so the card can
+    present the table without a frames call plus a request per parameter.
+    """
+
+    url = HTTP_POINT_ALL_PATH + "/{entry_id}"
+    name = "api:grib_overlay:point_all"
+    requires_auth = True
+
+    async def get(self, request: web.Request, entry_id: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        coordinator = _coordinator(hass, entry_id)
+        if coordinator is None:
+            return web.json_response({"error": "unknown entry_id"}, status=404)
+        try:
+            lat = float(request.query["lat"])
+            lon = float(request.query["lon"])
+        except (KeyError, ValueError):
+            return web.json_response({"error": "lat/lon required"}, status=400)
+
+        keys = list(coordinator.frames.keys())
+
+        def _sample_all_params() -> dict:
+            return {key: _point_payload(coordinator, key, lat, lon) for key in keys}
+
+        params = await hass.async_add_executor_job(_sample_all_params)
+        return web.json_response({"params": params})
 
 
 VIEWS = (
@@ -293,4 +338,5 @@ VIEWS = (
     GribOverlayWindView,
     GribOverlayFieldView,
     GribOverlayPointView,
+    GribOverlayPointAllView,
 )

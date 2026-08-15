@@ -83,6 +83,14 @@ function compass(deg) {
   return COMPASS8[Math.round(((deg % 360) / 45)) % 8];
 }
 
+// Parse a "#rrggbb" (or "#rgb") legend colour into an [r, g, b] triplet.
+function hexToRgb(hex) {
+  let h = String(hex || "").trim().replace(/^#/, "");
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  const n = parseInt(h, 16);
+  return Number.isFinite(n) ? [(n >> 16) & 255, (n >> 8) & 255, n & 255] : [128, 128, 128];
+}
+
 // Separable Gaussian smoothing of a north-first scalar grid (the field_grid
 // dict), with `sigmaKm` the smoothing scale in kilometres. Null cells are
 // skipped and weights renormalised so gaps don't bleed. Used to bring the MSL
@@ -365,6 +373,7 @@ class GribOverlayCard extends HTMLElement {
   disconnectedCallback() {
     this._connected = false;
     this._stopPlayback();
+    this._closeDetailMeteogram();
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
@@ -459,6 +468,98 @@ class GribOverlayCard extends HTMLElement {
         background: rgba(255,255,255,0.85); color: #12324f;
         padding: 3px 8px; border-radius: 6px; font: 12px/1.3 sans-serif;
         pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,0.3); max-width: 70%;
+      }
+      /* Detailed meteogram: a modal overlay with a Windy-style table (one row per
+         parameter, colour-coded value cells, all sharing one time-column header). */
+      .grib-detail-backdrop {
+        position: fixed; inset: 0; z-index: 1200;
+        background: rgba(0,0,0,0.45);
+        display: flex; align-items: center; justify-content: center; padding: 10px;
+      }
+      .grib-detail-modal {
+        background: var(--card-background-color, #fff);
+        color: var(--primary-text-color, #12324f);
+        border-radius: 12px; box-shadow: 0 10px 44px rgba(0,0,0,0.45);
+        max-width: min(1120px, 97vw); max-height: 94vh;
+        display: flex; flex-direction: column; overflow: hidden;
+      }
+      .grib-detail-head {
+        display: flex; align-items: baseline; gap: 10px; flex: 0 0 auto;
+        padding: 10px 14px; border-bottom: 1px solid var(--divider-color, #e2e2e2);
+      }
+      .grib-detail-title { font: 600 15px/1.2 sans-serif; }
+      .grib-detail-sub { font: 12px/1.2 sans-serif; opacity: 0.6; }
+      .grib-detail-close {
+        margin-left: auto; border: none; background: transparent; color: inherit;
+        font-size: 20px; line-height: 1; cursor: pointer; padding: 2px 8px; border-radius: 6px;
+      }
+      .grib-detail-close:hover { background: var(--divider-color, #eee); }
+      .grib-detail-tools {
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 0 0 auto;
+        padding: 6px 12px; border-bottom: 1px solid var(--divider-color, #e2e2e2);
+        font: 12px/1.4 sans-serif;
+      }
+      .grib-detail-tools .hint { opacity: 0.6; }
+      .grib-detail-tools .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+      .grib-detail-tools .chip, .grib-detail-tools .showall {
+        font: inherit; cursor: pointer; color: inherit;
+        border: 1px solid var(--divider-color, #c7ccd1);
+        background: var(--card-background-color, #fff);
+        border-radius: 999px; padding: 1px 9px;
+      }
+      .grib-detail-tools .showall { border-radius: 6px; margin-left: auto; }
+      .grib-detail-tools .chip:hover, .grib-detail-tools .showall:hover {
+        border-color: var(--primary-color, #0288d1); color: var(--primary-color, #0288d1);
+      }
+      .grib-detail-scroll { overflow: auto; flex: 1 1 auto; }
+      .grib-detail-loading {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 12px; padding: 44px 30px; min-height: 120px; opacity: 0.85; font: 13px sans-serif;
+      }
+      .grib-spinner {
+        width: 30px; height: 30px; border-radius: 50%;
+        border: 3px solid var(--divider-color, #d9dee3);
+        border-top-color: var(--primary-color, #03a9f4);
+        animation: grib-spin 0.8s linear infinite;
+      }
+      @keyframes grib-spin { to { transform: rotate(360deg); } }
+      .grib-detail-table { border-collapse: collapse; font: 12px/1.1 sans-serif; }
+      .grib-detail-table th, .grib-detail-table td { text-align: center; white-space: nowrap; }
+      .grib-detail-table .cell { width: 34px; min-width: 34px; height: 24px;
+        font-variant-numeric: tabular-nums; }
+      .grib-detail-table .rowlabel {
+        position: sticky; left: 0; z-index: 2; text-align: right;
+        background: var(--card-background-color, #fff);
+        padding: 2px 10px 2px 12px; min-width: 92px; font-weight: 600;
+        box-shadow: 1px 0 0 var(--divider-color, #e2e2e2);
+      }
+      .grib-detail-table .rowlabel .ru { display: block; font-weight: 400; opacity: 0.6; font-size: 11px; }
+      .grib-detail-table thead th { position: sticky; top: 0; z-index: 3;
+        background: var(--card-background-color, #fff); }
+      .grib-detail-table thead th.rowlabel { z-index: 4; }
+      .grib-detail-table .dayhead { padding: 3px 6px; font-weight: 600;
+        border-bottom: 1px solid var(--divider-color, #e2e2e2); }
+      .grib-detail-table .daysep { box-shadow: inset 2px 0 0 var(--divider-color, #c7ccd1); }
+      .grib-detail-table .nowcol { box-shadow: inset 1px 0 0 var(--primary-color, #03a9f4),
+        inset -1px 0 0 var(--primary-color, #03a9f4); }
+      .grib-detail-table thead .nowcol { color: var(--primary-color, #03a9f4); font-weight: 700; }
+      .grib-detail-table .windrow .cell { color: var(--primary-text-color, #33506b); }
+      .grib-detail-table .arrowcell { padding: 2px 0; line-height: 1; }
+      .grib-detail-table .arrowcell .arw { display: block; font-size: 14px; line-height: 1; }
+      .grib-detail-table .arrowcell .dirnum { display: block; font-size: 10px; line-height: 1.2; opacity: 0.7; }
+      .grib-detail-table .valrow td.cell { border-top: 1px solid rgba(255,255,255,0.35); }
+      .grib-detail-table td.rowlabel[data-grp] { cursor: pointer; }
+      .grib-detail-table td.rowlabel[data-grp]:hover { color: var(--primary-color, #0288d1); }
+      .grib-detail-table .grouprow td {
+        background: var(--secondary-background-color, #eef1f4);
+        border-top: 1px solid var(--divider-color, #e2e2e2);
+      }
+      .grib-detail-table .grouphead { text-align: left; padding: 5px 12px; font: 600 12px/1.2 sans-serif; }
+      .grib-detail-table .grouplabel { text-align: left; padding: 5px 10px; }
+      .grib-detail-table .grouplabel .src {
+        display: inline-block; padding: 0 5px;
+        font-size: 11px; font-weight: 700; letter-spacing: 0.02em; opacity: 0.85;
+        border: 1px solid var(--divider-color, #c7ccd1); border-radius: 4px;
       }
     `;
     root.appendChild(style);
@@ -1576,13 +1677,13 @@ class GribOverlayCard extends HTMLElement {
 
   // -- point value (click) + meteogram (hold) --------------------------------
 
-  async _fetchPointSeries(paramKey, latlng) {
-    const entry = this._currentEntry();
-    if (!entry) return null;
+  async _fetchPointSeries(paramKey, latlng, entryId) {
+    const id = entryId || this._currentEntry()?.entry_id;
+    if (!id) return null;
     const q = `lat=${latlng.lat.toFixed(4)}&lon=${latlng.lng.toFixed(4)}`;
     return this._hass.callApi(
       "GET",
-      `grib_overlay/point/${entry.entry_id}/${encodeURIComponent(paramKey)}?${q}`
+      `grib_overlay/point/${id}/${encodeURIComponent(paramKey)}?${q}`
     );
   }
 
@@ -1618,9 +1719,12 @@ class GribOverlayCard extends HTMLElement {
       .setLatLng(latlng)
       .setContent(
         `<div style="font:13px sans-serif"><b>${this._paramName()}</b><br>${r.label}<br>` +
-          `<span style="opacity:.7">${formatTime(frame.valid_time)}</span></div>`
+          `<span style="opacity:.7">${formatTime(frame.valid_time)}</span>` +
+          this._detailLinkHtml() +
+          `</div>`
       )
       .openOn(this._map);
+    this._wireDetailLink(latlng);
   }
 
   async _onMapHold(latlng) {
@@ -1687,6 +1791,32 @@ class GribOverlayCard extends HTMLElement {
       .setLatLng(latlng)
       .setContent(svg)
       .openOn(this._map);
+    this._wireDetailLink(latlng);
+  }
+
+  // Link markup (shared by the value + meteogram popups) that opens the full
+  // meteogram. Only shown when there's more than one series worth combining.
+  _detailLinkHtml() {
+    const paramCount = (this._entries || []).reduce((n, e) => n + (e.parameters || []).length, 0);
+    if (paramCount <= 1) return "";
+    return (
+      `<a href="#" class="grib-meteogram-more" style="display:inline-block;margin-top:4px;` +
+      `font-size:12px;color:var(--primary-color,#0288d1);text-decoration:none;cursor:pointer">` +
+      `Alle parameters &amp; bronnen &#9656;</a>`
+    );
+  }
+
+  // After a popup opens, wire its "all parameters" link to the full meteogram.
+  _wireDetailLink(latlng) {
+    const el = this._pointPopup && this._pointPopup.getElement && this._pointPopup.getElement();
+    const more = el && el.querySelector(".grib-meteogram-more");
+    if (more) {
+      more.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        this._openDetailMeteogram(latlng);
+      });
+    }
   }
 
   _buildMeteogram(series, sourceUnit, latlng, { hasDirection = false, overlay = null, title = null } = {}) {
@@ -1966,14 +2096,373 @@ class GribOverlayCard extends HTMLElement {
       gustPts || showDir
         ? `<div style="font-size:11px;margin-top:1px">${legendItems.join("&nbsp;&nbsp;")}</div>`
         : "";
+    const moreLink = this._detailLinkHtml();
     return (
       `<div style="width:290px;max-width:78vw;font:14px sans-serif"><b>${title || this._paramName()}</b> · ${unit}` +
       `<div style="opacity:.6;font-size:12px">${latlng.lat.toFixed(2)}, ${latlng.lng.toFixed(2)}</div>` +
       legend +
       `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;margin-top:4px">` +
       parts.join("") +
-      `</svg></div>`
+      `</svg>` +
+      moreLink +
+      `</div>`
     );
+  }
+
+  // -- detailed meteogram (all parameters, every source) ----------------------
+
+  // Full meteogram: every parameter of every configured entry (KNMI, DWD, BSH,
+  // ...) sampled at this point, laid out as a Windy-style table -- one row per
+  // parameter, colour-coded value cells, all sharing a single time-column axis.
+  async _openDetailMeteogram(latlng) {
+    const entries = this._entries || [];
+    if (!entries.length) return;
+    this._openDetailModal(latlng);
+
+    // One batch request per entry (all parameters + legends in a single round
+    // trip). Entries whose grid doesn't cover this point return all-null series
+    // and are dropped when the table is built.
+    let groups;
+    try {
+      groups = await Promise.all(entries.map((entry) => this._fetchEntryPointData(entry, latlng)));
+    } catch (err) {
+      this._setDetailBody(`<div class="grib-detail-loading">Kon meteogram niet laden.</div>`);
+      return;
+    }
+    if (!this._detailModal) return; // closed while loading
+    this._setDetailBody(this._buildDetailTable(groups, latlng));
+    // Apply the configured default selection: rows whose parameter isn't in the
+    // list start hidden (the user can still bring any back via the chips).
+    const sel = this._meteogramSelection();
+    if (sel) {
+      for (const grp of this._detailRowNames.keys()) {
+        const key = grp.slice(grp.indexOf("::") + 2);
+        if (!sel.has(key)) this._detailHidden.add(grp);
+      }
+    }
+    this._applyDetailHidden();
+  }
+
+  // All parameters (series + colour legend) for one entry at a point. Uses the
+  // batch endpoint (one request); falls back to the frames + per-parameter point
+  // requests for integrations that predate `point_all`.
+  async _fetchEntryPointData(entry, latlng) {
+    const params = entry.parameters || [];
+    const q = `lat=${latlng.lat.toFixed(4)}&lon=${latlng.lng.toFixed(4)}`;
+    try {
+      const data = await this._hass.callApi(
+        "GET",
+        `grib_overlay/point_all/${entry.entry_id}?${q}`
+      );
+      const byKey = (data && data.params) || {};
+      const seriesByKey = new Map();
+      const legendByKey = {};
+      for (const p of params) {
+        const pr = byKey[p.key] || null;
+        seriesByKey.set(p.key, pr);
+        legendByKey[p.key] = (pr && pr.legend) || null;
+      }
+      return { entry, seriesByKey, legendByKey };
+    } catch (err) {
+      const [framesAll, seriesEntries] = await Promise.all([
+        this._hass.callApi("GET", `grib_overlay/frames/${entry.entry_id}`).catch(() => ({})),
+        Promise.all(
+          params.map((p) =>
+            this._fetchPointSeries(p.key, latlng, entry.entry_id)
+              .then((r) => [p.key, r])
+              .catch(() => [p.key, null])
+          )
+        ),
+      ]);
+      const legendByKey = {};
+      for (const p of params) {
+        const frames = framesAll[p.key];
+        legendByKey[p.key] = (frames && frames[0] && frames[0].legend) || null;
+      }
+      return { entry, seriesByKey: new Map(seriesEntries), legendByKey };
+    }
+  }
+
+  // The card's configured default meteogram row selection: a set of parameter
+  // keys to show (list or comma/space-separated string), or null to show all.
+  _meteogramSelection() {
+    const cfg = this._config || {};
+    const raw = cfg.meteogram_parameters ?? cfg.meteogram_params;
+    if (raw == null) return null;
+    const list = Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/);
+    const set = new Set(list.map((s) => String(s).trim()).filter(Boolean));
+    return set.size ? set : null;
+  }
+
+  _openDetailModal(latlng) {
+    this._closeDetailMeteogram();
+    this._detailHidden = new Set(); // rows the user has temporarily hidden
+    this._detailRowNames = new Map();
+    const backdrop = document.createElement("div");
+    backdrop.className = "grib-detail-backdrop";
+    backdrop.innerHTML =
+      `<div class="grib-detail-modal">` +
+      `<div class="grib-detail-head">` +
+      `<span class="grib-detail-title">Meteogram</span>` +
+      `<span class="grib-detail-sub">${latlng.lat.toFixed(3)}, ${latlng.lng.toFixed(3)} · alle bronnen</span>` +
+      `<button class="grib-detail-close" title="Sluiten" aria-label="Sluiten">&#10005;</button>` +
+      `</div>` +
+      `<div class="grib-detail-tools">` +
+      `<span class="hint">Tik een rijlabel om die rij te verbergen</span>` +
+      `<span class="chips"></span>` +
+      `<button class="showall hidden">Alle rijen tonen</button>` +
+      `</div>` +
+      `<div class="grib-detail-scroll"><div class="grib-detail-loading">` +
+      `<span class="grib-spinner" aria-hidden="true"></span>` +
+      `<span>Meteogram voorbereiden…</span></div></div>` +
+      `</div>`;
+    backdrop.addEventListener("click", (ev) => {
+      if (ev.target === backdrop) this._closeDetailMeteogram();
+    });
+    backdrop
+      .querySelector(".grib-detail-close")
+      .addEventListener("click", () => this._closeDetailMeteogram());
+    // Click a row label to hide that parameter; click a chip to bring it back.
+    backdrop.querySelector(".grib-detail-scroll").addEventListener("click", (ev) => {
+      const label = ev.target.closest("td.rowlabel[data-grp]");
+      if (label) this._toggleDetailRow(label.getAttribute("data-grp"));
+    });
+    backdrop.querySelector(".chips").addEventListener("click", (ev) => {
+      const chip = ev.target.closest(".chip[data-grp]");
+      if (chip) this._toggleDetailRow(chip.getAttribute("data-grp"));
+    });
+    backdrop.querySelector(".showall").addEventListener("click", () => {
+      this._detailHidden.clear();
+      this._applyDetailHidden();
+    });
+    this._detailEsc = (ev) => {
+      if (ev.key === "Escape") this._closeDetailMeteogram();
+    };
+    document.addEventListener("keydown", this._detailEsc);
+    this.shadowRoot.appendChild(backdrop);
+    this._detailModal = backdrop;
+  }
+
+  // Show/hide one parameter's rows (its value row plus any direction row).
+  _toggleDetailRow(grp) {
+    if (!grp) return;
+    if (this._detailHidden.has(grp)) this._detailHidden.delete(grp);
+    else this._detailHidden.add(grp);
+    this._applyDetailHidden();
+  }
+
+  // Apply the current hidden set to the table + refresh the tools bar.
+  _applyDetailHidden() {
+    if (!this._detailModal) return;
+    const hidden = this._detailHidden || new Set();
+    this._detailModal.querySelectorAll(".grib-detail-table td.rowlabel[data-grp]").forEach((td) => {
+      const tr = td.closest("tr");
+      if (tr) tr.style.display = hidden.has(td.getAttribute("data-grp")) ? "none" : "";
+    });
+    const list = [...hidden];
+    const chips = this._detailModal.querySelector(".grib-detail-tools .chips");
+    const hint = this._detailModal.querySelector(".grib-detail-tools .hint");
+    const showall = this._detailModal.querySelector(".grib-detail-tools .showall");
+    if (chips) {
+      chips.innerHTML = list
+        .map(
+          (grp) =>
+            `<button class="chip" data-grp="${grp}" title="Weer tonen">` +
+            `${this._detailRowNames.get(grp) || grp} &#43;</button>`
+        )
+        .join("");
+    }
+    if (hint) hint.classList.toggle("hidden", list.length > 0);
+    if (showall) showall.classList.toggle("hidden", list.length === 0);
+  }
+
+  _setDetailBody(html) {
+    if (!this._detailModal) return;
+    const scroll = this._detailModal.querySelector(".grib-detail-scroll");
+    if (scroll) scroll.innerHTML = html;
+  }
+
+  _closeDetailMeteogram() {
+    if (this._detailEsc) {
+      document.removeEventListener("keydown", this._detailEsc);
+      this._detailEsc = null;
+    }
+    if (this._detailModal) {
+      this._detailModal.remove();
+      this._detailModal = null;
+    }
+  }
+
+  _buildDetailTable(groups, latlng) {
+    // Keep only entries that actually have data at this point.
+    const active = (groups || []).filter(
+      (g) =>
+        g &&
+        [...g.seriesByKey.values()].some(
+          (r) => r && r.series && r.series.some((s) => s.value != null)
+        )
+    );
+    if (!active.length) {
+      return `<div class="grib-detail-loading">Geen gegevens beschikbaar op dit punt.</div>`;
+    }
+
+    // Shared time axis = union of all valid_times across every source, sorted.
+    const timeSet = new Set();
+    for (const g of active) {
+      for (const r of g.seriesByKey.values()) {
+        if (r && r.series) {
+          for (const s of r.series) if (s.value != null) timeSet.add(s.valid_time);
+        }
+      }
+    }
+    const times = [...timeSet].sort();
+    const dates = times.map((t) => new Date(t));
+
+    // Day boundaries (for separators/grouped day headers) + "now" column.
+    const sepAt = dates.map((d, i) => i > 0 && d.toDateString() !== dates[i - 1].toDateString());
+    const now = Date.now();
+    let nowIdx = -1;
+    let nowBest = Infinity;
+    dates.forEach((d, i) => {
+      const gap = Math.abs(d.getTime() - now);
+      if (gap < nowBest) {
+        nowBest = gap;
+        nowIdx = i;
+      }
+    });
+    if (nowBest > 3 * 3600000) nowIdx = -1; // only mark "now" if the run spans it
+    const cls = (i) => `cell${sepAt[i] ? " daysep" : ""}${i === nowIdx ? " nowcol" : ""}`;
+
+    // Header: a day row (weekday spanning its hours) + an hour row.
+    const dayFmt = new Intl.DateTimeFormat("nl-NL", { weekday: "short", day: "numeric", month: "short" });
+    let dayRow = `<th class="rowlabel"></th>`;
+    for (let i = 0; i < times.length; ) {
+      let span = 1;
+      while (i + span < times.length && dates[i + span].toDateString() === dates[i].toDateString()) {
+        span++;
+      }
+      dayRow += `<th colspan="${span}" class="dayhead${i > 0 ? " daysep" : ""}">${dayFmt.format(dates[i])}</th>`;
+      i += span;
+    }
+    let hourRow = `<th class="rowlabel">tijd</th>`;
+    times.forEach((t, i) => {
+      const hh = String(dates[i].getHours()).padStart(2, "0");
+      hourRow += `<th class="${cls(i)}">${hh}</th>`;
+    });
+
+    const ctx = { times, cls, colCount: times.length };
+    const body = active.map((g) => this._buildEntryRows(g, ctx)).join("");
+    return (
+      `<table class="grib-detail-table">` +
+      `<thead><tr>${dayRow}</tr><tr>${hourRow}</tr></thead>` +
+      `<tbody>${body}</tbody></table>`
+    );
+  }
+
+  // Rows for one entry: a source/dataset header, then a colour-coded value row
+  // per parameter (with a wind/wave from-direction arrow row above where present).
+  _buildEntryRows(group, { times, cls, colCount }) {
+    const { entry, seriesByKey, legendByKey } = group;
+    const rows = [];
+    const src = String(entry.source || "").toUpperCase();
+    const dsName = (entry.dataset && entry.dataset.name) || entry.title || src || "bron";
+    const suffix = entry.title && entry.title !== dsName ? ` · ${entry.title}` : "";
+    rows.push(
+      `<tr class="grouprow">` +
+        `<td class="rowlabel grouplabel"><span class="src">${src || "GRIB"}</span></td>` +
+        `<td class="grouphead" colspan="${colCount}">${dsName}${suffix}</td></tr>`
+    );
+
+    for (const p of entry.parameters || []) {
+      const resp = seriesByKey.get(p.key);
+      if (!resp || !resp.series || !resp.series.some((s) => s.value != null)) continue;
+      if (p.unit === "°") continue; // a standalone direction is drawn as arrows on its companion
+
+      const byT = new Map(resp.series.map((s) => [s.valid_time, s]));
+      const conv = this._conversionFor(resp.unit);
+      const factor = conv ? conv.factor : 1;
+      const dispUnit = conv ? conv.label : resp.unit;
+      const legend = legendByKey[p.key];
+      // A per-parameter id so a row (and its direction companion) can be hidden.
+      const grp = `${entry.entry_id}::${p.key}`;
+      if (this._detailRowNames) this._detailRowNames.set(grp, `${src} · ${p.name}`);
+
+      // Direction arrow row: the arrow points the way the wind/waves travel, with
+      // the from-direction printed below it in the card's chosen unit (compass or
+      // 0-360 degrees), so it reads both at a glance and exactly.
+      if (resp.direction_unit && resp.series.some((s) => s.direction != null)) {
+        let cells = `<td class="rowlabel" data-grp="${grp}" title="Klik om te verbergen">${p.name}<span class="ru">richting</span></td>`;
+        times.forEach((t, i) => {
+          const s = byT.get(t);
+          if (s && s.direction != null) {
+            const toDir = ((s.direction + 180) % 360).toFixed(0);
+            const label = this._formatDirection(s.direction);
+            const title = `${compass(s.direction)} (${Math.round(s.direction)}°)`;
+            cells +=
+              `<td class="${cls(i)} arrowcell" title="${title}">` +
+              `<span class="arw" style="transform:rotate(${toDir}deg)">&#8593;</span>` +
+              `<span class="dirnum">${label}</span></td>`;
+          } else {
+            cells += `<td class="${cls(i)}"></td>`;
+          }
+        });
+        rows.push(`<tr class="windrow">${cells}</tr>`);
+      }
+
+      // Value row: each cell tinted by the parameter's own colour scale.
+      let cells = `<td class="rowlabel" data-grp="${grp}" title="Klik om te verbergen">${p.name}<span class="ru">${dispUnit}</span></td>`;
+      times.forEach((t, i) => {
+        const s = byT.get(t);
+        if (s && s.value != null) {
+          const bg = legend ? this._lerpLegendColor(legend, s.value) : null;
+          const style = bg ? ` style="background:${bg};color:${this._readableText(bg)}"` : "";
+          cells += `<td class="${cls(i)}"${style}>${this._fmtCell(resp.unit, s.value * factor)}</td>`;
+        } else {
+          cells += `<td class="${cls(i)}">–</td>`;
+        }
+      });
+      rows.push(`<tr class="valrow">${cells}</tr>`);
+    }
+    return rows.join("");
+  }
+
+  // Interpolate a legend gradient (stops in the field's source unit) at a value.
+  _lerpLegendColor(legend, value) {
+    if (!legend || !legend.stops || !legend.stops.length) return null;
+    const span = legend.max_value - legend.min_value || 1;
+    let f = (value - legend.min_value) / span;
+    f = Math.max(0, Math.min(1, f));
+    const stops = legend.stops;
+    let a = stops[0];
+    let b = stops[stops.length - 1];
+    for (let i = 0; i < stops.length - 1; i++) {
+      if (f >= stops[i].offset && f <= stops[i + 1].offset) {
+        a = stops[i];
+        b = stops[i + 1];
+        break;
+      }
+    }
+    const t = b.offset === a.offset ? 0 : (f - a.offset) / (b.offset - a.offset);
+    const ca = hexToRgb(a.color);
+    const cb = hexToRgb(b.color);
+    const mix = (k) => Math.round(ca[k] + (cb[k] - ca[k]) * t);
+    return `rgb(${mix(0)},${mix(1)},${mix(2)})`;
+  }
+
+  // Pick dark or light text for legibility against a cell's fill colour.
+  _readableText(rgb) {
+    const m = /(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(rgb || "");
+    if (!m) return "var(--primary-text-color,#12324f)";
+    const lum = (0.299 * +m[1] + 0.587 * +m[2] + 0.114 * +m[3]) / 255;
+    return lum > 0.62 ? "#12324f" : "#ffffff";
+  }
+
+  // Format a display value for a table cell (decimals scaled to the unit).
+  _fmtCell(sourceUnit, v) {
+    if (v == null || !Number.isFinite(v)) return "–";
+    if (sourceUnit === "°C" || sourceUnit === "hPa" || sourceUnit === "%") return String(Math.round(v));
+    if (sourceUnit === "mm") return v < 0.05 ? "–" : v.toFixed(1);
+    return (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1)).replace(/\.0$/, "");
   }
 
   _onRenderModeChange() {
