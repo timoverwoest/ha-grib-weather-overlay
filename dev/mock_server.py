@@ -68,6 +68,10 @@ LEGENDS = {
         {"offset": 0.0, "color": "#d73027"}, {"offset": 0.5, "color": "#3cb4c8"},
         {"offset": 1.0, "color": "#d73027"},
     ]},
+    "current": {"unit": "m/s", "min_value": 0, "max_value": 2, "stops": [
+        {"offset": 0.0, "color": "#deebf7"}, {"offset": 0.5, "color": "#4292c6"},
+        {"offset": 1.0, "color": "#084594"},
+    ]},
 }
 
 ENTRY_ID = "mock_entry_1"
@@ -120,6 +124,25 @@ ENTRIES = {
         "frame_count": 5,
         "step_hours": 2,
     },
+    # A source that has frames but no coverage at the test point (mirrors BSH's
+    # North-Sea-only grid when clicking inland): `out_of_range` -> null samples,
+    # so it is dropped from the table and named in the footer note.
+    "mock_entry_3": {
+        "entry_id": "mock_entry_3",
+        "title": "BSH - Zeestroming Noordzee (mock)",
+        "source": "bsh",
+        "dataset": {
+            "key": "bsh_current_northsea",
+            "name": "BSH - Zeestroming Noordzee",
+            "bounds": [51.0, -1.0, 57.0, 9.0],
+        },
+        "parameters": [
+            {"key": "current", "name": "Zeestroming (oppervlak)", "unit": "m/s", "colormap": "current"},
+        ],
+        "frame_count": 4,
+        "step_hours": 1,
+        "out_of_range": True,
+    },
 }
 
 
@@ -160,17 +183,19 @@ def _point_payload(entry: dict, parameter_key: str, lat: float) -> dict:
     lo = legend.get("min_value", 0)
     hi = legend.get("max_value", 20)
     has_dir = parameter_key in ("wind_10m", "wind_gust_10m", "wave_height")
+    out_of_range = entry.get("out_of_range", False)  # null samples (point off-grid)
     phase = 0.0 if entry["entry_id"] == ENTRY_ID else 1.1
     series = []
     for i in range(entry["frame_count"]):
         vt = BASE_RUN_TIME + timedelta(hours=i * entry["step_hours"])
         frac = 0.5 + 0.4 * math.sin(i / 2.0 + lat + phase)
-        point = {"valid_time": vt.isoformat(), "value": round(lo + frac * (hi - lo), 1)}
+        value = None if out_of_range else round(lo + frac * (hi - lo), 1)
+        point = {"valid_time": vt.isoformat(), "value": value}
         if has_dir:
             # sweep direction so it crosses the 0/360 wrap (tests the break);
             # give gusts a small offset so wind vs gust direction are distinct.
             offset = 20 if parameter_key == "wind_gust_10m" else 0
-            point["direction"] = round((300 + i * 25 + offset) % 360, 0)
+            point["direction"] = None if out_of_range else round((300 + i * 25 + offset) % 360, 0)
         series.append(point)
     payload = {"unit": legend.get("unit", ""), "legend": legend, "series": series}
     if has_dir:

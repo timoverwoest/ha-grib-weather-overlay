@@ -550,6 +550,10 @@ class GribOverlayCard extends HTMLElement {
       .grib-detail-table .valrow td.cell { border-top: 1px solid rgba(255,255,255,0.35); }
       .grib-detail-table td.rowlabel[data-grp] { cursor: pointer; }
       .grib-detail-table td.rowlabel[data-grp]:hover { color: var(--primary-color, #0288d1); }
+      .grib-detail-note {
+        position: sticky; left: 0; padding: 8px 12px; font: 12px/1.4 sans-serif; opacity: 0.7;
+        border-top: 1px solid var(--divider-color, #e2e2e2);
+      }
       .grib-detail-table .grouprow td {
         background: var(--secondary-background-color, #eef1f4);
         border-top: 1px solid var(--divider-color, #e2e2e2);
@@ -1800,7 +1804,7 @@ class GribOverlayCard extends HTMLElement {
     const paramCount = (this._entries || []).reduce((n, e) => n + (e.parameters || []).length, 0);
     if (paramCount <= 1) return "";
     return (
-      `<a href="#" class="grib-meteogram-more" style="display:inline-block;margin-top:4px;` +
+      `<a href="#" class="grib-meteogram-more" style="display:block;margin-top:5px;` +
       `font-size:12px;color:var(--primary-color,#0288d1);text-decoration:none;cursor:pointer">` +
       `Alle parameters &amp; bronnen &#9656;</a>`
     );
@@ -2294,16 +2298,19 @@ class GribOverlayCard extends HTMLElement {
   }
 
   _buildDetailTable(groups, latlng) {
-    // Keep only entries that actually have data at this point.
-    const active = (groups || []).filter(
-      (g) =>
-        g &&
-        [...g.seriesByKey.values()].some(
-          (r) => r && r.series && r.series.some((s) => s.value != null)
-        )
+    // Keep only entries that actually have data at this point. Sources that are
+    // configured but return nothing here (e.g. BSH's North-Sea-only grid when
+    // the click is inland, or a source still downloading) are dropped, and then
+    // named in a footer note so their absence is explained rather than silent.
+    const all = (groups || []).filter(Boolean);
+    const active = all.filter((g) =>
+      [...g.seriesByKey.values()].some(
+        (r) => r && r.series && r.series.some((s) => s.value != null)
+      )
     );
+    const note = this._droppedSourcesNote(all.filter((g) => !active.includes(g)));
     if (!active.length) {
-      return `<div class="grib-detail-loading">Geen gegevens beschikbaar op dit punt.</div>`;
+      return `<div class="grib-detail-loading">Geen gegevens beschikbaar op dit punt.</div>` + note;
     }
 
     // Shared time axis = union of all valid_times across every source, sorted.
@@ -2355,8 +2362,25 @@ class GribOverlayCard extends HTMLElement {
     return (
       `<table class="grib-detail-table">` +
       `<thead><tr>${dayRow}</tr><tr>${hourRow}</tr></thead>` +
-      `<tbody>${body}</tbody></table>`
+      `<tbody>${body}</tbody></table>` +
+      note
     );
+  }
+
+  // A footer note naming configured sources that returned no data at this point,
+  // so a missing source (e.g. BSH outside its North-Sea grid) is explained. A
+  // source with frames but only null samples is "buiten bereik" (out of grid);
+  // one with no frames at all is "nog geen data" (still downloading/empty).
+  _droppedSourcesNote(dropped) {
+    if (!dropped || !dropped.length) return "";
+    const items = dropped.map((g) => {
+      const src = String(g.entry.source || "").toUpperCase();
+      const name = (g.entry.dataset && g.entry.dataset.name) || g.entry.title || src || "bron";
+      const hasFrames = [...g.seriesByKey.values()].some((r) => r && r.series && r.series.length);
+      const reason = hasFrames ? "buiten bereik op dit punt" : "nog geen data";
+      return `${src ? src + " · " : ""}${name} (${reason})`;
+    });
+    return `<div class="grib-detail-note">Niet getoond: ${items.join("; ")}</div>`;
   }
 
   // Rows for one entry: a source/dataset header, then a colour-coded value row
