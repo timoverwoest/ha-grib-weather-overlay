@@ -443,6 +443,16 @@ function fmtCell(sourceUnit, v) {
   return (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1)).replace(/\.0$/, "");
 }
 
+// A tiny cross-card bus so a point picked on one card's map moves the other's.
+// Cards broadcast their own picks and adopt everyone else's; the last pick is
+// remembered so a freshly-loaded card starts on the shared point.
+const GRIB_POINT_EVENT = "grib-overlay-point";
+let gribSharedPoint = null;
+function broadcastGribPoint(lat, lng, source) {
+  gribSharedPoint = { lat, lng };
+  window.dispatchEvent(new CustomEvent(GRIB_POINT_EVENT, { detail: { lat, lng, source } }));
+}
+
 class GribOverlayCard extends HTMLElement {
   static getStubConfig() {
     return { type: "custom:grib-overlay-card" };
@@ -554,6 +564,10 @@ class GribOverlayCard extends HTMLElement {
     this._connected = false;
     this._stopPlayback();
     this._closeDetailMeteogram();
+    if (this._pointSync) {
+      window.removeEventListener(GRIB_POINT_EVENT, this._pointSync);
+      this._pointSync = null;
+    }
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
@@ -618,7 +632,9 @@ class GribOverlayCard extends HTMLElement {
       /* The map is the only flexible row: its preferred height (the "rows"
          config, set inline) is the basis, min-height:0 lets it shrink in a
          short grid cell so the chrome below it never gets clipped/falls off. */
-      .map-container { position: relative; width: 100%; flex: 1 1 auto; min-height: 0; }
+      /* isolation: contain Leaflet's pane/control z-indexes to the card so the
+         tiles/overlays never render over the Home Assistant chrome. */
+      .map-container { position: relative; width: 100%; flex: 1 1 auto; min-height: 0; isolation: isolate; }
       /* Absolute fill (not height:100%) so the map fills the container whether
          its height comes from a fixed grid cell (sections) or the inline basis
          (masonry) -- percentage heights don't resolve against an indefinite parent. */
@@ -649,6 +665,9 @@ class GribOverlayCard extends HTMLElement {
         padding: 3px 8px; border-radius: 6px; font: 12px/1.3 sans-serif;
         pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,0.3); max-width: 70%;
       }
+      /* The point shared from the compare card. */
+      .grib-shared-marker { border-radius: 50%; background: var(--primary-color, #03a9f4);
+        border: 2px solid #fff; box-shadow: 0 0 3px rgba(0,0,0,0.5); box-sizing: border-box; }
       /* Detailed meteogram: a modal overlay with a Windy-style table (one row per
          parameter, colour-coded value cells, all sharing one time-column header). */
       .grib-detail-backdrop {
@@ -750,6 +769,8 @@ class GribOverlayCard extends HTMLElement {
         display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle;
       }
       .grib-detail-tools .modesel { display: flex; align-items: center; gap: 5px; }
+      .grib-detail-tools .measctl { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+      ${COMPARE_EXTRA_CSS}
       .grib-detail-table .grouprow td {
         background: var(--secondary-background-color, #eef1f4);
         border-top: 1px solid var(--divider-color, #e2e2e2);
@@ -915,6 +936,13 @@ class GribOverlayCard extends HTMLElement {
       window.L.DomEvent.preventDefault(e.originalEvent);
       this._onMapHold(e.latlng);
     });
+    // Cross-card point sync: reflect a point picked on the compare card here.
+    this._pointSync = (ev) => {
+      if (ev.detail.source === this) return;
+      this._showSharedMarker(ev.detail.lat, ev.detail.lng);
+    };
+    window.addEventListener(GRIB_POINT_EVENT, this._pointSync);
+    if (gribSharedPoint) this._showSharedMarker(gribSharedPoint.lat, gribSharedPoint.lng);
     // Screen-space overlays (arrows, isobars) are redrawn on every map move.
     // Nothing to redraw until entries + frames have loaded (early invalidateSize
     // events fire before then), so bail out to avoid touching unset state.
@@ -1898,6 +1926,7 @@ class GribOverlayCard extends HTMLElement {
   // Tap/click pins the current value in a popup (works on touch, where there's
   // no hover). Uses the same client-side grid as the readout.
   _onMapClick(latlng) {
+    broadcastGribPoint(latlng.lat, latlng.lng, this); // share the point with the compare card
     const r = this._valueAt(latlng);
     if (!r) return;
     const frame = this._frames[this._frameIndex || 0];
@@ -1911,6 +1940,19 @@ class GribOverlayCard extends HTMLElement {
       )
       .openOn(this._map);
     this._wireDetailLink(latlng);
+  }
+
+  // Place/move a non-interactive marker at the point shared from the compare card.
+  _showSharedMarker(lat, lng) {
+    if (!this._map || !window.L) return;
+    const ll = window.L.latLng(lat, lng);
+    if (!this._sharedMarker) {
+      const icon = window.L.divIcon({ className: "grib-shared-marker", iconSize: [16, 16], iconAnchor: [8, 8] });
+      this._sharedMarker = window.L.marker(ll, { icon, interactive: false, keyboard: false }).addTo(this._map);
+    } else {
+      this._sharedMarker.setLatLng(ll);
+    }
+    if (!this._map.getBounds().contains(ll)) this._map.panTo(ll);
   }
 
   async _onMapHold(latlng) {
@@ -2390,6 +2432,8 @@ class GribOverlayCard extends HTMLElement {
     this._detailRowNames = new Map();
     this._detailResolution = this._normalizeResolution((this._config || {}).meteogram_resolution);
     this._detailMode = "bron"; // "bron" (per-source table) | "compare" (models)
+    this._detailMeasure = new Map(); // manual measurements (display units) for compare mode
+    this._detailShowMeasure = false;
     const backdrop = document.createElement("div");
     backdrop.className = "grib-detail-backdrop";
     backdrop.innerHTML =
@@ -2406,6 +2450,7 @@ class GribOverlayCard extends HTMLElement {
       `<option value="compare">vergelijk modellen</option>` +
       `</select></label>` +
       `<label class="cmpparamsel hidden">Parameter <select class="cmpparam"></select></label>` +
+      `<label class="measctl hidden"><input type="checkbox" class="detmeas"> Meting</label>` +
       `<label class="resctl">Kolommen` +
       `<select class="resselect">` +
       `<option value="quarter">kwartier</option>` +
@@ -2453,7 +2498,29 @@ class GribOverlayCard extends HTMLElement {
     });
     backdrop.querySelector(".cmpparam").addEventListener("change", (ev) => {
       this._detailCmpParam = ev.target.value;
+      this._detailMeasure = new Map(); // a new parameter is a different quantity
       this._rerenderDetail();
+    });
+    backdrop.querySelector(".detmeas").addEventListener("change", (ev) => {
+      this._detailShowMeasure = ev.target.checked;
+      this._rerenderDetail();
+    });
+    // Live measurement entry in compare mode: update the map + re-render only the
+    // chart/delta boxes (leaving the focused input untouched).
+    backdrop.querySelector(".grib-detail-scroll").addEventListener("input", (ev) => {
+      const inp = ev.target.closest(".grib-cmp-meas");
+      if (!inp) return;
+      const key = Number(inp.getAttribute("data-col"));
+      const val = inp.value.trim();
+      if (val === "") this._detailMeasure.delete(key);
+      else this._detailMeasure.set(key, Number(val));
+      refreshCompareMeasure(this._detailModal.querySelector(".grib-detail-scroll"), {
+        models: this._detailShownModels || [],
+        config: this._config,
+        res: this._detailResolution,
+        unitLabel: this._detailShownUnit || "",
+        measureMap: this._detailMeasure,
+      });
     });
     this._detailEsc = (ev) => {
       if (ev.key === "Escape") this._closeDetailMeteogram();
@@ -2485,6 +2552,7 @@ class GribOverlayCard extends HTMLElement {
     const compare = this._detailMode === "compare";
     const q = (sel) => this._detailModal.querySelector(sel);
     q(".cmpparamsel").classList.toggle("hidden", !compare);
+    q(".measctl").classList.toggle("hidden", !compare);
     q(".hint").classList.toggle("hidden", compare);
     if (compare) {
       q(".chips").innerHTML = "";
@@ -2556,13 +2624,17 @@ class GribOverlayCard extends HTMLElement {
       return `<div class="grib-cmp-empty">Geen model heeft data voor deze parameter op dit punt.</div>`;
     }
     const unit = displayUnitLabel(this._config, withData[0].unit);
+    this._detailShownModels = withData;
+    this._detailShownUnit = unit;
     const note = dropped.length
       ? `<div class="grib-detail-note">Niet getoond: ${dropped.map((m) => m.name).join("; ")}</div>`
       : "";
+    if (!this._detailMeasure) this._detailMeasure = new Map();
     return (
-      compareChartSvg(withData, this._config, unit) +
-      `<div style="overflow-x:auto">${compareTableHtml(withData, this._config, this._detailResolution)}</div>` +
-      note
+      compareViewHtml(
+        withData, this._config, this._detailResolution, unit,
+        this._detailMeasure, !!this._detailShowMeasure
+      ) + note
     );
   }
 
@@ -2994,7 +3066,7 @@ function buildColumnHeader(columns, res) {
 
 // Overlaid multi-model line chart for one parameter. Values are converted to the
 // configured display unit; a dashed vertical "now" line is drawn when in range.
-function compareChartSvg(models, config, unitLabel) {
+function compareChartSvg(models, config, unitLabel, measurePts) {
   const factorFor = (u) => {
     const c = conversionFor(config, u);
     return c ? c.factor : 1;
@@ -3009,7 +3081,8 @@ function compareChartSvg(models, config, unitLabel) {
         .sort((a, b) => a.t - b.t),
     }))
     .filter((l) => l.pts.length);
-  if (!lines.length) return `<div class="grib-cmp-empty">Geen gegevens om te vergelijken.</div>`;
+  const meas = (measurePts || []).filter((p) => p.v != null).sort((a, b) => a.t - b.t);
+  if (!lines.length && !meas.length) return `<div class="grib-cmp-empty">Geen gegevens om te vergelijken.</div>`;
 
   let tMin = Infinity, tMax = -Infinity, vMin = Infinity, vMax = -Infinity;
   for (const l of lines) {
@@ -3019,6 +3092,12 @@ function compareChartSvg(models, config, unitLabel) {
       if (p.v < vMin) vMin = p.v;
       if (p.v > vMax) vMax = p.v;
     }
+  }
+  for (const p of meas) {
+    if (p.t < tMin) tMin = p.t;
+    if (p.t > tMax) tMax = p.t;
+    if (p.v < vMin) vMin = p.v;
+    if (p.v > vMax) vMax = p.v;
   }
   if (tMax <= tMin) tMax = tMin + 3600000;
   if (vMax - vMin < 1e-6) {
@@ -3076,9 +3155,17 @@ function compareChartSvg(models, config, unitLabel) {
     parts.push(`<path d="${d}" fill="none" stroke="${l.color}" stroke-width="2"/>`);
     parts.push(l.pts.map((p) => `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy(p.v).toFixed(1)}" r="1.8" fill="${l.color}"/>`).join(""));
   }
-  const legend = lines
-    .map((l) => `<span class="lg"><span class="sw" style="background:${l.color}"></span>${l.name}</span>`)
-    .join("");
+  // Measurements: a thick dark line with square markers ("the truth").
+  if (meas.length) {
+    const d = meas.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`).join("");
+    parts.push(`<path d="${d}" fill="none" stroke="var(--primary-text-color,#12324f)" stroke-width="2.6"/>`);
+    parts.push(meas.map((p) => `<rect x="${(sx(p.t) - 2.6).toFixed(1)}" y="${(sy(p.v) - 2.6).toFixed(1)}" width="5.2" height="5.2" fill="var(--primary-text-color,#12324f)"/>`).join(""));
+  }
+  const legend =
+    lines
+      .map((l) => `<span class="lg"><span class="sw" style="background:${l.color}"></span>${l.name}</span>`)
+      .join("") +
+    (meas.length ? `<span class="lg"><span class="sw" style="background:var(--primary-text-color,#12324f)"></span>meting</span>` : "");
   return (
     `<div class="grib-cmp-chart">` +
     `<div class="grib-cmp-unit">${unitLabel || ""}</div>` +
@@ -3087,18 +3174,87 @@ function compareChartSvg(models, config, unitLabel) {
   );
 }
 
-// Comparison table: one row per model (a from-direction arrow row above the value
-// row for wind/waves), columns bucketed at `res`, cells tinted by each model's
-// legend. Precip is summed, day is averaged -- same rules as the meteogram.
-function compareTableHtml(models, config, res) {
+// Points {t,v} (v in display units) from a measurement map keyed by column epoch.
+function measurePtsFromMap(measureMap) {
+  return [...(measureMap || new Map())].map(([t, v]) => ({ t: +t, v })).filter((p) => p.v != null);
+}
+
+// The editable "Meting" row: a number input per column, pre-filled from the map.
+// Inputs carry data-col="<epoch>" so a delegated listener can update the map.
+function compareMeasureRow(columns, cls, measureMap, unitLabel) {
+  let cells = `<td class="rowlabel"><span class="dot" style="background:var(--primary-text-color,#12324f)"></span>Meting<span class="ru">${unitLabel}</span></td>`;
+  columns.forEach((key, i) => {
+    const v = measureMap && measureMap.has(key) ? measureMap.get(key) : "";
+    cells += `<td class="${cls(i)} meascell"><input class="grib-cmp-meas" type="number" step="any" inputmode="decimal" data-col="${key}" value="${v}"></td>`;
+  });
+  return `<tr class="measrow">${cells}</tr>`;
+}
+
+// Delta block: per model a row of (model − meting) per column (tinted by sign) and
+// a summary (bias / MAE / RMSE / n) over the columns that have both a model value
+// and a measurement. Values are in display units.
+function compareDeltaHtml(models, columns, measureMap, config, cls, res) {
+  if (!measureMap || !measurePtsFromMap(measureMap).length) {
+    return `<div class="grib-cmp-note">Vul hierboven meetwaarden in om de afwijking (model − meting) te zien.</div>`;
+  }
+  const rows = [];
+  let scale = 1e-6;
+  const perModel = [];
+  for (const m of models) {
+    const sum = m.unit === "mm";
+    const byBucket = aggregateSeries(m.series, res, sum, columns);
+    const conv = conversionFor(config, m.unit);
+    const factor = conv ? conv.factor : 1;
+    const deltas = columns.map((key) => {
+      const b = byBucket.get(key);
+      const meas = measureMap.get(key);
+      if (!b || b.value == null || meas == null || meas === "") return null;
+      const d = b.value * factor - Number(meas);
+      if (Number.isFinite(d)) scale = Math.max(scale, Math.abs(d));
+      return Number.isFinite(d) ? d : null;
+    });
+    perModel.push({ m, deltas });
+  }
+  const deltaColor = (d) => {
+    const t = Math.max(-1, Math.min(1, d / scale));
+    const a = (0.12 + 0.55 * Math.abs(t)).toFixed(2);
+    return t >= 0 ? `rgba(214,64,64,${a})` : `rgba(52,120,214,${a})`;
+  };
+  const fmtD = (d) => (d >= 0 ? "+" : "−") + Math.abs(d).toFixed(1);
+  for (const { m, deltas } of perModel) {
+    const present = deltas.filter((d) => d != null);
+    const n = present.length;
+    const bias = n ? present.reduce((a, b) => a + b, 0) / n : null;
+    const mae = n ? present.reduce((a, b) => a + Math.abs(b), 0) / n : null;
+    const rmse = n ? Math.sqrt(present.reduce((a, b) => a + b * b, 0) / n) : null;
+    const summary = n
+      ? `bias ${fmtD(bias)} · MAE ${mae.toFixed(1)} · RMSE ${rmse.toFixed(1)} (n=${n})`
+      : "geen overlap met meting";
+    let cells = `<td class="rowlabel"><span class="dot" style="background:${m.color}"></span>Δ ${m.name}<span class="ru">${summary}</span></td>`;
+    deltas.forEach((d, i) => {
+      if (d == null) {
+        cells += `<td class="${cls(i)}">–</td>`;
+      } else {
+        cells += `<td class="${cls(i)}" style="background:${deltaColor(d)}">${fmtD(d)}</td>`;
+      }
+    });
+    rows.push(`<tr class="valrow">${cells}</tr>`);
+  }
+  return `<table class="grib-detail-table grib-cmp-table"><tbody>${rows.join("")}</tbody></table>`;
+}
+
+// Overlaid line chart + per-model table (+ optional editable "Meting" row and a
+// model−meting delta block). Rendered as three boxes so the chart/delta can be
+// re-rendered on measurement input without rebuilding the table (keeps focus).
+function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure) {
   const active = models.filter((m) => m.series && m.series.some((s) => s.value != null));
-  if (!active.length) return "";
   const keySet = new Set();
   for (const m of active) {
     for (const s of m.series) if (s.value != null) keySet.add(bucketStart(new Date(s.valid_time), res));
   }
   const columns = [...keySet].sort((a, b) => a - b);
   const { groupRow, colRow, cls } = buildColumnHeader(columns, res);
+
   const rows = [];
   active.forEach((m) => {
     const sum = m.unit === "mm";
@@ -3138,11 +3294,41 @@ function compareTableHtml(models, config, res) {
     });
     rows.push(`<tr class="valrow">${cells}</tr>`);
   });
+  if (showMeasure) rows.push(compareMeasureRow(columns, cls, measureMap, unitLabel));
+
+  const table =
+    active.length || showMeasure
+      ? `<table class="grib-detail-table grib-cmp-table"><thead><tr>${groupRow}</tr><tr>${colRow}</tr></thead><tbody>${rows.join("")}</tbody></table>`
+      : "";
+  const measurePts = showMeasure ? measurePtsFromMap(measureMap) : [];
+  const chart = compareChartSvg(active, config, unitLabel, measurePts);
+  const delta = showMeasure ? compareDeltaHtml(active, columns, measureMap, config, cls, res) : "";
   return (
-    `<table class="grib-detail-table grib-cmp-table">` +
-    `<thead><tr>${groupRow}</tr><tr>${colRow}</tr></thead>` +
-    `<tbody>${rows.join("")}</tbody></table>`
+    `<div class="grib-cmp-chart-box">${chart}</div>` +
+    `<div class="grib-cmp-table-box">${table}</div>` +
+    `<div class="grib-cmp-delta-box">${delta}</div>`
   );
+}
+
+// Re-render only the chart + delta boxes from the current measurement map (the
+// table with the focused input is left untouched). `spec` carries the current
+// active models, config, resolution, unit label and measure map.
+function refreshCompareMeasure(root, spec) {
+  const active = spec.models;
+  const keySet = new Set();
+  for (const m of active) {
+    for (const s of m.series) if (s.value != null) keySet.add(bucketStart(new Date(s.valid_time), spec.res));
+  }
+  const columns = [...keySet].sort((a, b) => a - b);
+  const { cls } = buildColumnHeader(columns, spec.res);
+  const chartBox = root.querySelector(".grib-cmp-chart-box");
+  const deltaBox = root.querySelector(".grib-cmp-delta-box");
+  if (chartBox) {
+    chartBox.innerHTML = compareChartSvg(active, spec.config, spec.unitLabel, measurePtsFromMap(spec.measureMap));
+  }
+  if (deltaBox) {
+    deltaBox.innerHTML = compareDeltaHtml(active, columns, spec.measureMap, spec.config, cls, spec.res);
+  }
 }
 
 // The table CSS the comparison view needs (both cards render it in their own
@@ -3172,6 +3358,24 @@ const COMPARE_TABLE_CSS = `
   .grib-detail-table .arrowcell .arw { display: block; font-size: 14px; line-height: 1; }
   .grib-detail-table .arrowcell .dirnum { display: block; font-size: 10px; line-height: 1.2; opacity: 0.7; }
   .grib-detail-table .valrow td.cell { border-top: 1px solid rgba(255,255,255,0.35); }
+`;
+
+// The extra CSS the comparison + measurement/delta view needs, embedded by both
+// the compare card and (for the meteogram compare mode) the overlay card.
+const COMPARE_EXTRA_CSS = `
+  .grib-cmp-table-box { overflow-x: auto; }
+  .grib-detail-table .meascell { padding: 0; }
+  .grib-cmp-meas {
+    width: 34px; box-sizing: border-box; text-align: center; font: 11px sans-serif;
+    border: 1px solid var(--divider-color, #ccc); border-radius: 4px; padding: 1px 2px;
+    background: var(--card-background-color, #fff); color: var(--primary-text-color, #000);
+    -moz-appearance: textfield;
+  }
+  .grib-cmp-meas::-webkit-outer-spin-button, .grib-cmp-meas::-webkit-inner-spin-button {
+    -webkit-appearance: none; margin: 0;
+  }
+  .grib-detail-table .measrow .rowlabel { font-weight: 600; }
+  .grib-cmp-note { padding: 8px 12px; font: 12px sans-serif; opacity: 0.75; }
 `;
 
 // ==========================================================================
@@ -3215,6 +3419,10 @@ class GribCompareCard extends HTMLElement {
 
   disconnectedCallback() {
     this._connected = false;
+    if (this._pointSync) {
+      window.removeEventListener(GRIB_POINT_EVENT, this._pointSync);
+      this._pointSync = null;
+    }
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
@@ -3244,7 +3452,9 @@ class GribCompareCard extends HTMLElement {
       select { font: inherit; padding: 4px 8px; border-radius: 6px;
         border: 1px solid var(--divider-color, #ccc);
         background: var(--card-background-color, #fff); color: var(--primary-text-color, #000); }
-      .map-container { position: relative; width: 100%; height: 190px; flex: 0 0 auto; }
+      /* isolation: contain Leaflet's pane/control z-indexes so tiles/overlays
+         never render over the Home Assistant chrome. */
+      .map-container { position: relative; width: 100%; height: 190px; flex: 0 0 auto; isolation: isolate; }
       .map { position: absolute; inset: 0; }
       .readout { position: absolute; left: 8px; bottom: 8px; z-index: 500;
         background: rgba(255,255,255,0.85); color: #12324f; padding: 3px 8px; border-radius: 6px;
@@ -3252,6 +3462,7 @@ class GribCompareCard extends HTMLElement {
       .grib-cmp-marker { border-radius: 50%; background: var(--primary-color, #03a9f4);
         border: 2px solid #fff; box-shadow: 0 0 3px rgba(0,0,0,0.5); box-sizing: border-box; }
       .hidden { display: none !important; }
+      .toolbar .measctl { cursor: pointer; }
       .models { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 12px 0; font-size: 0.85em; }
       .models label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
       .models .sw { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
@@ -3261,9 +3472,9 @@ class GribCompareCard extends HTMLElement {
       .grib-cmp-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font: 11px sans-serif; margin-top: 2px; }
       .grib-cmp-legend .lg { display: inline-flex; align-items: center; gap: 4px; }
       .grib-cmp-legend .sw { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
-      .grib-cmp-empty, .grib-cmp-note { padding: 8px 0; font: 12px sans-serif; opacity: 0.7; }
-      .table-wrap { overflow-x: auto; }
+      .grib-cmp-empty { padding: 8px 0; font: 12px sans-serif; opacity: 0.7; }
       ${COMPARE_TABLE_CSS}
+      ${COMPARE_EXTRA_CSS}
     `;
     root.appendChild(style);
     const card = document.createElement("ha-card");
@@ -3278,12 +3489,12 @@ class GribCompareCard extends HTMLElement {
             <option value="day">dag (gem.)</option>
           </select>
         </label>
+        <label class="measctl"><input type="checkbox" class="meas-toggle"> Meting invoeren</label>
       </div>
       <div class="map-container"><div class="map"></div><div class="readout hidden"></div></div>
       <div class="models"></div>
       <div class="body">
-        <div class="chart"></div>
-        <div class="table-wrap"><div class="table"></div></div>
+        <div class="cmpview"></div>
         <div class="note"></div>
       </div>
     `;
@@ -3292,18 +3503,25 @@ class GribCompareCard extends HTMLElement {
       card,
       paramSelect: card.querySelector(".param-select"),
       resSelect: card.querySelector(".res-select"),
+      measToggle: card.querySelector(".meas-toggle"),
       mapDiv: card.querySelector(".map"),
       mapContainer: card.querySelector(".map-container"),
       readout: card.querySelector(".readout"),
       models: card.querySelector(".models"),
-      chart: card.querySelector(".chart"),
-      table: card.querySelector(".table"),
+      cmpview: card.querySelector(".cmpview"),
       note: card.querySelector(".note"),
     };
     this._els.resSelect.value = this._resolution;
-    this._els.paramSelect.addEventListener("change", () => this._refresh());
+    this._els.paramSelect.addEventListener("change", () => {
+      this._measure = new Map(); // a new parameter is a different quantity
+      this._refresh();
+    });
     this._els.resSelect.addEventListener("change", () => {
       this._resolution = normalizeResolution(this._els.resSelect.value);
+      this._renderComparison();
+    });
+    this._els.measToggle.addEventListener("change", () => {
+      this._showMeasure = this._els.measToggle.checked;
       this._renderComparison();
     });
     this._els.models.addEventListener("change", (ev) => {
@@ -3314,17 +3532,38 @@ class GribCompareCard extends HTMLElement {
         this._renderComparison();
       }
     });
+    // Live measurement entry: update the map + re-render only the chart/delta.
+    this._els.cmpview.addEventListener("input", (ev) => {
+      const inp = ev.target.closest(".grib-cmp-meas");
+      if (!inp) return;
+      const key = Number(inp.getAttribute("data-col"));
+      const val = inp.value.trim();
+      if (val === "") this._measure.delete(key);
+      else this._measure.set(key, Number(val));
+      refreshCompareMeasure(this._els.cmpview, {
+        models: this._shownModels || [],
+        config: this._config,
+        res: this._resolution,
+        unitLabel: this._shownUnit || "",
+        measureMap: this._measure,
+      });
+    });
   }
 
   async _initialize() {
     this._excluded = new Set();
+    this._measure = new Map();
+    this._showMeasure = false;
     try {
       await loadLeaflet();
     } catch (err) {
       this._els.note.textContent = String(err.message || err);
       return;
     }
-    const center = this._config.center || [52.1, 5.3];
+    // Start on the point last picked on any card, else the configured centre.
+    const center = gribSharedPoint
+      ? [gribSharedPoint.lat, gribSharedPoint.lng]
+      : this._config.center || [52.1, 5.3];
     this._point = { lat: center[0], lng: center[1] };
     this._map = window.L.map(this._els.mapDiv, { center, zoom: this._config.zoom || 7 });
     window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -3343,15 +3582,26 @@ class GribCompareCard extends HTMLElement {
       iconAnchor: [8, 8],
     });
     this._marker = window.L.marker(center, { draggable: true, icon }).addTo(this._map);
-    this._marker.on("dragend", () => {
-      this._point = this._marker.getLatLng();
+    const pick = (ll) => {
+      this._point = ll;
+      this._measure = new Map(); // a measurement belongs to a point; a new point clears it
+      this._marker.setLatLng(ll);
+      broadcastGribPoint(ll.lat, ll.lng, this); // share with the overlay card
       this._refresh();
-    });
-    this._map.on("click", (e) => {
-      this._point = e.latlng;
-      this._marker.setLatLng(e.latlng);
+    };
+    this._marker.on("dragend", () => pick(this._marker.getLatLng()));
+    this._map.on("click", (e) => pick(e.latlng));
+    // Reflect a point picked on the overlay card here.
+    this._pointSync = (ev) => {
+      if (ev.detail.source === this || !this._map) return;
+      const ll = window.L.latLng(ev.detail.lat, ev.detail.lng);
+      this._point = ll;
+      this._measure = new Map();
+      this._marker.setLatLng(ll);
+      if (!this._map.getBounds().contains(ll)) this._map.panTo(ll);
       this._refresh();
-    });
+    };
+    window.addEventListener(GRIB_POINT_EVENT, this._pointSync);
     if (window.ResizeObserver) {
       this._resizeObserver = new ResizeObserver(() => this._map && this._map.invalidateSize());
       this._resizeObserver.observe(this._els.mapContainer);
@@ -3462,15 +3712,16 @@ class GribCompareCard extends HTMLElement {
       .join("");
     const shown = withData.filter((m) => !this._excluded.has(m.entryId));
     const unit = shown.length ? displayUnitLabel(this._config, shown[0].unit) : "";
+    this._shownModels = shown;
+    this._shownUnit = unit;
     if (!withData.length) {
-      this._els.chart.innerHTML = `<div class="grib-cmp-empty">Geen model heeft data voor deze parameter op dit punt.</div>`;
-      this._els.table.innerHTML = "";
+      this._els.cmpview.innerHTML = `<div class="grib-cmp-empty">Geen model heeft data voor deze parameter op dit punt.</div>`;
     } else if (!shown.length) {
-      this._els.chart.innerHTML = `<div class="grib-cmp-empty">Alle modellen zijn uitgevinkt.</div>`;
-      this._els.table.innerHTML = "";
+      this._els.cmpview.innerHTML = `<div class="grib-cmp-empty">Alle modellen zijn uitgevinkt.</div>`;
     } else {
-      this._els.chart.innerHTML = compareChartSvg(shown, this._config, unit);
-      this._els.table.innerHTML = compareTableHtml(shown, this._config, this._resolution);
+      this._els.cmpview.innerHTML = compareViewHtml(
+        shown, this._config, this._resolution, unit, this._measure, this._showMeasure
+      );
     }
     this._els.note.innerHTML = dropped.length
       ? `<div class="grib-cmp-note">Niet getoond (geen data op dit punt): ${dropped.map((m) => m.name).join("; ")}</div>`

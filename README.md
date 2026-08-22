@@ -83,8 +83,15 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   een **lijngrafiek** met een lijn per model (Windy-achtig) plus een **tabel** met
   een rij per model (zelfde kwartier/uur/3 uur/dag-kolommen, kleuren en eenheden).
   In de aparte card kies je het punt op een **mini-kaart** (OpenStreetMap +
-  OpenSeaMap) en vink je modellen in/uit. *(Een latere uitbreiding is het
-  vergelijken met gemeten waarden en het bepalen van een delta.)*
+  OpenSeaMap) en vink je modellen in/uit. Het **gekozen punt wordt gedeeld** met
+  de gewone overlay-card en omgekeerd (klik in de een, de ander neemt het over).
+- **Meting & delta.** Zet in de vergelijking **“Meting invoeren”** aan om per
+  kolom een **gemeten waarde** in te typen. De meting verschijnt als donkere lijn
+  in de grafiek en als rij in de tabel, en per model komt er een **Δ-rij**
+  (model − meting) bij met een samenvatting: **bias, MAE en RMSE**. Zo zie je
+  direct welk model het dichtst bij de werkelijkheid zit. *(Automatisch ophalen
+  van metingen — KNMI-stations voor weer, RWS Waterinfo voor water/golven/stroming
+  — is de volgende stap; zie “Metingen automatisch ophalen” hieronder.)*
 - Kaart-kaart met OpenStreetMap-basislaag + OpenSeaMap seamark-laag + de
   GRIB-overlay, volledig los van een internetverbinding voor de kaart-JS zelf
   (Leaflet wordt meegeleverd, geen CDN-afhankelijkheid voor de code — de
@@ -237,6 +244,28 @@ De vergelijking toont **alle bronnen die de gekozen parameter hebben** als
 gekleurde lijnen + een tabel (rij per model). Modellen die het punt niet dekken
 (bv. BSH landinwaarts) worden onderaan als “niet getoond” benoemd. Vink modellen
 in/uit met de selectievakjes onder de kaart.
+
+**Meting & delta.** Vink **“Meting invoeren”** aan om per kolom een gemeten waarde
+in te typen (in dezelfde eenheid als de grafiek). Je krijgt dan per model een
+**Δ-rij** (model − meting) met een samenvatting **bias / MAE / RMSE**, en de meting
+verschijnt als donkere lijn in de grafiek. Dezelfde meting/delta zit ook in het
+meteogram onder **Weergave → “vergelijk modellen” → Meting**.
+
+**Metingen automatisch ophalen (roadmap).** Handmatig invoeren is er nu; automatisch
+ophalen is de volgende stap. Relevante, geschikte bronnen voor Nederland:
+
+- **KNMI-stationswaarnemingen** (wind, windstoten, temperatuur, neerslag, druk, …)
+  om de KNMI-HARMONIE-voorspellingen te toetsen. KNMI Data Platform, dataset
+  `Actuele10mindataKNMIstations` (opgevolgd door `10-minute-in-situ-meteorological-observations`
+  + een EDR-positie-API). Werkt met **dezelfde KNMI Open Data-sleutel** die de
+  integratie al gebruikt; kies het dichtstbijzijnde station bij het punt.
+- **RWS Waterinfo — WaterWebservices** (waterhoogte, golfhoogte/-richting, stroming,
+  watertemperatuur) om de DWD-golven en BSH-stroming te toetsen. **Sleutelloze** JSON
+  (`OphalenCatalogus` / `OphalenWaarnemingen` / `OphalenLaatsteWaarnemingen`),
+  ~450 stations, AQUO-parametermodel.
+
+De handmatige “Meting”-rij is precies de interface die zo’n automatische feed later
+vult.
 
 Met `dataset` kies je welke dataset de kaart bij het laden standaard toont;
 de waarde mag de datasetsleutel zijn (bv. `bsh_current_northsea`), de
