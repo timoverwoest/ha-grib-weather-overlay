@@ -94,9 +94,17 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   na herladen en zijn in elke card-weergave beschikbaar): het punt krijgt een
   **oranje speld** op **elke** kaart (overlay- én vergelijk-card), en klik je die
   aan dan opent het punt mét de opgeslagen waarden weer — ook in het meteogram van
-  de overlay-card (Weergave → vergelijk modellen). *(Automatisch ophalen van metingen — KNMI-stations
-  voor weer, RWS Waterinfo voor water/golven/stroming — is de volgende stap; zie
-  “Metingen automatisch ophalen” hieronder.)*
+  de overlay-card (Weergave → vergelijk modellen). Met **“Wis meting”** verwijder
+  je de opgeslagen meting van het punt in één klik (de speld verdwijnt overal).
+- **Meetstations in de buurt.** Zodra “Meting invoeren” aanstaat verschijnen de
+  **meetstations binnen een instelbare straal** (standaard **10 km**, aan te passen
+  met `measurement_radius_km` of het straal-veld in de werkbalk) rond het gekozen
+  punt: als **groene stippen op de mini-kaart** én als **knoppen** (met afstand)
+  onder de tabel. Klik een station aan om het punt daarheen te verplaatsen, zodat
+  je de voorspelling op de exacte stationslocatie kunt vergelijken met de meting.
+  *(Automatisch ophalen van de meetwaarden zelf — KNMI-stations voor weer, RWS
+  Waterinfo voor water/golven/stroming — is de volgende stap; zie “Metingen
+  automatisch ophalen” hieronder.)*
 - **Gedeelde klikpositie.** De aangeklikte positie wordt gedeeld tussen de
   overlay-card en de vergelijk-card (ook tussen dashboardpagina's, voor de sessie).
   In de overlay-card opent op die positie meteen het **waarde-venster** (en sluit
@@ -229,6 +237,7 @@ type: custom:grib-overlay-card
 # uitgebreid meteogram — standaard zichtbare rijen (rest start verborgen; leeg = alles):
 # meteogram_parameters: [wind_10m, wind_gust_10m, temperature_2m, precipitation]
 # meteogram_resolution: uur   # kolom-tijdstap: kwartier, uur, 3uur of dag (dag = gemiddeld; neerslag = som)
+# measurement_radius_km: 10   # meteogram → vergelijk modellen → Meting: straal voor nabije meetstations
 ```
 
 ### Modelvergelijking-card (`grib-overlay-compare-card`)
@@ -244,6 +253,7 @@ zoom: 9
 # meteogram_resolution: 3uur # kolom-tijdstap van de tabel: kwartier, uur, 3uur of dag
 # entries: [knmi, dwd]       # optioneel: alleen deze bronnen vergelijken
 #                            #   (match op source, datasetsleutel/-naam, titel of entry-id)
+# measurement_radius_km: 10  # straal voor "meetstations in de buurt" (standaard 10 km)
 # eenheden gelden net als bij de overlay-card:
 # wind_unit: kn
 # direction_unit: deg
@@ -258,7 +268,13 @@ in/uit met de selectievakjes onder de kaart.
 in te typen (in dezelfde eenheid als de grafiek). Je krijgt dan per model een
 **Δ-rij** (model − meting) met een samenvatting **bias / MAE / RMSE**, en de meting
 verschijnt als donkere lijn in de grafiek. Dezelfde meting/delta zit ook in het
-meteogram onder **Weergave → “vergelijk modellen” → Meting**.
+meteogram onder **Weergave → “vergelijk modellen” → Meting**. Met **“Wis meting”**
+wis je de opgeslagen meting van het punt in één klik.
+
+**Meetstations in de buurt.** Met “Meting invoeren” aan verschijnen de meetstations
+binnen `measurement_radius_km` (standaard 10 km; ook aan te passen met het straal-veld
+in de werkbalk) als **groene stippen op de mini-kaart** en als **knoppen met afstand**
+onder de tabel. Klik een station om het punt naar die locatie te verplaatsen.
 
 **Metingen automatisch ophalen (roadmap).** Handmatig invoeren is er nu; automatisch
 ophalen is de volgende stap. Relevante, geschikte bronnen voor Nederland:

@@ -533,6 +533,75 @@ function gribPointHasMeasurements(lat, lng) {
   const rec = gribReadAllMeasurements()[gribPointKey(lat, lng)];
   return !!(rec && rec.params && Object.keys(rec.params).length);
 }
+// Wipe the saved measurements for a point (one parameter, or all).
+function gribClearMeasurements(lat, lng, param) {
+  const store = gribReadAllMeasurements();
+  const key = gribPointKey(lat, lng);
+  const rec = store[key];
+  if (!rec) return;
+  if (param && rec.params) delete rec.params[param];
+  if (!param || !rec.params || !Object.keys(rec.params).length) delete store[key];
+  gribWriteAllMeasurements(store);
+  window.dispatchEvent(new Event(GRIB_MEAS_EVENT));
+}
+
+// Built-in KNMI automatic-weather-station list (name, lat, lon) used to present
+// nearby measurement stations around the selected point. Coordinates are the
+// public KNMI station positions; a live catalog fetch (KNMI EDR / RWS Waterinfo)
+// is a later step. "NZ" marks North Sea platforms.
+const KNMI_STATIONS = [
+  { name: "De Kooy", lat: 52.928, lon: 4.781 },
+  { name: "Schiphol", lat: 52.318, lon: 4.790 },
+  { name: "Berkhout", lat: 52.644, lon: 4.979 },
+  { name: "Wijk aan Zee", lat: 52.506, lon: 4.603 },
+  { name: "De Bilt", lat: 52.100, lon: 5.180 },
+  { name: "Soesterberg", lat: 52.130, lon: 5.274 },
+  { name: "Stavoren", lat: 52.898, lon: 5.384 },
+  { name: "Lelystad", lat: 52.458, lon: 5.520 },
+  { name: "Leeuwarden", lat: 53.224, lon: 5.752 },
+  { name: "Marknesse", lat: 52.703, lon: 5.888 },
+  { name: "Deelen", lat: 52.056, lon: 5.873 },
+  { name: "Lauwersoog", lat: 53.413, lon: 6.200 },
+  { name: "Heino", lat: 52.435, lon: 6.259 },
+  { name: "Hoogeveen", lat: 52.750, lon: 6.574 },
+  { name: "Eelde", lat: 53.125, lon: 6.585 },
+  { name: "Hupsel", lat: 52.069, lon: 6.657 },
+  { name: "Nieuw Beerta", lat: 53.196, lon: 7.150 },
+  { name: "Twenthe", lat: 52.274, lon: 6.891 },
+  { name: "Cadzand", lat: 51.381, lon: 3.379 },
+  { name: "Vlissingen", lat: 51.442, lon: 3.596 },
+  { name: "Westdorpe", lat: 51.226, lon: 3.861 },
+  { name: "Wilhelminadorp", lat: 51.527, lon: 3.884 },
+  { name: "Hoek van Holland", lat: 51.992, lon: 4.122 },
+  { name: "Woensdrecht", lat: 51.449, lon: 4.342 },
+  { name: "Rotterdam", lat: 51.962, lon: 4.447 },
+  { name: "Cabauw", lat: 51.970, lon: 4.926 },
+  { name: "Gilze-Rijen", lat: 51.566, lon: 4.936 },
+  { name: "Herwijnen", lat: 51.859, lon: 5.146 },
+  { name: "Eindhoven", lat: 51.451, lon: 5.377 },
+  { name: "Volkel", lat: 51.659, lon: 5.707 },
+  { name: "Ell", lat: 51.198, lon: 5.763 },
+  { name: "Maastricht", lat: 50.906, lon: 5.762 },
+  { name: "Arcen", lat: 51.497, lon: 6.197 },
+  { name: "Hoorn (Terschelling)", lat: 53.392, lon: 5.346 },
+  { name: "Europlatform (NZ)", lat: 51.999, lon: 3.276 },
+  { name: "K13-A (NZ)", lat: 53.218, lon: 3.220 },
+];
+function gribHaversineKm(aLat, aLon, bLat, bLon) {
+  const R = 6371;
+  const dLat = ((bLat - aLat) * Math.PI) / 180;
+  const dLon = ((bLon - aLon) * Math.PI) / 180;
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((aLat * Math.PI) / 180) * Math.cos((bLat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+// Stations within `radiusKm` of a point, nearest first, with the distance in km.
+function stationsWithin(lat, lng, radiusKm) {
+  return KNMI_STATIONS.map((s) => ({ ...s, distKm: gribHaversineKm(lat, lng, s.lat, s.lon) }))
+    .filter((s) => s.distKm <= radiusKm)
+    .sort((a, b) => a.distKm - b.distKm);
+}
 
 class GribOverlayCard extends HTMLElement {
   static getStubConfig() {
@@ -912,6 +981,11 @@ class GribOverlayCard extends HTMLElement {
       }
       .grib-detail-tools .modesel { display: flex; align-items: center; gap: 5px; }
       .grib-detail-tools .measctl { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+      .grib-detail-tools .detradctl { display: flex; align-items: center; gap: 5px; }
+      .grib-detail-tools .detradius {
+        width: 46px; font: inherit; padding: 1px 4px; border-radius: 6px; color: inherit;
+        border: 1px solid var(--divider-color, #c7ccd1); background: var(--card-background-color, #fff);
+      }
       ${COMPARE_EXTRA_CSS}
       .grib-detail-table .grouprow td {
         background: var(--secondary-background-color, #eef1f4);
@@ -2587,6 +2661,9 @@ class GribOverlayCard extends HTMLElement {
     this._detailMode = "bron"; // "bron" (per-source table) | "compare" (models)
     this._detailMeasure = new Map(); // manual measurements (display units) for compare mode
     this._detailShowMeasure = false;
+    this._detailRadius = Number((this._config || {}).measurement_radius_km) > 0
+      ? Number(this._config.measurement_radius_km)
+      : 10;
     const backdrop = document.createElement("div");
     backdrop.className = "grib-detail-backdrop";
     backdrop.innerHTML =
@@ -2604,6 +2681,7 @@ class GribOverlayCard extends HTMLElement {
       `</select></label>` +
       `<label class="cmpparamsel hidden">Parameter <select class="cmpparam"></select></label>` +
       `<label class="measctl hidden"><input type="checkbox" class="detmeas"> Meting</label>` +
+      `<label class="detradctl hidden">Meetstations <input type="number" class="detradius" min="1" step="1"> km</label>` +
       `<label class="resctl">Kolommen` +
       `<select class="resselect">` +
       `<option value="quarter">kwartier</option>` +
@@ -2625,8 +2703,17 @@ class GribOverlayCard extends HTMLElement {
     backdrop
       .querySelector(".grib-detail-close")
       .addEventListener("click", () => this._closeDetailMeteogram());
-    // Click a row label to hide that parameter; click a chip to bring it back.
+    // Click a row label to hide that parameter; click a chip to bring it back;
+    // "Wis meting" clears this point's measurement for the compare parameter.
     backdrop.querySelector(".grib-detail-scroll").addEventListener("click", (ev) => {
+      if (ev.target.closest(".grib-cmp-clear")) {
+        if (this._detailLatlng) {
+          gribClearMeasurements(this._detailLatlng.lat, this._detailLatlng.lng, this._detailCmpParam);
+        }
+        this._detailMeasure = new Map();
+        this._rerenderDetail();
+        return;
+      }
       const label = ev.target.closest("td.rowlabel[data-grp]");
       if (label) this._toggleDetailRow(label.getAttribute("data-grp"));
     });
@@ -2656,6 +2743,15 @@ class GribOverlayCard extends HTMLElement {
     });
     backdrop.querySelector(".detmeas").addEventListener("change", (ev) => {
       this._detailShowMeasure = ev.target.checked;
+      backdrop.querySelector(".detradctl").classList.toggle("hidden", !this._detailShowMeasure);
+      this._rerenderDetail();
+    });
+    const detRadius = backdrop.querySelector(".detradius");
+    detRadius.value = this._detailRadius;
+    detRadius.addEventListener("change", () => {
+      const v = Number(detRadius.value);
+      this._detailRadius = v > 0 ? v : 10;
+      detRadius.value = this._detailRadius;
       this._rerenderDetail();
     });
     // Live measurement entry in compare mode: update the map + re-render only the
@@ -2710,6 +2806,7 @@ class GribOverlayCard extends HTMLElement {
     const q = (sel) => this._detailModal.querySelector(sel);
     q(".cmpparamsel").classList.toggle("hidden", !compare);
     q(".measctl").classList.toggle("hidden", !compare);
+    q(".detradctl").classList.toggle("hidden", !(compare && this._detailShowMeasure));
     q(".hint").classList.toggle("hidden", compare);
     if (compare) {
       q(".chips").innerHTML = "";
@@ -2802,10 +2899,14 @@ class GribOverlayCard extends HTMLElement {
       ? `<div class="grib-detail-note">Niet getoond: ${dropped.map((m) => m.name).join("; ")}</div>`
       : "";
     if (!this._detailMeasure) this._detailMeasure = new Map();
+    const stations = this._detailShowMeasure && this._detailLatlng
+      ? stationsWithin(this._detailLatlng.lat, this._detailLatlng.lng, this._detailRadius)
+      : [];
     return (
       compareViewHtml(
         withData, this._config, this._detailResolution, unit,
-        this._detailMeasure, !!this._detailShowMeasure
+        this._detailMeasure, !!this._detailShowMeasure,
+        { stations, radiusKm: this._detailRadius }
       ) + note
     );
   }
@@ -3423,7 +3524,8 @@ function compareSummaryHtml(models, columns, measureMap, config, res) {
 // value/meting/delta rows share a single table (one horizontal scrollbar) so they
 // stay column-aligned. On measurement input only the delta cells, the summary and
 // the chart update in place -- the table (and the focused input) is left standing.
-function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure) {
+function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure, opts) {
+  opts = opts || {};
   const active = models.filter((m) => m.series && m.series.some((s) => s.value != null));
   const keySet = new Set();
   for (const m of active) {
@@ -3491,11 +3593,35 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
       : "";
   const chart = compareChartSvg(active, config, unitLabel, showMeasure ? measurePtsFromMap(measureMap) : []);
   const summary = showMeasure ? compareSummaryHtml(active, columns, measureMap, config, res) : "";
+  const controls = showMeasure
+    ? `<div class="grib-cmp-meas-controls">` +
+      `<button class="grib-cmp-clear" type="button">Wis meting</button>` +
+      `</div>` +
+      compareStationsHtml(opts.stations, opts.radiusKm)
+    : "";
   return (
     `<div class="grib-cmp-chart-box">${chart}</div>` +
     `<div class="grib-cmp-scroll">${table}</div>` +
-    `<div class="grib-cmp-summary">${summary}</div>`
+    `<div class="grib-cmp-summary">${summary}</div>` +
+    controls
   );
+}
+
+// The nearby-measurement-station block shown under the meting controls: each
+// station is a button (name · distance) that jumps the point to that station.
+function compareStationsHtml(stations, radiusKm) {
+  const r = radiusKm || 10;
+  if (!stations || !stations.length) {
+    return `<div class="grib-cmp-stations"><span class="lbl">Meetstations binnen ${r} km:</span> <span class="none">geen</span></div>`;
+  }
+  const items = stations
+    .map(
+      (s) =>
+        `<button class="grib-cmp-station" type="button" data-lat="${s.lat}" data-lng="${s.lon}" ` +
+        `title="Ga naar ${s.name}">${s.name} · ${s.distKm.toFixed(1)} km</button>`
+    )
+    .join("");
+  return `<div class="grib-cmp-stations"><span class="lbl">Meetstations binnen ${r} km:</span> ${items}</div>`;
 }
 
 // On measurement input: recompute and update only the Δ cells + summary + chart in
@@ -3578,6 +3704,22 @@ const COMPARE_EXTRA_CSS = `
   .grib-cmp-summary .sumline .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
   .grib-cmp-summary .ru { opacity: 0.6; }
   .grib-cmp-note { padding: 8px 12px; font: 12px sans-serif; opacity: 0.75; }
+  .grib-cmp-meas-controls { padding: 4px 12px 0; }
+  .grib-cmp-clear {
+    font: 12px sans-serif; cursor: pointer; color: inherit;
+    border: 1px solid var(--divider-color, #c7ccd1); border-radius: 6px; padding: 2px 10px;
+    background: var(--card-background-color, #fff);
+  }
+  .grib-cmp-clear:hover { border-color: #d64040; color: #d64040; }
+  .grib-cmp-stations { padding: 6px 12px 2px; font: 12px/1.7 sans-serif; }
+  .grib-cmp-stations .lbl { opacity: 0.7; margin-right: 4px; }
+  .grib-cmp-stations .none { opacity: 0.6; }
+  .grib-cmp-station {
+    font: 12px sans-serif; cursor: pointer; color: inherit; margin: 0 4px 4px 0;
+    border: 1px solid var(--divider-color, #c7ccd1); border-radius: 999px; padding: 1px 9px;
+    background: var(--secondary-background-color, #eef1f4);
+  }
+  .grib-cmp-station:hover { border-color: var(--primary-color, #0288d1); color: var(--primary-color, #0288d1); }
 `;
 
 // ==========================================================================
@@ -3592,6 +3734,8 @@ class GribCompareCard extends HTMLElement {
   setConfig(config) {
     this._config = config || {};
     this._resolution = normalizeResolution(this._config.meteogram_resolution);
+    const r = Number(this._config.measurement_radius_km);
+    this._radius = r > 0 ? r : 10;
     this._render();
     if (this._entries) this._refresh();
   }
@@ -3666,6 +3810,7 @@ class GribCompareCard extends HTMLElement {
       this._map.setView(ll, this._map.getZoom(), { animate: false });
     }
     this._refresh();
+    this._renderStationMarkers();
   }
 
   // Pick a point on this card's own map (user click/drag or a saved pin): set it,
@@ -3676,6 +3821,7 @@ class GribCompareCard extends HTMLElement {
     this._loadMeasurementsForPoint();
     broadcastGribPoint(ll.lat, ll.lng, this);
     this._refresh();
+    this._renderStationMarkers();
   }
 
   // Load the measurements saved this session for the current point + parameter;
@@ -3707,6 +3853,24 @@ class GribCompareCard extends HTMLElement {
     const ll = window.L.latLng(lat, lng);
     if (!this._map.getBounds().contains(ll)) this._map.setView(ll, this._map.getZoom(), { animate: false });
     this._pickPoint(ll);
+  }
+
+  // Green square markers for the measurement stations within the radius of the
+  // current point (only while entering measurements); clicking one jumps there.
+  _renderStationMarkers() {
+    if (!this._map || !window.L) return;
+    if (!this._stationLayer) this._stationLayer = window.L.layerGroup().addTo(this._map);
+    this._stationLayer.clearLayers();
+    if (!this._showMeasure || !this._point) return;
+    const icon = window.L.divIcon({ className: "grib-station-marker", iconSize: [11, 11], iconAnchor: [6, 6] });
+    for (const s of stationsWithin(this._point.lat, this._point.lng, this._radius)) {
+      const mk = window.L.marker([s.lat, s.lon], {
+        icon,
+        title: `${s.name} · ${s.distKm.toFixed(1)} km — klik om hierheen te gaan`,
+      });
+      mk.on("click", () => this._openSavedPoint(s.lat, s.lon));
+      this._stationLayer.addLayer(mk);
+    }
   }
 
   _tryInitialize() {
@@ -3743,8 +3907,13 @@ class GribCompareCard extends HTMLElement {
         border: 2px solid #fff; box-shadow: 0 0 3px rgba(0,0,0,0.5); box-sizing: border-box; }
       .grib-saved-marker { border-radius: 50%; background: #e6a817; border: 2px solid #fff;
         box-shadow: 0 0 3px rgba(0,0,0,0.6); box-sizing: border-box; cursor: pointer; }
+      .grib-station-marker { border-radius: 2px; background: #2e9e5b; border: 1px solid #fff;
+        box-shadow: 0 0 2px rgba(0,0,0,0.6); box-sizing: border-box; cursor: pointer; }
       .hidden { display: none !important; }
       .toolbar .measctl { cursor: pointer; }
+      .toolbar .radctl input { width: 46px; font: inherit; padding: 2px 4px; border-radius: 6px;
+        border: 1px solid var(--divider-color, #ccc); background: var(--card-background-color, #fff);
+        color: var(--primary-text-color, #000); }
       .models { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 12px 0; font-size: 0.85em; }
       .models label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
       .models .sw { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
@@ -3772,6 +3941,7 @@ class GribCompareCard extends HTMLElement {
           </select>
         </label>
         <label class="measctl"><input type="checkbox" class="meas-toggle"> Meting invoeren</label>
+        <label class="radctl hidden">Meetstations <input type="number" class="radius" min="1" step="1"> km</label>
       </div>
       <div class="map-container"><div class="map"></div><div class="readout hidden"></div></div>
       <div class="models"></div>
@@ -3786,6 +3956,8 @@ class GribCompareCard extends HTMLElement {
       paramSelect: card.querySelector(".param-select"),
       resSelect: card.querySelector(".res-select"),
       measToggle: card.querySelector(".meas-toggle"),
+      radctl: card.querySelector(".radctl"),
+      radiusInput: card.querySelector(".radius"),
       mapDiv: card.querySelector(".map"),
       mapContainer: card.querySelector(".map-container"),
       readout: card.querySelector(".readout"),
@@ -3794,6 +3966,7 @@ class GribCompareCard extends HTMLElement {
       note: card.querySelector(".note"),
     };
     this._els.resSelect.value = this._resolution;
+    this._els.radiusInput.value = this._radius;
     this._els.paramSelect.addEventListener("change", () => {
       this._loadMeasurementsForPoint(); // a new parameter has its own saved values
       this._refresh();
@@ -3804,7 +3977,16 @@ class GribCompareCard extends HTMLElement {
     });
     this._els.measToggle.addEventListener("change", () => {
       this._showMeasure = this._els.measToggle.checked;
+      this._els.radctl.classList.toggle("hidden", !this._showMeasure);
       this._renderComparison();
+      this._renderStationMarkers();
+    });
+    this._els.radiusInput.addEventListener("change", () => {
+      const v = Number(this._els.radiusInput.value);
+      this._radius = v > 0 ? v : 10;
+      this._els.radiusInput.value = this._radius;
+      this._renderComparison();
+      this._renderStationMarkers();
     });
     this._els.models.addEventListener("change", (ev) => {
       if (ev.target.matches("input[type=checkbox]")) {
@@ -3833,6 +4015,17 @@ class GribCompareCard extends HTMLElement {
         unitLabel: this._shownUnit || "",
         measureMap: this._measure,
       });
+    });
+    // Clear the measurement for this point/param, or jump to a nearby station.
+    this._els.cmpview.addEventListener("click", (ev) => {
+      if (ev.target.closest(".grib-cmp-clear")) {
+        if (this._point) gribClearMeasurements(this._point.lat, this._point.lng, this._els.paramSelect.value);
+        this._measure = new Map();
+        this._renderComparison();
+        return;
+      }
+      const st = ev.target.closest(".grib-cmp-station");
+      if (st) this._openSavedPoint(Number(st.getAttribute("data-lat")), Number(st.getAttribute("data-lng")));
     });
   }
 
@@ -3891,6 +4084,7 @@ class GribCompareCard extends HTMLElement {
     this._populateParameters();
     this._loadMeasurementsForPoint(); // now the parameter is known
     this._refresh();
+    this._renderStationMarkers();
   }
 
   _scheduleInvalidate() {
@@ -3993,8 +4187,12 @@ class GribCompareCard extends HTMLElement {
     } else if (!shown.length) {
       this._els.cmpview.innerHTML = `<div class="grib-cmp-empty">Alle modellen zijn uitgevinkt.</div>`;
     } else {
+      const stations = this._showMeasure && this._point
+        ? stationsWithin(this._point.lat, this._point.lng, this._radius)
+        : [];
       this._els.cmpview.innerHTML = compareViewHtml(
-        shown, this._config, this._resolution, unit, this._measure, this._showMeasure
+        shown, this._config, this._resolution, unit, this._measure, this._showMeasure,
+        { stations, radiusKm: this._radius }
       );
     }
     this._els.note.innerHTML = dropped.length
