@@ -90,9 +90,11 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   in de grafiek en als rij in de tabel, en per model komt er een **Δ-rij**
   (model − meting) bij met een samenvatting: **bias, MAE en RMSE**. Zo zie je
   direct welk model het dichtst bij de werkelijkheid zit. Ingevoerde metingen
-  worden **voor de sessie bewaard per punt + parameter**: het punt krijgt een
-  **oranje speld** op beide kaarten, en klik je die aan dan opent het punt
-  mét de opgeslagen waarden weer. *(Automatisch ophalen van metingen — KNMI-stations
+  worden **bewaard per punt + parameter** (in `localStorage`, dus ze blijven staan
+  na herladen en zijn in elke card-weergave beschikbaar): het punt krijgt een
+  **oranje speld** op **elke** kaart (overlay- én vergelijk-card), en klik je die
+  aan dan opent het punt mét de opgeslagen waarden weer — ook in het meteogram van
+  de overlay-card (Weergave → vergelijk modellen). *(Automatisch ophalen van metingen — KNMI-stations
   voor weer, RWS Waterinfo voor water/golven/stroming — is de volgende stap; zie
   “Metingen automatisch ophalen” hieronder.)*
 - **Gedeelde klikpositie.** De aangeklikte positie wordt gedeeld tussen de

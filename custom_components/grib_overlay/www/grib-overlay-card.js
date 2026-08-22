@@ -474,10 +474,12 @@ function gribReadSharedPoint() {
   return null;
 }
 
-// Manually entered measurements, kept for the browser session and keyed by point
-// (~100 m grid) + parameter, so a place's values can be reopened later. Shape:
+// Manually entered measurements, kept in localStorage (so points with values are
+// reopenable from every card view, and persist across tabs/reloads) and keyed by
+// point (~100 m grid) + parameter. Shape:
 // { "<lat3>,<lon3>": { lat, lng, params: { "<paramKey>": { "<colEpoch>": value } } } }.
-// A `grib-measurements-changed` event lets every card refresh its saved-point pins.
+// A `grib-measurements-changed` window event (same tab) and the native `storage`
+// event (other tabs) let every card refresh its saved-point pins.
 const GRIB_MEAS_KEY = "grib_measurements";
 const GRIB_MEAS_EVENT = "grib-measurements-changed";
 function gribPointKey(lat, lng) {
@@ -485,14 +487,14 @@ function gribPointKey(lat, lng) {
 }
 function gribReadAllMeasurements() {
   try {
-    return JSON.parse(sessionStorage.getItem(GRIB_MEAS_KEY) || "{}") || {};
+    return JSON.parse(localStorage.getItem(GRIB_MEAS_KEY) || "{}") || {};
   } catch (e) {
     return {};
   }
 }
 function gribWriteAllMeasurements(store) {
   try {
-    sessionStorage.setItem(GRIB_MEAS_KEY, JSON.stringify(store));
+    localStorage.setItem(GRIB_MEAS_KEY, JSON.stringify(store));
   } catch (e) {
     /* ignore */
   }
@@ -637,7 +639,8 @@ class GribOverlayCard extends HTMLElement {
     this._boundPointSync = this._boundPointSync || ((ev) => this._onSharedPoint(ev));
     window.addEventListener(GRIB_POINT_EVENT, this._boundPointSync);
     this._boundMeasSync = this._boundMeasSync || (() => this._renderSavedMarkers());
-    window.addEventListener(GRIB_MEAS_EVENT, this._boundMeasSync);
+    window.addEventListener(GRIB_MEAS_EVENT, this._boundMeasSync); // same tab
+    window.addEventListener("storage", this._boundMeasSync); // other tabs (localStorage)
     // Re-attach (navigating back to the view): the container was hidden/removed,
     // so nudge Leaflet to re-measure and repaint, jump to the latest shared point
     // (picked on another page while this card was detached), and refresh the pins
@@ -655,7 +658,10 @@ class GribOverlayCard extends HTMLElement {
     this._stopPlayback();
     this._closeDetailMeteogram();
     if (this._boundPointSync) window.removeEventListener(GRIB_POINT_EVENT, this._boundPointSync);
-    if (this._boundMeasSync) window.removeEventListener(GRIB_MEAS_EVENT, this._boundMeasSync);
+    if (this._boundMeasSync) {
+      window.removeEventListener(GRIB_MEAS_EVENT, this._boundMeasSync);
+      window.removeEventListener("storage", this._boundMeasSync);
+    }
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
@@ -667,7 +673,7 @@ class GribOverlayCard extends HTMLElement {
     this._applySharedPoint(ev.detail.lat, ev.detail.lng, false);
   }
 
-  // Amber pins for points that have saved measurements this session; clicking one
+  // Amber pins for points that have saved measurements; clicking one
   // reopens that point (and its saved values, via the compare card / meteogram).
   _renderSavedMarkers() {
     if (!this._map || !window.L) return;
@@ -1082,6 +1088,7 @@ class GribOverlayCard extends HTMLElement {
       this._lastAdoptedPoint = { lat: sharedStart.lat, lng: sharedStart.lng };
       this._showSharedMarker(sharedStart.lat, sharedStart.lng);
     }
+    this._renderSavedMarkers(); // amber pins for points with saved measurements
     // Screen-space overlays (arrows, isobars) are redrawn on every map move.
     // Nothing to redraw until entries + frames have loaded (early invalidateSize
     // events fire before then), so bail out to avoid touching unset state.
@@ -3614,7 +3621,8 @@ class GribCompareCard extends HTMLElement {
     this._boundPointSync = this._boundPointSync || ((ev) => this._onSharedPoint(ev));
     window.addEventListener(GRIB_POINT_EVENT, this._boundPointSync);
     this._boundMeasSync = this._boundMeasSync || (() => this._renderSavedMarkers());
-    window.addEventListener(GRIB_MEAS_EVENT, this._boundMeasSync);
+    window.addEventListener(GRIB_MEAS_EVENT, this._boundMeasSync); // same tab
+    window.addEventListener("storage", this._boundMeasSync); // other tabs (localStorage)
     if (this._map) {
       this._scheduleInvalidate();
       this._adoptSharedPoint(); // jump to a point picked on another page while away
@@ -3625,7 +3633,10 @@ class GribCompareCard extends HTMLElement {
   disconnectedCallback() {
     this._connected = false;
     if (this._boundPointSync) window.removeEventListener(GRIB_POINT_EVENT, this._boundPointSync);
-    if (this._boundMeasSync) window.removeEventListener(GRIB_MEAS_EVENT, this._boundMeasSync);
+    if (this._boundMeasSync) {
+      window.removeEventListener(GRIB_MEAS_EVENT, this._boundMeasSync);
+      window.removeEventListener("storage", this._boundMeasSync);
+    }
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
