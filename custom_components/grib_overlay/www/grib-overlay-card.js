@@ -444,13 +444,34 @@ function fmtCell(sourceUnit, v) {
 }
 
 // A tiny cross-card bus so a point picked on one card's map moves the other's.
-// Cards broadcast their own picks and adopt everyone else's; the last pick is
-// remembered so a freshly-loaded card starts on the shared point.
+// A live CustomEvent syncs cards on the same page; the point is also stored in
+// sessionStorage so cards on OTHER dashboard pages (or after a reload) start on
+// the last-picked point for the rest of the browser session.
 const GRIB_POINT_EVENT = "grib-overlay-point";
+const GRIB_POINT_KEY = "grib_overlay_point";
 let gribSharedPoint = null;
 function broadcastGribPoint(lat, lng, source) {
   gribSharedPoint = { lat, lng };
+  try {
+    sessionStorage.setItem(GRIB_POINT_KEY, JSON.stringify(gribSharedPoint));
+  } catch (e) {
+    /* private mode / storage disabled: fall back to the in-memory value */
+  }
   window.dispatchEvent(new CustomEvent(GRIB_POINT_EVENT, { detail: { lat, lng, source } }));
+}
+// The point last picked on any card this session (memory first, then storage).
+function gribReadSharedPoint() {
+  if (gribSharedPoint) return gribSharedPoint;
+  try {
+    const p = JSON.parse(sessionStorage.getItem(GRIB_POINT_KEY) || "null");
+    if (p && Number.isFinite(p.lat) && Number.isFinite(p.lng)) {
+      gribSharedPoint = p;
+      return p;
+    }
+  } catch (e) {
+    /* ignore */
+  }
+  return null;
 }
 
 class GribOverlayCard extends HTMLElement {
@@ -906,10 +927,14 @@ class GribOverlayCard extends HTMLElement {
       this._els.note.textContent = String(err.message || err);
       return;
     }
+    // Start on the point last picked on any card this session (shared across
+    // dashboard pages via sessionStorage), else the configured/default centre.
+    const sharedStart = gribReadSharedPoint();
     this._map = window.L.map(this._els.mapDiv, {
-      center: this._config.center || [52.1, 5.3],
+      center: sharedStart ? [sharedStart.lat, sharedStart.lng] : this._config.center || [52.1, 5.3],
       zoom: this._config.zoom || 7,
     });
+    if (sharedStart) this._boundsFit = true; // keep the shared centre; skip auto-fit
     // Our arrows/isobars live in this pane so they sit above the raster
     // (overlayPane, z-index 400) but below Leaflet's popups (popupPane, 700) --
     // otherwise the click/meteogram popups render behind them. It is inside the
@@ -942,7 +967,7 @@ class GribOverlayCard extends HTMLElement {
       this._showSharedMarker(ev.detail.lat, ev.detail.lng);
     };
     window.addEventListener(GRIB_POINT_EVENT, this._pointSync);
-    if (gribSharedPoint) this._showSharedMarker(gribSharedPoint.lat, gribSharedPoint.lng);
+    if (sharedStart) this._showSharedMarker(sharedStart.lat, sharedStart.lng);
     // Screen-space overlays (arrows, isobars) are redrawn on every map move.
     // Nothing to redraw until entries + frames have loaded (early invalidateSize
     // events fire before then), so bail out to avoid touching unset state.
@@ -3193,59 +3218,64 @@ function compareMeasureRow(columns, cls, measureMap, unitLabel) {
 // Delta block: per model a row of (model − meting) per column (tinted by sign) and
 // a summary (bias / MAE / RMSE / n) over the columns that have both a model value
 // and a measurement. Values are in display units.
-function compareDeltaHtml(models, columns, measureMap, config, cls, res) {
-  if (!measureMap || !measurePtsFromMap(measureMap).length) {
-    return `<div class="grib-cmp-note">Vul hierboven meetwaarden in om de afwijking (model − meting) te zien.</div>`;
-  }
-  const rows = [];
+// Per-model per-column delta (model − meting, in display units) plus a shared
+// colour scale. `perModel[i].deltas[j]` is null where either side is missing.
+function computeCompareDeltas(models, columns, measureMap, config, res) {
   let scale = 1e-6;
-  const perModel = [];
-  for (const m of models) {
+  const perModel = models.map((m) => {
     const sum = m.unit === "mm";
     const byBucket = aggregateSeries(m.series, res, sum, columns);
     const conv = conversionFor(config, m.unit);
     const factor = conv ? conv.factor : 1;
     const deltas = columns.map((key) => {
       const b = byBucket.get(key);
-      const meas = measureMap.get(key);
+      const meas = measureMap && measureMap.get(key);
       if (!b || b.value == null || meas == null || meas === "") return null;
       const d = b.value * factor - Number(meas);
-      if (Number.isFinite(d)) scale = Math.max(scale, Math.abs(d));
-      return Number.isFinite(d) ? d : null;
+      if (!Number.isFinite(d)) return null;
+      scale = Math.max(scale, Math.abs(d));
+      return d;
     });
-    perModel.push({ m, deltas });
-  }
-  const deltaColor = (d) => {
-    const t = Math.max(-1, Math.min(1, d / scale));
-    const a = (0.12 + 0.55 * Math.abs(t)).toFixed(2);
-    return t >= 0 ? `rgba(214,64,64,${a})` : `rgba(52,120,214,${a})`;
-  };
-  const fmtD = (d) => (d >= 0 ? "+" : "−") + Math.abs(d).toFixed(1);
-  for (const { m, deltas } of perModel) {
-    const present = deltas.filter((d) => d != null);
-    const n = present.length;
-    const bias = n ? present.reduce((a, b) => a + b, 0) / n : null;
-    const mae = n ? present.reduce((a, b) => a + Math.abs(b), 0) / n : null;
-    const rmse = n ? Math.sqrt(present.reduce((a, b) => a + b * b, 0) / n) : null;
-    const summary = n
-      ? `bias ${fmtD(bias)} · MAE ${mae.toFixed(1)} · RMSE ${rmse.toFixed(1)} (n=${n})`
-      : "geen overlap met meting";
-    let cells = `<td class="rowlabel"><span class="dot" style="background:${m.color}"></span>Δ ${m.name}<span class="ru">${summary}</span></td>`;
-    deltas.forEach((d, i) => {
-      if (d == null) {
-        cells += `<td class="${cls(i)}">–</td>`;
-      } else {
-        cells += `<td class="${cls(i)}" style="background:${deltaColor(d)}">${fmtD(d)}</td>`;
-      }
-    });
-    rows.push(`<tr class="valrow">${cells}</tr>`);
-  }
-  return `<table class="grib-detail-table grib-cmp-table"><tbody>${rows.join("")}</tbody></table>`;
+    return { m, deltas };
+  });
+  return { perModel, scale };
 }
 
-// Overlaid line chart + per-model table (+ optional editable "Meting" row and a
-// model−meting delta block). Rendered as three boxes so the chart/delta can be
-// re-rendered on measurement input without rebuilding the table (keeps focus).
+function deltaColor(d, scale) {
+  const t = Math.max(-1, Math.min(1, d / scale));
+  const a = (0.12 + 0.55 * Math.abs(t)).toFixed(2);
+  return t >= 0 ? `rgba(214,64,64,${a})` : `rgba(52,120,214,${a})`; // + warm, − cool
+}
+
+function fmtDelta(d) {
+  return (d >= 0 ? "+" : "−") + Math.abs(d).toFixed(1);
+}
+
+// Per-model bias / MAE / RMSE summary lines shown below the table.
+function compareSummaryHtml(models, columns, measureMap, config, res) {
+  if (!measureMap || !measurePtsFromMap(measureMap).length) {
+    return `<div class="grib-cmp-note">Vul een meetwaarde in om de afwijking (model − meting) en bias/MAE/RMSE te zien.</div>`;
+  }
+  const { perModel } = computeCompareDeltas(models, columns, measureMap, config, res);
+  return perModel
+    .map(({ m, deltas }) => {
+      const dot = `<span class="dot" style="background:${m.color}"></span>`;
+      const present = deltas.filter((d) => d != null);
+      const n = present.length;
+      if (!n) return `<div class="sumline">${dot}${m.name}: <span class="ru">geen overlap met meting</span></div>`;
+      const bias = present.reduce((a, b) => a + b, 0) / n;
+      const mae = present.reduce((a, b) => a + Math.abs(b), 0) / n;
+      const rmse = Math.sqrt(present.reduce((a, b) => a + b * b, 0) / n);
+      return `<div class="sumline">${dot}${m.name}: bias ${fmtDelta(bias)} · MAE ${mae.toFixed(1)} · RMSE ${rmse.toFixed(1)} (n=${n})</div>`;
+    })
+    .join("");
+}
+
+// Overlaid line chart + ONE table (per-model value/direction rows, an optional
+// editable "Meting" row, and per-model Δ rows) + a bias/MAE/RMSE summary. The
+// value/meting/delta rows share a single table (one horizontal scrollbar) so they
+// stay column-aligned. On measurement input only the delta cells, the summary and
+// the chart update in place -- the table (and the focused input) is left standing.
 function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure) {
   const active = models.filter((m) => m.series && m.series.some((s) => s.value != null));
   const keySet = new Set();
@@ -3294,25 +3324,36 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
     });
     rows.push(`<tr class="valrow">${cells}</tr>`);
   });
-  if (showMeasure) rows.push(compareMeasureRow(columns, cls, measureMap, unitLabel));
+
+  if (showMeasure) {
+    rows.push(compareMeasureRow(columns, cls, measureMap, unitLabel));
+    const { perModel, scale } = computeCompareDeltas(active, columns, measureMap, config, res);
+    perModel.forEach(({ m, deltas }, mi) => {
+      let cells = `<td class="rowlabel"><span class="dot" style="background:${m.color}"></span>Δ ${m.name}<span class="ru">model − meting</span></td>`;
+      deltas.forEach((d, ci) => {
+        const style = d == null ? "" : ` style="background:${deltaColor(d, scale)}"`;
+        cells += `<td class="${cls(ci)} grib-cmp-delta-cell" data-mi="${mi}" data-ci="${ci}"${style}>${d == null ? "–" : fmtDelta(d)}</td>`;
+      });
+      rows.push(`<tr class="valrow deltarow">${cells}</tr>`);
+    });
+  }
 
   const table =
     active.length || showMeasure
       ? `<table class="grib-detail-table grib-cmp-table"><thead><tr>${groupRow}</tr><tr>${colRow}</tr></thead><tbody>${rows.join("")}</tbody></table>`
       : "";
-  const measurePts = showMeasure ? measurePtsFromMap(measureMap) : [];
-  const chart = compareChartSvg(active, config, unitLabel, measurePts);
-  const delta = showMeasure ? compareDeltaHtml(active, columns, measureMap, config, cls, res) : "";
+  const chart = compareChartSvg(active, config, unitLabel, showMeasure ? measurePtsFromMap(measureMap) : []);
+  const summary = showMeasure ? compareSummaryHtml(active, columns, measureMap, config, res) : "";
   return (
     `<div class="grib-cmp-chart-box">${chart}</div>` +
-    `<div class="grib-cmp-table-box">${table}</div>` +
-    `<div class="grib-cmp-delta-box">${delta}</div>`
+    `<div class="grib-cmp-scroll">${table}</div>` +
+    `<div class="grib-cmp-summary">${summary}</div>`
   );
 }
 
-// Re-render only the chart + delta boxes from the current measurement map (the
-// table with the focused input is left untouched). `spec` carries the current
-// active models, config, resolution, unit label and measure map.
+// On measurement input: recompute and update only the Δ cells + summary + chart in
+// place. The table (and the focused input) is untouched, so columns stay aligned
+// and typing isn't interrupted.
 function refreshCompareMeasure(root, spec) {
   const active = spec.models;
   const keySet = new Set();
@@ -3320,14 +3361,20 @@ function refreshCompareMeasure(root, spec) {
     for (const s of m.series) if (s.value != null) keySet.add(bucketStart(new Date(s.valid_time), spec.res));
   }
   const columns = [...keySet].sort((a, b) => a - b);
-  const { cls } = buildColumnHeader(columns, spec.res);
+  const { perModel, scale } = computeCompareDeltas(active, columns, spec.measureMap, spec.config, spec.res);
+  perModel.forEach(({ deltas }, mi) => {
+    deltas.forEach((d, ci) => {
+      const cell = root.querySelector(`.grib-cmp-delta-cell[data-mi="${mi}"][data-ci="${ci}"]`);
+      if (!cell) return;
+      cell.textContent = d == null ? "–" : fmtDelta(d);
+      cell.style.background = d == null ? "" : deltaColor(d, scale);
+    });
+  });
+  const sum = root.querySelector(".grib-cmp-summary");
+  if (sum) sum.innerHTML = compareSummaryHtml(active, columns, spec.measureMap, spec.config, spec.res);
   const chartBox = root.querySelector(".grib-cmp-chart-box");
-  const deltaBox = root.querySelector(".grib-cmp-delta-box");
   if (chartBox) {
     chartBox.innerHTML = compareChartSvg(active, spec.config, spec.unitLabel, measurePtsFromMap(spec.measureMap));
-  }
-  if (deltaBox) {
-    deltaBox.innerHTML = compareDeltaHtml(active, columns, spec.measureMap, spec.config, cls, spec.res);
   }
 }
 
@@ -3363,7 +3410,7 @@ const COMPARE_TABLE_CSS = `
 // The extra CSS the comparison + measurement/delta view needs, embedded by both
 // the compare card and (for the meteogram compare mode) the overlay card.
 const COMPARE_EXTRA_CSS = `
-  .grib-cmp-table-box { overflow-x: auto; }
+  .grib-cmp-scroll { overflow-x: auto; }
   .grib-detail-table .meascell { padding: 0; }
   .grib-cmp-meas {
     width: 34px; box-sizing: border-box; text-align: center; font: 11px sans-serif;
@@ -3374,7 +3421,15 @@ const COMPARE_EXTRA_CSS = `
   .grib-cmp-meas::-webkit-outer-spin-button, .grib-cmp-meas::-webkit-inner-spin-button {
     -webkit-appearance: none; margin: 0;
   }
+  /* The meting row and Δ rows are set off from the model rows with a thicker rule
+     so the block reads as "models · your measurement · differences". */
+  .grib-detail-table .measrow td { border-top: 2px solid var(--divider-color, #c7ccd1); }
   .grib-detail-table .measrow .rowlabel { font-weight: 600; }
+  .grib-detail-table .deltarow td.cell { font-variant-numeric: tabular-nums; }
+  .grib-cmp-summary { padding: 6px 12px 2px; font: 12px/1.5 sans-serif; }
+  .grib-cmp-summary .sumline { display: flex; align-items: center; gap: 6px; }
+  .grib-cmp-summary .sumline .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+  .grib-cmp-summary .ru { opacity: 0.6; }
   .grib-cmp-note { padding: 8px 12px; font: 12px sans-serif; opacity: 0.75; }
 `;
 
@@ -3560,9 +3615,10 @@ class GribCompareCard extends HTMLElement {
       this._els.note.textContent = String(err.message || err);
       return;
     }
-    // Start on the point last picked on any card, else the configured centre.
-    const center = gribSharedPoint
-      ? [gribSharedPoint.lat, gribSharedPoint.lng]
+    // Start on the point last picked on any card this session, else the config centre.
+    const shared = gribReadSharedPoint();
+    const center = shared
+      ? [shared.lat, shared.lng]
       : this._config.center || [52.1, 5.3];
     this._point = { lat: center[0], lng: center[1] };
     this._map = window.L.map(this._els.mapDiv, { center, zoom: this._config.zoom || 7 });
