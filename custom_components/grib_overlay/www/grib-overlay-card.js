@@ -573,11 +573,18 @@ class GribOverlayCard extends HTMLElement {
     this._connected = true;
     // First attach: build the map now that we have a sized, in-DOM container.
     this._tryInitialize();
+    // (Re)attach the cross-card point listener here, not in _initialize, so it
+    // survives HA view switches (which re-use the element). addEventListener with
+    // the same reference is idempotent.
+    this._boundPointSync = this._boundPointSync || ((ev) => this._onSharedPoint(ev));
+    window.addEventListener(GRIB_POINT_EVENT, this._boundPointSync);
     // Re-attach (navigating back to the view): the container was hidden/removed,
-    // so nudge Leaflet to re-measure and repaint its tiles + overlay.
+    // so nudge Leaflet to re-measure and repaint, and jump to the latest shared
+    // point (picked on another page while this card was detached).
     if (this._map) {
       this._observeResize();
       this._scheduleInvalidate();
+      this._adoptSharedPoint();
     }
   }
 
@@ -585,13 +592,34 @@ class GribOverlayCard extends HTMLElement {
     this._connected = false;
     this._stopPlayback();
     this._closeDetailMeteogram();
-    if (this._pointSync) {
-      window.removeEventListener(GRIB_POINT_EVENT, this._pointSync);
-      this._pointSync = null;
-    }
+    if (this._boundPointSync) window.removeEventListener(GRIB_POINT_EVENT, this._boundPointSync);
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
+    }
+  }
+
+  _onSharedPoint(ev) {
+    if (ev.detail.source === this) return; // ignore our own broadcasts
+    this._applySharedPoint(ev.detail.lat, ev.detail.lng, false);
+  }
+
+  // On (re)connect: jump to the shared point if it changed while we were away.
+  _adoptSharedPoint() {
+    const p = gribReadSharedPoint();
+    if (!p) return;
+    const last = this._lastAdoptedPoint;
+    if (last && Math.abs(p.lat - last.lat) < 1e-9 && Math.abs(p.lng - last.lng) < 1e-9) return;
+    this._applySharedPoint(p.lat, p.lng, true);
+  }
+
+  _applySharedPoint(lat, lng, center) {
+    if (!this._map) return;
+    this._lastAdoptedPoint = { lat, lng };
+    this._showSharedMarker(lat, lng);
+    const ll = window.L.latLng(lat, lng);
+    if (center || !this._map.getBounds().contains(ll)) {
+      this._map.setView(ll, this._map.getZoom(), { animate: false });
     }
   }
 
@@ -961,13 +989,12 @@ class GribOverlayCard extends HTMLElement {
       window.L.DomEvent.preventDefault(e.originalEvent);
       this._onMapHold(e.latlng);
     });
-    // Cross-card point sync: reflect a point picked on the compare card here.
-    this._pointSync = (ev) => {
-      if (ev.detail.source === this) return;
-      this._showSharedMarker(ev.detail.lat, ev.detail.lng);
-    };
-    window.addEventListener(GRIB_POINT_EVENT, this._pointSync);
-    if (sharedStart) this._showSharedMarker(sharedStart.lat, sharedStart.lng);
+    // Cross-card point sync is wired in connectedCallback (so it survives HA
+    // view switches, which re-use the element rather than re-running _initialize).
+    if (sharedStart) {
+      this._lastAdoptedPoint = { lat: sharedStart.lat, lng: sharedStart.lng };
+      this._showSharedMarker(sharedStart.lat, sharedStart.lng);
+    }
     // Screen-space overlays (arrows, isobars) are redrawn on every map move.
     // Nothing to redraw until entries + frames have loaded (early invalidateSize
     // events fire before then), so bail out to avoid touching unset state.
@@ -1967,7 +1994,8 @@ class GribOverlayCard extends HTMLElement {
     this._wireDetailLink(latlng);
   }
 
-  // Place/move a non-interactive marker at the point shared from the compare card.
+  // Place/move a non-interactive marker at the point shared from the compare card
+  // (panning is handled by _applySharedPoint).
   _showSharedMarker(lat, lng) {
     if (!this._map || !window.L) return;
     const ll = window.L.latLng(lat, lng);
@@ -1977,7 +2005,6 @@ class GribOverlayCard extends HTMLElement {
     } else {
       this._sharedMarker.setLatLng(ll);
     }
-    if (!this._map.getBounds().contains(ll)) this._map.panTo(ll);
   }
 
   async _onMapHold(latlng) {
@@ -3469,19 +3496,48 @@ class GribCompareCard extends HTMLElement {
   connectedCallback() {
     this._connected = true;
     this._tryInitialize();
-    if (this._map) this._scheduleInvalidate();
+    // (Re)attach the cross-card point listener here so it survives HA view
+    // switches (which re-use the element instead of re-running _initialize).
+    this._boundPointSync = this._boundPointSync || ((ev) => this._onSharedPoint(ev));
+    window.addEventListener(GRIB_POINT_EVENT, this._boundPointSync);
+    if (this._map) {
+      this._scheduleInvalidate();
+      this._adoptSharedPoint(); // jump to a point picked on another page while away
+    }
   }
 
   disconnectedCallback() {
     this._connected = false;
-    if (this._pointSync) {
-      window.removeEventListener(GRIB_POINT_EVENT, this._pointSync);
-      this._pointSync = null;
-    }
+    if (this._boundPointSync) window.removeEventListener(GRIB_POINT_EVENT, this._boundPointSync);
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
     }
+  }
+
+  _onSharedPoint(ev) {
+    if (ev.detail.source === this) return;
+    this._applySharedPoint(ev.detail.lat, ev.detail.lng, false);
+  }
+
+  // On (re)connect: move to the shared point if it changed while we were away.
+  _adoptSharedPoint() {
+    const p = gribReadSharedPoint();
+    if (!p || !this._point) return;
+    if (Math.abs(p.lat - this._point.lat) < 1e-9 && Math.abs(p.lng - this._point.lng) < 1e-9) return;
+    this._applySharedPoint(p.lat, p.lng, true);
+  }
+
+  _applySharedPoint(lat, lng, center) {
+    if (!this._map || !this._marker) return;
+    const ll = window.L.latLng(lat, lng);
+    this._point = ll;
+    this._measure = new Map();
+    this._marker.setLatLng(ll);
+    if (center || !this._map.getBounds().contains(ll)) {
+      this._map.setView(ll, this._map.getZoom(), { animate: false });
+    }
+    this._refresh();
   }
 
   _tryInitialize() {
@@ -3647,17 +3703,8 @@ class GribCompareCard extends HTMLElement {
     };
     this._marker.on("dragend", () => pick(this._marker.getLatLng()));
     this._map.on("click", (e) => pick(e.latlng));
-    // Reflect a point picked on the overlay card here.
-    this._pointSync = (ev) => {
-      if (ev.detail.source === this || !this._map) return;
-      const ll = window.L.latLng(ev.detail.lat, ev.detail.lng);
-      this._point = ll;
-      this._measure = new Map();
-      this._marker.setLatLng(ll);
-      if (!this._map.getBounds().contains(ll)) this._map.panTo(ll);
-      this._refresh();
-    };
-    window.addEventListener(GRIB_POINT_EVENT, this._pointSync);
+    // The cross-card point listener is (re)attached in connectedCallback so it
+    // survives HA view switches (which re-use this element).
     if (window.ResizeObserver) {
       this._resizeObserver = new ResizeObserver(() => this._map && this._map.invalidateSize());
       this._resizeObserver.observe(this._els.mapContainer);
