@@ -77,6 +77,14 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   dag plus 00), en bij dag de dagsom. Tijdens het samenstellen toont de popup een
   **laadindicator**; de data wordt per bron in **één verzoek** opgehaald
   (`point_all`-endpoint), zodat het openen snel blijft.
+- **Modelvergelijking.** Een tweede card (`custom:grib-overlay-compare-card`) en
+  een modus in het meteogram (**Weergave → “vergelijk modellen”**) laten zien wat
+  de **verschillende GRIB-bronnen** op één punt voorspellen voor **één parameter**:
+  een **lijngrafiek** met een lijn per model (Windy-achtig) plus een **tabel** met
+  een rij per model (zelfde kwartier/uur/3 uur/dag-kolommen, kleuren en eenheden).
+  In de aparte card kies je het punt op een **mini-kaart** (OpenStreetMap +
+  OpenSeaMap) en vink je modellen in/uit. *(Een latere uitbreiding is het
+  vergelijken met gemeten waarden en het bepalen van een delta.)*
 - Kaart-kaart met OpenStreetMap-basislaag + OpenSeaMap seamark-laag + de
   GRIB-overlay, volledig los van een internetverbinding voor de kaart-JS zelf
   (Leaflet wordt meegeleverd, geen CDN-afhankelijkheid voor de code — de
@@ -156,7 +164,19 @@ temperature_2m: -10:#313695, 0:#ffffbf, 35:#a50026
   nieuwe kleuren meteen doorkomen — dit is bedoeld als een instelling die je
   zelden aanpast.
 
-## Kaart toevoegen aan een dashboard
+## Cards toevoegen aan een dashboard
+
+De integratie levert **twee** Lovelace-cards:
+
+- **`custom:grib-overlay-card`** — de kaart met GRIB-overlay, tijd-slider/animatie
+  en het uitgebreide meteogram (alle parameters van elke bron op een punt).
+- **`custom:grib-overlay-compare-card`** — een **modelvergelijking**: kies één
+  parameter en zie op een punt (klik op de mini-kaart) wat de verschillende
+  GRIB-bronnen voorspellen, als **lijngrafiek + tabel** per model. Dezelfde
+  vergelijking zit ook in het uitgebreide meteogram onder **Weergave → “vergelijk
+  modellen”**.
+
+### Overlay-card (`grib-overlay-card`)
 
 Voeg een kaart van het type `custom:grib-overlay-card` toe, bijvoorbeeld via
 de YAML-editor van een dashboard:
@@ -194,6 +214,29 @@ type: custom:grib-overlay-card
 # meteogram_parameters: [wind_10m, wind_gust_10m, temperature_2m, precipitation]
 # meteogram_resolution: uur   # kolom-tijdstap: kwartier, uur, 3uur of dag (dag = gemiddeld; neerslag = som)
 ```
+
+### Modelvergelijking-card (`grib-overlay-compare-card`)
+
+Vergelijk op één punt wat de verschillende bronnen voorspellen. Klik op de
+mini-kaart om het punt te verzetten; kies boven de parameter en de kolom-tijdstap.
+
+```yaml
+type: custom:grib-overlay-compare-card
+parameter: wind_10m          # startparameter (union van alle bronnen)
+center: [52.98, 4.12]        # startpositie van de mini-kaart (bv. een haven)
+zoom: 9
+# meteogram_resolution: 3uur # kolom-tijdstap van de tabel: kwartier, uur, 3uur of dag
+# entries: [knmi, dwd]       # optioneel: alleen deze bronnen vergelijken
+#                            #   (match op source, datasetsleutel/-naam, titel of entry-id)
+# eenheden gelden net als bij de overlay-card:
+# wind_unit: kn
+# direction_unit: deg
+```
+
+De vergelijking toont **alle bronnen die de gekozen parameter hebben** als
+gekleurde lijnen + een tabel (rij per model). Modellen die het punt niet dekken
+(bv. BSH landinwaarts) worden onderaan als “niet getoond” benoemd. Vink modellen
+in/uit met de selectievakjes onder de kaart.
 
 Met `dataset` kies je welke dataset de kaart bij het laden standaard toont;
 de waarde mag de datasetsleutel zijn (bv. `bsh_current_northsea`), de
@@ -389,6 +432,17 @@ komma’s/spaties gescheiden tekst zijn; bv. `[wind_10m, wind_gust_10m,
 temperature_2m]` of `"wind_10m, wind_gust_10m, temperature_2m"`. De verborgen/
 zichtbare keuze die je daarná in het meteogram zelf maakt (rijlabel tikken,
 chips, “Alle rijen tonen”) geldt tijdelijk, voor dat geopende venster.
+
+### Modelvergelijking-card (`grib-overlay-compare-card`)
+
+| Sleutel | Type | Default | Waarden / betekenis |
+| --- | --- | --- | --- |
+| `parameter` | tekst | (eerste) | startparameter die vergeleken wordt (union van alle bronnen) |
+| `center` | `[lat, lon]` | `[52.1, 5.3]` | startpositie van de mini-kaart |
+| `zoom` | getal | `7` | start-zoomniveau van de mini-kaart |
+| `entries` (of `models`) | lijst of tekst | — | alleen deze bronnen vergelijken; match op `source`, datasetsleutel/-naam, titel of entry-id. Leeg = alle bronnen die de parameter hebben |
+| `meteogram_resolution` | tekst | `uur` | kolom-tijdstap van de tabel: `kwartier`, `uur`, `3uur`, `dag` |
+| `wind_unit`, `visibility_unit`, `direction_unit` | tekst | zie hieronder | zelfde eenheden-opties als de overlay-card |
 
 ### Eenheden (geldige waarden + aliassen)
 

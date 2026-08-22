@@ -263,6 +263,186 @@ const UNIT_ALIASES = {
   zeemijlen: "NM",
 };
 
+// --- shared value helpers (used by both the overlay card and the compare card) ---
+
+// Resolve a source unit ("m/s"/"km") to the configured display conversion, or
+// null when no (valid) override applies and the source unit should stand.
+function conversionFor(config, sourceUnit) {
+  const cfg = config || {};
+  let target;
+  if (sourceUnit === "m/s") target = cfg.wind_unit;
+  else if (sourceUnit === "km") target = cfg.visibility_unit;
+  if (!target) return null;
+  target = UNIT_ALIASES[String(target).toLowerCase()] || target;
+  if (target === sourceUnit) return null;
+  return (UNIT_CONVERSIONS[sourceUnit] || {})[target] || null;
+}
+
+function displayUnitLabel(config, sourceUnit) {
+  const conv = conversionFor(config, sourceUnit);
+  return conv ? conv.label : sourceUnit;
+}
+
+// Wind-direction display style: "compass" (N/O/Z/W, default) or "deg" (0-360).
+function directionMode(config) {
+  const raw = String((config && config.direction_unit) || "compass").toLowerCase().trim();
+  return DIRECTION_DEG_ALIASES.has(raw) ? "deg" : "compass";
+}
+
+// Format a from-direction (degrees) per the configured style.
+function formatDirection(config, deg) {
+  const d = ((deg % 360) + 360) % 360;
+  return directionMode(config) === "deg" ? `${Math.round(d)}°` : compass(d);
+}
+
+// Canonical column resolution ("quarter"/"hour"/"3h"/"day") with aliases.
+function normalizeResolution(v) {
+  const raw = String(v == null ? "" : v).toLowerCase().replace(/\s+/g, "");
+  if (["kwartier", "kwart", "quarter", "15", "15m", "15min"].includes(raw)) return "quarter";
+  if (["3uur", "3u", "3h", "3", "180", "3hour", "3hourly"].includes(raw)) return "3h";
+  if (["dag", "day", "daily", "24h", "24u", "24uur", "1440"].includes(raw)) return "day";
+  return "hour"; // uur / hour / 1h / 60 and the default
+}
+
+// Floor a timestamp to the start of its column bucket, in local time.
+function bucketStart(d, res) {
+  const x = new Date(d.getTime());
+  if (res === "day") {
+    x.setHours(0, 0, 0, 0);
+  } else if (res === "3h") {
+    x.setMinutes(0, 0, 0);
+    x.setHours(x.getHours() - (x.getHours() % 3));
+  } else if (res === "hour") {
+    x.setMinutes(0, 0, 0);
+  } else {
+    // quarter: 15-minute grid (BSH's finest step; hourly data lands on :00).
+    x.setSeconds(0, 0);
+    x.setMinutes(x.getMinutes() - (x.getMinutes() % 15));
+  }
+  return x.getTime();
+}
+
+// Reduce a parameter's raw series to one entry per column bucket. Accumulation
+// parameters (`sum`, e.g. precipitation) are TOTALLED over the period ENDING at
+// each column: a sample is credited to the first column at/after its time, so
+// e.g. the 03:00 column sums 01/02/03 and the 00:00 column sums the previous
+// 22/23 plus 00 (day columns keep the calendar-day total). Otherwise: for "day"
+// the value is the arithmetic mean and the direction the circular (vector) mean
+// over the whole day; for the finer resolutions the actual sample nearest the
+// bucket start is used (no averaging). Keys are bucket-start epochs; values stay
+// in the series' source units. Returns Map(bucketMs -> {value, direction}).
+function aggregateSeries(series, res, sum, columns) {
+  if (sum) {
+    const acc = new Map();
+    for (const s of series || []) {
+      if (s.value == null) continue;
+      const t = new Date(s.valid_time).getTime();
+      let key;
+      if (res === "day") {
+        key = bucketStart(new Date(t), res);
+      } else {
+        key = null;
+        for (const c of columns) {
+          if (c >= t) {
+            key = c;
+            break;
+          }
+        }
+        if (key == null) continue; // beyond the last column: drop the partial tail
+      }
+      acc.set(key, (acc.get(key) || 0) + s.value);
+    }
+    const out = new Map();
+    for (const [key, v] of acc) out.set(key, { value: v, direction: null });
+    return out;
+  }
+  if (res === "day") {
+    const acc = new Map();
+    for (const s of series || []) {
+      if (s.value == null && s.direction == null) continue;
+      const key = bucketStart(new Date(s.valid_time), res);
+      let a = acc.get(key);
+      if (!a) {
+        a = { vSum: 0, vN: 0, sin: 0, cos: 0, dN: 0 };
+        acc.set(key, a);
+      }
+      if (s.value != null) {
+        a.vSum += s.value;
+        a.vN += 1;
+      }
+      if (s.direction != null) {
+        const r = (s.direction * Math.PI) / 180;
+        a.sin += Math.sin(r);
+        a.cos += Math.cos(r);
+        a.dN += 1;
+      }
+    }
+    const out = new Map();
+    for (const [key, a] of acc) {
+      out.set(key, {
+        value: a.vN ? a.vSum / a.vN : null,
+        direction: a.dN ? ((Math.atan2(a.sin, a.cos) * 180) / Math.PI + 360) % 360 : null,
+      });
+    }
+    return out;
+  }
+  // kwartier / uur / 3 uur: keep the actual value at the step (the sample whose
+  // time is nearest the bucket start), not an average.
+  const best = new Map();
+  for (const s of series || []) {
+    if (s.value == null && s.direction == null) continue;
+    const t = new Date(s.valid_time).getTime();
+    const key = bucketStart(new Date(t), res);
+    const dist = Math.abs(t - key);
+    const cur = best.get(key);
+    if (!cur || dist < cur.dist) {
+      best.set(key, { dist, value: s.value ?? null, direction: s.direction ?? null });
+    }
+  }
+  const out = new Map();
+  for (const [key, b] of best) out.set(key, { value: b.value, direction: b.direction });
+  return out;
+}
+
+// Interpolate a legend gradient (stops in the field's source unit) at a value.
+function lerpLegendColor(legend, value) {
+  if (!legend || !legend.stops || !legend.stops.length) return null;
+  const span = legend.max_value - legend.min_value || 1;
+  let f = (value - legend.min_value) / span;
+  f = Math.max(0, Math.min(1, f));
+  const stops = legend.stops;
+  let a = stops[0];
+  let b = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (f >= stops[i].offset && f <= stops[i + 1].offset) {
+      a = stops[i];
+      b = stops[i + 1];
+      break;
+    }
+  }
+  const t = b.offset === a.offset ? 0 : (f - a.offset) / (b.offset - a.offset);
+  const ca = hexToRgb(a.color);
+  const cb = hexToRgb(b.color);
+  const mix = (k) => Math.round(ca[k] + (cb[k] - ca[k]) * t);
+  return `rgb(${mix(0)},${mix(1)},${mix(2)})`;
+}
+
+// Pick dark or light text for legibility against a cell's fill colour.
+function readableText(rgb) {
+  const m = /(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(rgb || "");
+  if (!m) return "var(--primary-text-color,#12324f)";
+  const lum = (0.299 * +m[1] + 0.587 * +m[2] + 0.114 * +m[3]) / 255;
+  return lum > 0.62 ? "#12324f" : "#ffffff";
+}
+
+// Format a display value for a table cell (decimals scaled to the unit).
+function fmtCell(sourceUnit, v) {
+  if (v == null || !Number.isFinite(v)) return "–";
+  if (sourceUnit === "°C" || sourceUnit === "hPa" || sourceUnit === "%") return String(Math.round(v));
+  if (sourceUnit === "mm") return v < 0.05 ? "–" : v.toFixed(1);
+  return (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1)).replace(/\.0$/, "");
+}
+
 class GribOverlayCard extends HTMLElement {
   static getStubConfig() {
     return { type: "custom:grib-overlay-card" };
@@ -560,6 +740,16 @@ class GribOverlayCard extends HTMLElement {
         position: sticky; left: 0; padding: 8px 12px; font: 12px/1.4 sans-serif; opacity: 0.7;
         border-top: 1px solid var(--divider-color, #e2e2e2);
       }
+      .grib-cmp-chart { position: relative; margin: 8px 12px; }
+      .grib-cmp-unit { position: absolute; top: 0; left: 0; font: 11px sans-serif; opacity: 0.6; }
+      .grib-cmp-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font: 11px sans-serif; margin-top: 2px; }
+      .grib-cmp-legend .lg { display: inline-flex; align-items: center; gap: 4px; }
+      .grib-cmp-legend .sw { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+      .grib-cmp-empty { padding: 12px; font: 12px sans-serif; opacity: 0.7; }
+      .grib-detail-table .rowlabel .dot {
+        display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle;
+      }
+      .grib-detail-tools .modesel { display: flex; align-items: center; gap: 5px; }
       .grib-detail-table .grouprow td {
         background: var(--secondary-background-color, #eef1f4);
         border-top: 1px solid var(--divider-color, #e2e2e2);
@@ -803,33 +993,19 @@ class GribOverlayCard extends HTMLElement {
   // Resolve a source unit ("m/s"/"km") to the configured display conversion,
   // or null when no (valid) override applies and the source unit should stand.
   _conversionFor(sourceUnit) {
-    const cfg = this._config || {};
-    let target;
-    if (sourceUnit === "m/s") target = cfg.wind_unit;
-    else if (sourceUnit === "km") target = cfg.visibility_unit;
-    if (!target) return null;
-    target = UNIT_ALIASES[String(target).toLowerCase()] || target;
-    if (target === sourceUnit) return null;
-    return (UNIT_CONVERSIONS[sourceUnit] || {})[target] || null;
+    return conversionFor(this._config, sourceUnit);
   }
 
   _displayUnitLabel(sourceUnit) {
-    const conv = this._conversionFor(sourceUnit);
-    return conv ? conv.label : sourceUnit;
+    return displayUnitLabel(this._config, sourceUnit);
   }
 
-  // Wind-direction display style: "compass" (N/O/Z/W, default) or "deg" (0-360).
   _directionMode() {
-    const raw = String((this._config && this._config.direction_unit) || "compass")
-      .toLowerCase()
-      .trim();
-    return DIRECTION_DEG_ALIASES.has(raw) ? "deg" : "compass";
+    return directionMode(this._config);
   }
 
-  // Format a from-direction (degrees) per the configured style.
   _formatDirection(deg) {
-    const d = ((deg % 360) + 360) % 360;
-    return this._directionMode() === "deg" ? `${Math.round(d)}°` : compass(d);
+    return formatDirection(this._config, deg);
   }
 
   async _onEntryChange() {
@@ -2140,9 +2316,10 @@ class GribOverlayCard extends HTMLElement {
       return;
     }
     if (!this._detailModal) return; // closed while loading
-    // Keep the fetched data so the resolution control can re-render without refetching.
+    // Keep the fetched data so the resolution/mode controls can re-render without refetching.
     this._detailGroups = groups;
     this._detailLatlng = latlng;
+    this._populateCompareParams();
     this._setDetailBody(this._buildDetailTable(groups, latlng));
     // Apply the configured default selection: rows whose parameter isn't in the
     // list start hidden (the user can still bring any back via the chips).
@@ -2212,6 +2389,7 @@ class GribOverlayCard extends HTMLElement {
     this._detailHidden = new Set(); // rows the user has temporarily hidden
     this._detailRowNames = new Map();
     this._detailResolution = this._normalizeResolution((this._config || {}).meteogram_resolution);
+    this._detailMode = "bron"; // "bron" (per-source table) | "compare" (models)
     const backdrop = document.createElement("div");
     backdrop.className = "grib-detail-backdrop";
     backdrop.innerHTML =
@@ -2222,6 +2400,12 @@ class GribOverlayCard extends HTMLElement {
       `<button class="grib-detail-close" title="Sluiten" aria-label="Sluiten">&#10005;</button>` +
       `</div>` +
       `<div class="grib-detail-tools">` +
+      `<label class="modesel">Weergave` +
+      `<select class="modeselect">` +
+      `<option value="bron">per bron</option>` +
+      `<option value="compare">vergelijk modellen</option>` +
+      `</select></label>` +
+      `<label class="cmpparamsel hidden">Parameter <select class="cmpparam"></select></label>` +
       `<label class="resctl">Kolommen` +
       `<select class="resselect">` +
       `<option value="quarter">kwartier</option>` +
@@ -2262,6 +2446,15 @@ class GribOverlayCard extends HTMLElement {
       this._detailResolution = this._normalizeResolution(resSel.value);
       this._rerenderDetail();
     });
+    backdrop.querySelector(".modeselect").addEventListener("change", (ev) => {
+      this._detailMode = ev.target.value === "compare" ? "compare" : "bron";
+      this._syncDetailToolsMode();
+      this._rerenderDetail();
+    });
+    backdrop.querySelector(".cmpparam").addEventListener("change", (ev) => {
+      this._detailCmpParam = ev.target.value;
+      this._rerenderDetail();
+    });
     this._detailEsc = (ev) => {
       if (ev.key === "Escape") this._closeDetailMeteogram();
     };
@@ -2270,20 +2463,107 @@ class GribOverlayCard extends HTMLElement {
     this._detailModal = backdrop;
   }
 
-  // Canonical column resolution from the card option / selector, with aliases.
   _normalizeResolution(v) {
-    const raw = String(v == null ? "" : v).toLowerCase().replace(/\s+/g, "");
-    if (["kwartier", "kwart", "quarter", "15", "15m", "15min"].includes(raw)) return "quarter";
-    if (["3uur", "3u", "3h", "3", "180", "3hour", "3hourly"].includes(raw)) return "3h";
-    if (["dag", "day", "daily", "24h", "24u", "24uur", "1440"].includes(raw)) return "day";
-    return "hour"; // uur / hour / 1h / 60 and the default
+    return normalizeResolution(v);
   }
 
-  // Rebuild the table from the cached data at the current resolution (no refetch).
+  // Rebuild the body from the cached data at the current resolution/mode (no refetch).
   _rerenderDetail() {
     if (!this._detailModal || !this._detailGroups) return;
-    this._setDetailBody(this._buildDetailTable(this._detailGroups, this._detailLatlng));
-    this._applyDetailHidden();
+    if (this._detailMode === "compare") {
+      this._setDetailBody(this._buildCompareView());
+    } else {
+      this._setDetailBody(this._buildDetailTable(this._detailGroups, this._detailLatlng));
+      this._applyDetailHidden();
+    }
+  }
+
+  // Show/hide the tools that only apply to one mode (row-hiding vs the compare
+  // parameter picker).
+  _syncDetailToolsMode() {
+    if (!this._detailModal) return;
+    const compare = this._detailMode === "compare";
+    const q = (sel) => this._detailModal.querySelector(sel);
+    q(".cmpparamsel").classList.toggle("hidden", !compare);
+    q(".hint").classList.toggle("hidden", compare);
+    if (compare) {
+      q(".chips").innerHTML = "";
+      q(".showall").classList.add("hidden");
+    } else {
+      this._applyDetailHidden();
+    }
+  }
+
+  // Fill the compare-mode parameter picker with parameters that at least one
+  // source has data for here; default to one that ≥2 models share.
+  _populateCompareParams() {
+    const sel = this._detailModal && this._detailModal.querySelector(".cmpparam");
+    if (!sel) return;
+    const has = (g, key) => {
+      const r = g.seriesByKey.get(key);
+      return r && r.series && r.series.some((s) => s.value != null);
+    };
+    const seen = new Map();
+    for (const g of this._detailGroups || []) {
+      for (const p of g.entry.parameters || []) {
+        if (p.unit === "°") continue;
+        if (has(g, p.key) && !seen.has(p.key)) seen.set(p.key, p);
+      }
+    }
+    sel.innerHTML = "";
+    for (const [key, p] of seen) {
+      const opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = `${p.name} (${displayUnitLabel(this._config, p.unit)})`;
+      sel.appendChild(opt);
+    }
+    if (!this._detailCmpParam || !seen.has(this._detailCmpParam)) {
+      let best = null;
+      for (const key of seen.keys()) {
+        const n = (this._detailGroups || []).filter((g) => has(g, key)).length;
+        if (n > 1) {
+          best = key;
+          break;
+        }
+      }
+      this._detailCmpParam = best || seen.keys().next().value || "";
+    }
+    sel.value = this._detailCmpParam;
+  }
+
+  // Compare-mode body: overlaid line chart + per-model table for one parameter.
+  _buildCompareView() {
+    const param = this._detailCmpParam;
+    if (!param) return `<div class="grib-cmp-empty">Geen parameter geselecteerd.</div>`;
+    const models = (this._detailGroups || [])
+      .map((g, i) => {
+        const resp = g.seriesByKey.get(param);
+        if (!resp) return null;
+        return {
+          entryId: g.entry.entry_id,
+          name: compareModelName(g.entry),
+          color: compareModelColor(i),
+          unit: resp.unit,
+          legend: resp.legend || (g.legendByKey && g.legendByKey[param]),
+          series: resp.series || [],
+          direction_unit: resp.direction_unit,
+        };
+      })
+      .filter(Boolean);
+    const withData = models.filter((m) => m.series.some((s) => s.value != null));
+    const dropped = models.filter((m) => !m.series.some((s) => s.value != null));
+    if (!withData.length) {
+      return `<div class="grib-cmp-empty">Geen model heeft data voor deze parameter op dit punt.</div>`;
+    }
+    const unit = displayUnitLabel(this._config, withData[0].unit);
+    const note = dropped.length
+      ? `<div class="grib-detail-note">Niet getoond: ${dropped.map((m) => m.name).join("; ")}</div>`
+      : "";
+    return (
+      compareChartSvg(withData, this._config, unit) +
+      `<div style="overflow-x:auto">${compareTableHtml(withData, this._config, this._detailResolution)}</div>` +
+      note
+    );
   }
 
   // Show/hide one parameter's rows (its value row plus any direction row).
@@ -2416,102 +2696,11 @@ class GribOverlayCard extends HTMLElement {
 
   // Floor a timestamp to the start of its column bucket, in local time.
   _bucketStart(d, res) {
-    const x = new Date(d.getTime());
-    if (res === "day") {
-      x.setHours(0, 0, 0, 0);
-    } else if (res === "3h") {
-      x.setMinutes(0, 0, 0);
-      x.setHours(x.getHours() - (x.getHours() % 3));
-    } else if (res === "hour") {
-      x.setMinutes(0, 0, 0);
-    } else {
-      // quarter: 15-minute grid (BSH's finest step; hourly data lands on :00).
-      x.setSeconds(0, 0);
-      x.setMinutes(x.getMinutes() - (x.getMinutes() % 15));
-    }
-    return x.getTime();
+    return bucketStart(d, res);
   }
 
-  // Reduce a parameter's raw series to one entry per column bucket. Accumulation
-  // parameters (`sum`, e.g. precipitation) are TOTALLED over the period ENDING at
-  // each column: a sample is credited to the first column at/after its time, so
-  // e.g. the 03:00 column sums 01/02/03 and the 00:00 column sums the previous
-  // 22/23 plus 00 (day columns keep the calendar-day total). Otherwise: for "day"
-  // the value is the arithmetic mean and the direction the circular (vector) mean
-  // over the whole day; for the finer resolutions the actual sample nearest the
-  // bucket start is used (no averaging). Keys are bucket-start epochs; values stay
-  // in the series' source units. Returns Map(bucketMs -> {value, direction}).
   _aggregateSeries(series, res, sum, columns) {
-    if (sum) {
-      const acc = new Map();
-      for (const s of series || []) {
-        if (s.value == null) continue;
-        const t = new Date(s.valid_time).getTime();
-        let key;
-        if (res === "day") {
-          key = this._bucketStart(new Date(t), res);
-        } else {
-          key = null;
-          for (const c of columns) {
-            if (c >= t) {
-              key = c;
-              break;
-            }
-          }
-          if (key == null) continue; // beyond the last column: drop the partial tail
-        }
-        acc.set(key, (acc.get(key) || 0) + s.value);
-      }
-      const out = new Map();
-      for (const [key, v] of acc) out.set(key, { value: v, direction: null });
-      return out;
-    }
-    if (res === "day") {
-      const acc = new Map();
-      for (const s of series || []) {
-        if (s.value == null && s.direction == null) continue;
-        const key = this._bucketStart(new Date(s.valid_time), res);
-        let a = acc.get(key);
-        if (!a) {
-          a = { vSum: 0, vN: 0, sin: 0, cos: 0, dN: 0 };
-          acc.set(key, a);
-        }
-        if (s.value != null) {
-          a.vSum += s.value;
-          a.vN += 1;
-        }
-        if (s.direction != null) {
-          const r = (s.direction * Math.PI) / 180;
-          a.sin += Math.sin(r);
-          a.cos += Math.cos(r);
-          a.dN += 1;
-        }
-      }
-      const out = new Map();
-      for (const [key, a] of acc) {
-        out.set(key, {
-          value: a.vN ? a.vSum / a.vN : null,
-          direction: a.dN ? ((Math.atan2(a.sin, a.cos) * 180) / Math.PI + 360) % 360 : null,
-        });
-      }
-      return out;
-    }
-    // kwartier / uur / 3 uur: keep the actual value at the step (the sample whose
-    // time is nearest the bucket start), not an average.
-    const best = new Map();
-    for (const s of series || []) {
-      if (s.value == null && s.direction == null) continue;
-      const t = new Date(s.valid_time).getTime();
-      const key = this._bucketStart(new Date(t), res);
-      const dist = Math.abs(t - key);
-      const cur = best.get(key);
-      if (!cur || dist < cur.dist) {
-        best.set(key, { dist, value: s.value ?? null, direction: s.direction ?? null });
-      }
-    }
-    const out = new Map();
-    for (const [key, b] of best) out.set(key, { value: b.value, direction: b.direction });
-    return out;
+    return aggregateSeries(series, res, sum, columns);
   }
 
   // A footer note naming configured sources that returned no data at this point,
@@ -2602,41 +2791,15 @@ class GribOverlayCard extends HTMLElement {
 
   // Interpolate a legend gradient (stops in the field's source unit) at a value.
   _lerpLegendColor(legend, value) {
-    if (!legend || !legend.stops || !legend.stops.length) return null;
-    const span = legend.max_value - legend.min_value || 1;
-    let f = (value - legend.min_value) / span;
-    f = Math.max(0, Math.min(1, f));
-    const stops = legend.stops;
-    let a = stops[0];
-    let b = stops[stops.length - 1];
-    for (let i = 0; i < stops.length - 1; i++) {
-      if (f >= stops[i].offset && f <= stops[i + 1].offset) {
-        a = stops[i];
-        b = stops[i + 1];
-        break;
-      }
-    }
-    const t = b.offset === a.offset ? 0 : (f - a.offset) / (b.offset - a.offset);
-    const ca = hexToRgb(a.color);
-    const cb = hexToRgb(b.color);
-    const mix = (k) => Math.round(ca[k] + (cb[k] - ca[k]) * t);
-    return `rgb(${mix(0)},${mix(1)},${mix(2)})`;
+    return lerpLegendColor(legend, value);
   }
 
-  // Pick dark or light text for legibility against a cell's fill colour.
   _readableText(rgb) {
-    const m = /(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(rgb || "");
-    if (!m) return "var(--primary-text-color,#12324f)";
-    const lum = (0.299 * +m[1] + 0.587 * +m[2] + 0.114 * +m[3]) / 255;
-    return lum > 0.62 ? "#12324f" : "#ffffff";
+    return readableText(rgb);
   }
 
-  // Format a display value for a table cell (decimals scaled to the unit).
   _fmtCell(sourceUnit, v) {
-    if (v == null || !Number.isFinite(v)) return "–";
-    if (sourceUnit === "°C" || sourceUnit === "hPa" || sourceUnit === "%") return String(Math.round(v));
-    if (sourceUnit === "mm") return v < 0.05 ? "–" : v.toFixed(1);
-    return (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1)).replace(/\.0$/, "");
+    return fmtCell(sourceUnit, v);
   }
 
   _onRenderModeChange() {
@@ -2774,9 +2937,557 @@ class GribOverlayCard extends HTMLElement {
 
 customElements.define("grib-overlay-card", GribOverlayCard);
 
+// ==========================================================================
+// Model comparison: shared rendering (used by the compare card AND the
+// meteogram's "vergelijk modellen" mode). A "model" is one config entry's
+// series for a single parameter: {name, color, unit, legend, series,
+// direction_unit}.
+// ==========================================================================
+
+const MODEL_COLORS = [
+  "#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4",
+  "#008080", "#e6ab02", "#000075", "#9a6324", "#808000",
+];
+
+function compareModelColor(i) {
+  return MODEL_COLORS[i % MODEL_COLORS.length];
+}
+
+function compareModelName(entry) {
+  return (
+    entry.title || (entry.dataset && entry.dataset.name) ||
+    String(entry.source || "").toUpperCase() || entry.entry_id
+  );
+}
+
+// The shared day/hour column header (group row + label row) for a set of
+// bucket-start epochs at a resolution. Returns {groupRow, colRow, cls}.
+function buildColumnHeader(columns, res) {
+  const dates = columns.map((ms) => new Date(ms));
+  const g1key = (d) => (res === "day" ? `${d.getFullYear()}-${d.getMonth()}` : d.toDateString());
+  const sepAt = dates.map((d, i) => i > 0 && g1key(d) !== g1key(dates[i - 1]));
+  const nowIdx = columns.indexOf(bucketStart(new Date(), res));
+  const cls = (i) => `cell${sepAt[i] ? " daysep" : ""}${i === nowIdx ? " nowcol" : ""}`;
+  const grpFmt =
+    res === "day"
+      ? new Intl.DateTimeFormat("nl-NL", { month: "long", year: "numeric" })
+      : new Intl.DateTimeFormat("nl-NL", { weekday: "short", day: "numeric", month: "short" });
+  const dayFmt = new Intl.DateTimeFormat("nl-NL", { weekday: "short", day: "numeric" });
+  const colLabel = (d) => {
+    if (res === "day") return dayFmt.format(d);
+    const hh = String(d.getHours()).padStart(2, "0");
+    return res === "quarter" ? `${hh}:${String(d.getMinutes()).padStart(2, "0")}` : hh;
+  };
+  let groupRow = `<th class="rowlabel"></th>`;
+  for (let i = 0; i < dates.length; ) {
+    let span = 1;
+    while (i + span < dates.length && g1key(dates[i + span]) === g1key(dates[i])) span++;
+    groupRow += `<th colspan="${span}" class="dayhead${i > 0 ? " daysep" : ""}">${grpFmt.format(dates[i])}</th>`;
+    i += span;
+  }
+  let colRow = `<th class="rowlabel">tijd</th>`;
+  dates.forEach((d, i) => {
+    colRow += `<th class="${cls(i)}">${colLabel(d)}</th>`;
+  });
+  return { groupRow, colRow, cls };
+}
+
+// Overlaid multi-model line chart for one parameter. Values are converted to the
+// configured display unit; a dashed vertical "now" line is drawn when in range.
+function compareChartSvg(models, config, unitLabel) {
+  const factorFor = (u) => {
+    const c = conversionFor(config, u);
+    return c ? c.factor : 1;
+  };
+  const lines = models
+    .map((m) => ({
+      name: m.name,
+      color: m.color,
+      pts: (m.series || [])
+        .filter((s) => s.value != null)
+        .map((s) => ({ t: new Date(s.valid_time).getTime(), v: s.value * factorFor(m.unit) }))
+        .sort((a, b) => a.t - b.t),
+    }))
+    .filter((l) => l.pts.length);
+  if (!lines.length) return `<div class="grib-cmp-empty">Geen gegevens om te vergelijken.</div>`;
+
+  let tMin = Infinity, tMax = -Infinity, vMin = Infinity, vMax = -Infinity;
+  for (const l of lines) {
+    for (const p of l.pts) {
+      if (p.t < tMin) tMin = p.t;
+      if (p.t > tMax) tMax = p.t;
+      if (p.v < vMin) vMin = p.v;
+      if (p.v > vMax) vMax = p.v;
+    }
+  }
+  if (tMax <= tMin) tMax = tMin + 3600000;
+  if (vMax - vMin < 1e-6) {
+    vMin -= 1;
+    vMax += 1;
+  }
+  const niceStep = (range) => {
+    const e = Math.pow(10, Math.floor(Math.log10(range)));
+    const f = range / e;
+    return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * e;
+  };
+  const yStep = niceStep((vMax - vMin) / 4) || 1;
+  const y0 = Math.floor(vMin / yStep) * yStep;
+  const y1 = Math.ceil(vMax / yStep) * yStep;
+  const W = 640, H = 230, m = { l: 46, r: 12, t: 10, b: 26 };
+  const px0 = m.l, px1 = W - m.r, py0 = m.t, py1 = H - m.b;
+  const sx = (t) => px0 + ((t - tMin) / (tMax - tMin)) * (px1 - px0);
+  const sy = (v) => py1 - ((v - y0) / (y1 - y0)) * (py1 - py0);
+  const parts = [];
+  for (let v = y0; v <= y1 + 1e-6; v += yStep) {
+    const y = sy(v).toFixed(1);
+    parts.push(`<line x1="${px0}" y1="${y}" x2="${px1}" y2="${y}" stroke="var(--divider-color,#d9dee3)" stroke-width="0.7"/>`);
+    parts.push(`<text x="${px0 - 6}" y="${(+y + 4).toFixed(1)}" font-size="11" fill="var(--secondary-text-color,#888)" text-anchor="end">${Number(v.toFixed(2))}</text>`);
+  }
+  const spanH = (tMax - tMin) / 3600000 || 1;
+  const cand = [1, 2, 3, 6, 12, 24, 48];
+  let step = cand[cand.length - 1];
+  for (const cc of cand) {
+    if (spanH / cc <= 8) {
+      step = cc;
+      break;
+    }
+  }
+  const d0 = new Date(tMin);
+  d0.setMinutes(0, 0, 0);
+  if (d0.getTime() < tMin) d0.setHours(d0.getHours() + 1);
+  const wd = new Intl.DateTimeFormat("nl-NL", { weekday: "short" });
+  for (let tt = d0.getTime(); tt <= tMax; tt += 3600000) {
+    const hr = new Date(tt).getHours();
+    if (hr % step !== 0) continue;
+    const x = sx(tt).toFixed(1);
+    parts.push(`<line x1="${x}" y1="${py0}" x2="${x}" y2="${py1}" stroke="var(--divider-color,#eceff1)" stroke-width="0.6"/>`);
+    const lab = hr === 0 ? wd.format(new Date(tt)) : String(hr).padStart(2, "0");
+    parts.push(`<text x="${x}" y="${H - 8}" font-size="11" fill="var(--secondary-text-color,#888)" text-anchor="middle">${lab}</text>`);
+  }
+  const now = Date.now();
+  if (now >= tMin && now <= tMax) {
+    const x = sx(now).toFixed(1);
+    parts.push(`<line x1="${x}" y1="${py0}" x2="${x}" y2="${py1}" stroke="var(--primary-color,#03a9f4)" stroke-width="1" stroke-dasharray="3 3"/>`);
+  }
+  parts.push(`<line x1="${px0}" y1="${py1}" x2="${px1}" y2="${py1}" stroke="var(--secondary-text-color,#aeb6bd)"/>`);
+  parts.push(`<line x1="${px0}" y1="${py0}" x2="${px0}" y2="${py1}" stroke="var(--secondary-text-color,#aeb6bd)"/>`);
+  for (const l of lines) {
+    const d = l.pts.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`).join("");
+    parts.push(`<path d="${d}" fill="none" stroke="${l.color}" stroke-width="2"/>`);
+    parts.push(l.pts.map((p) => `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy(p.v).toFixed(1)}" r="1.8" fill="${l.color}"/>`).join(""));
+  }
+  const legend = lines
+    .map((l) => `<span class="lg"><span class="sw" style="background:${l.color}"></span>${l.name}</span>`)
+    .join("");
+  return (
+    `<div class="grib-cmp-chart">` +
+    `<div class="grib-cmp-unit">${unitLabel || ""}</div>` +
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${parts.join("")}</svg>` +
+    `<div class="grib-cmp-legend">${legend}</div></div>`
+  );
+}
+
+// Comparison table: one row per model (a from-direction arrow row above the value
+// row for wind/waves), columns bucketed at `res`, cells tinted by each model's
+// legend. Precip is summed, day is averaged -- same rules as the meteogram.
+function compareTableHtml(models, config, res) {
+  const active = models.filter((m) => m.series && m.series.some((s) => s.value != null));
+  if (!active.length) return "";
+  const keySet = new Set();
+  for (const m of active) {
+    for (const s of m.series) if (s.value != null) keySet.add(bucketStart(new Date(s.valid_time), res));
+  }
+  const columns = [...keySet].sort((a, b) => a - b);
+  const { groupRow, colRow, cls } = buildColumnHeader(columns, res);
+  const rows = [];
+  active.forEach((m) => {
+    const sum = m.unit === "mm";
+    const byBucket = aggregateSeries(m.series, res, sum, columns);
+    const conv = conversionFor(config, m.unit);
+    const factor = conv ? conv.factor : 1;
+    const dispUnit = conv ? conv.label : m.unit;
+    const legend = m.legend;
+    const label = (sub) =>
+      `<td class="rowlabel"><span class="dot" style="background:${m.color}"></span>${m.name}<span class="ru">${sub}</span></td>`;
+    if (m.direction_unit && [...byBucket.values()].some((b) => b.direction != null)) {
+      let cells = label("richting");
+      columns.forEach((key, i) => {
+        const b = byBucket.get(key);
+        if (b && b.direction != null) {
+          const toDir = ((b.direction + 180) % 360).toFixed(0);
+          cells +=
+            `<td class="${cls(i)} arrowcell" title="${compass(b.direction)} (${Math.round(b.direction)}°)">` +
+            `<span class="arw" style="transform:rotate(${toDir}deg)">&#8593;</span>` +
+            `<span class="dirnum">${formatDirection(config, b.direction)}</span></td>`;
+        } else {
+          cells += `<td class="${cls(i)}"></td>`;
+        }
+      });
+      rows.push(`<tr class="windrow">${cells}</tr>`);
+    }
+    let cells = label(dispUnit);
+    columns.forEach((key, i) => {
+      const b = byBucket.get(key);
+      if (b && b.value != null) {
+        const bg = legend ? lerpLegendColor(legend, b.value) : null;
+        const style = bg ? ` style="background:${bg};color:${readableText(bg)}"` : "";
+        cells += `<td class="${cls(i)}"${style}>${fmtCell(m.unit, b.value * factor)}</td>`;
+      } else {
+        cells += `<td class="${cls(i)}">–</td>`;
+      }
+    });
+    rows.push(`<tr class="valrow">${cells}</tr>`);
+  });
+  return (
+    `<table class="grib-detail-table grib-cmp-table">` +
+    `<thead><tr>${groupRow}</tr><tr>${colRow}</tr></thead>` +
+    `<tbody>${rows.join("")}</tbody></table>`
+  );
+}
+
+// The table CSS the comparison view needs (both cards render it in their own
+// shadow root, so each embeds this).
+const COMPARE_TABLE_CSS = `
+  .grib-detail-table { border-collapse: collapse; font: 12px/1.1 sans-serif; }
+  .grib-detail-table th, .grib-detail-table td { text-align: center; white-space: nowrap; }
+  .grib-detail-table .cell { width: 34px; min-width: 34px; height: 24px; font-variant-numeric: tabular-nums; }
+  .grib-detail-table .rowlabel {
+    position: sticky; left: 0; z-index: 2; text-align: right;
+    background: var(--card-background-color, #fff);
+    padding: 2px 10px 2px 12px; min-width: 118px; font-weight: 600;
+    box-shadow: 1px 0 0 var(--divider-color, #e2e2e2);
+  }
+  .grib-detail-table .rowlabel .ru { display: block; font-weight: 400; opacity: 0.6; font-size: 11px; }
+  .grib-detail-table .rowlabel .dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle;
+  }
+  .grib-detail-table thead th { position: sticky; top: 0; z-index: 3; background: var(--card-background-color, #fff); }
+  .grib-detail-table thead th.rowlabel { z-index: 4; }
+  .grib-detail-table .dayhead { padding: 3px 6px; font-weight: 600; border-bottom: 1px solid var(--divider-color, #e2e2e2); }
+  .grib-detail-table .daysep { box-shadow: inset 2px 0 0 var(--divider-color, #c7ccd1); }
+  .grib-detail-table .nowcol { box-shadow: inset 1px 0 0 var(--primary-color, #03a9f4), inset -1px 0 0 var(--primary-color, #03a9f4); }
+  .grib-detail-table thead .nowcol { color: var(--primary-color, #03a9f4); font-weight: 700; }
+  .grib-detail-table .windrow .cell { color: var(--primary-text-color, #33506b); }
+  .grib-detail-table .arrowcell { padding: 2px 0; line-height: 1; }
+  .grib-detail-table .arrowcell .arw { display: block; font-size: 14px; line-height: 1; }
+  .grib-detail-table .arrowcell .dirnum { display: block; font-size: 10px; line-height: 1.2; opacity: 0.7; }
+  .grib-detail-table .valrow td.cell { border-top: 1px solid rgba(255,255,255,0.35); }
+`;
+
+// ==========================================================================
+// Comparison card: compare what several GRIB files predict at one point.
+// ==========================================================================
+
+class GribCompareCard extends HTMLElement {
+  static getStubConfig() {
+    return { type: "custom:grib-overlay-compare-card" };
+  }
+
+  setConfig(config) {
+    this._config = config || {};
+    this._resolution = normalizeResolution(this._config.meteogram_resolution);
+    this._render();
+    if (this._entries) this._refresh();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._tryInitialize();
+  }
+
+  getCardSize() {
+    return 10;
+  }
+
+  getGridOptions() {
+    return { columns: "full", rows: 12, min_columns: 3, max_columns: 12, min_rows: 4, max_rows: 40 };
+  }
+
+  getLayoutOptions() {
+    return this.getGridOptions();
+  }
+
+  connectedCallback() {
+    this._connected = true;
+    this._tryInitialize();
+    if (this._map) this._scheduleInvalidate();
+  }
+
+  disconnectedCallback() {
+    this._connected = false;
+    if (this._resizeObserver) {
+      this._resizeObserver.disconnect();
+      this._resizeObserver = null;
+    }
+  }
+
+  _tryInitialize() {
+    if (this._initialized || !this._hass || !this.isConnected) return;
+    this._initialized = true;
+    this._initialize();
+  }
+
+  _render() {
+    if (this._built) return;
+    this._built = true;
+    const root = this.attachShadow({ mode: "open" });
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = LEAFLET_CSS_URL;
+    root.appendChild(link);
+    const style = document.createElement("style");
+    style.textContent = `
+      :host { display: block; height: 100%; }
+      ha-card { overflow: hidden; height: 100%; display: flex; flex-direction: column; }
+      .toolbar { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 8px 12px; }
+      .toolbar label { display: flex; align-items: center; gap: 5px; font-size: 0.9em; }
+      select { font: inherit; padding: 4px 8px; border-radius: 6px;
+        border: 1px solid var(--divider-color, #ccc);
+        background: var(--card-background-color, #fff); color: var(--primary-text-color, #000); }
+      .map-container { position: relative; width: 100%; height: 190px; flex: 0 0 auto; }
+      .map { position: absolute; inset: 0; }
+      .readout { position: absolute; left: 8px; bottom: 8px; z-index: 500;
+        background: rgba(255,255,255,0.85); color: #12324f; padding: 3px 8px; border-radius: 6px;
+        font: 12px/1.3 sans-serif; pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+      .grib-cmp-marker { border-radius: 50%; background: var(--primary-color, #03a9f4);
+        border: 2px solid #fff; box-shadow: 0 0 3px rgba(0,0,0,0.5); box-sizing: border-box; }
+      .hidden { display: none !important; }
+      .models { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 12px 0; font-size: 0.85em; }
+      .models label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+      .models .sw { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+      .body { flex: 1 1 auto; overflow: auto; padding: 4px 12px 12px; min-height: 0; }
+      .grib-cmp-chart { position: relative; margin: 4px 0 6px; }
+      .grib-cmp-unit { position: absolute; top: 0; left: 0; font: 11px sans-serif; opacity: 0.6; }
+      .grib-cmp-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font: 11px sans-serif; margin-top: 2px; }
+      .grib-cmp-legend .lg { display: inline-flex; align-items: center; gap: 4px; }
+      .grib-cmp-legend .sw { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+      .grib-cmp-empty, .grib-cmp-note { padding: 8px 0; font: 12px sans-serif; opacity: 0.7; }
+      .table-wrap { overflow-x: auto; }
+      ${COMPARE_TABLE_CSS}
+    `;
+    root.appendChild(style);
+    const card = document.createElement("ha-card");
+    card.innerHTML = `
+      <div class="toolbar">
+        <label>Parameter <select class="param-select"></select></label>
+        <label>Kolommen
+          <select class="res-select">
+            <option value="quarter">kwartier</option>
+            <option value="hour">uur</option>
+            <option value="3h">3 uur</option>
+            <option value="day">dag (gem.)</option>
+          </select>
+        </label>
+      </div>
+      <div class="map-container"><div class="map"></div><div class="readout hidden"></div></div>
+      <div class="models"></div>
+      <div class="body">
+        <div class="chart"></div>
+        <div class="table-wrap"><div class="table"></div></div>
+        <div class="note"></div>
+      </div>
+    `;
+    root.appendChild(card);
+    this._els = {
+      card,
+      paramSelect: card.querySelector(".param-select"),
+      resSelect: card.querySelector(".res-select"),
+      mapDiv: card.querySelector(".map"),
+      mapContainer: card.querySelector(".map-container"),
+      readout: card.querySelector(".readout"),
+      models: card.querySelector(".models"),
+      chart: card.querySelector(".chart"),
+      table: card.querySelector(".table"),
+      note: card.querySelector(".note"),
+    };
+    this._els.resSelect.value = this._resolution;
+    this._els.paramSelect.addEventListener("change", () => this._refresh());
+    this._els.resSelect.addEventListener("change", () => {
+      this._resolution = normalizeResolution(this._els.resSelect.value);
+      this._renderComparison();
+    });
+    this._els.models.addEventListener("change", (ev) => {
+      if (ev.target.matches("input[type=checkbox]")) {
+        const id = ev.target.value;
+        if (ev.target.checked) this._excluded.delete(id);
+        else this._excluded.add(id);
+        this._renderComparison();
+      }
+    });
+  }
+
+  async _initialize() {
+    this._excluded = new Set();
+    try {
+      await loadLeaflet();
+    } catch (err) {
+      this._els.note.textContent = String(err.message || err);
+      return;
+    }
+    const center = this._config.center || [52.1, 5.3];
+    this._point = { lat: center[0], lng: center[1] };
+    this._map = window.L.map(this._els.mapDiv, { center, zoom: this._config.zoom || 7 });
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+      maxZoom: 19,
+    }).addTo(this._map);
+    window.L.tileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenSeaMap contributors",
+      maxZoom: 18,
+    }).addTo(this._map);
+    // A CSS dot (divIcon) instead of Leaflet's default PNG marker, whose image
+    // assets aren't served here.
+    const icon = window.L.divIcon({
+      className: "grib-cmp-marker",
+      iconSize: [16, 16],
+      iconAnchor: [8, 8],
+    });
+    this._marker = window.L.marker(center, { draggable: true, icon }).addTo(this._map);
+    this._marker.on("dragend", () => {
+      this._point = this._marker.getLatLng();
+      this._refresh();
+    });
+    this._map.on("click", (e) => {
+      this._point = e.latlng;
+      this._marker.setLatLng(e.latlng);
+      this._refresh();
+    });
+    if (window.ResizeObserver) {
+      this._resizeObserver = new ResizeObserver(() => this._map && this._map.invalidateSize());
+      this._resizeObserver.observe(this._els.mapContainer);
+    }
+    this._scheduleInvalidate();
+
+    try {
+      const data = await this._hass.callApi("GET", "grib_overlay/entries");
+      this._entries = data.entries || [];
+    } catch (err) {
+      this._els.note.textContent = "Kon bronnen niet ophalen: " + (err.message || err);
+      return;
+    }
+    this._populateParameters();
+    this._refresh();
+  }
+
+  _scheduleInvalidate() {
+    setTimeout(() => this._map && this._map.invalidateSize(), 60);
+  }
+
+  // Parameter dropdown = union of parameter keys across all entries (excluding
+  // pure direction parameters), labelled with name + display unit.
+  _populateParameters() {
+    const seen = new Map();
+    for (const e of this._entries || []) {
+      for (const p of e.parameters || []) {
+        if (p.unit === "°") continue;
+        if (!seen.has(p.key)) seen.set(p.key, p);
+      }
+    }
+    this._els.paramSelect.innerHTML = "";
+    for (const [key, p] of seen) {
+      const opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = `${p.name} (${displayUnitLabel(this._config, p.unit)})`;
+      this._els.paramSelect.appendChild(opt);
+    }
+    const wanted = this._config.parameter;
+    this._els.paramSelect.value = seen.has(wanted) ? wanted : (seen.keys().next().value || "");
+  }
+
+  _configEntryFilter() {
+    const cfg = this._config || {};
+    const raw = cfg.entries ?? cfg.models;
+    if (raw == null) return null;
+    const list = Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/);
+    const set = new Set(list.map((s) => String(s).trim().toLowerCase()).filter(Boolean));
+    return set.size ? set : null;
+  }
+
+  // Fetch the selected parameter's series from every entry that offers it.
+  async _refresh() {
+    if (!this._hass || !this._entries || !this._els.paramSelect.value || !this._point) return;
+    const param = this._els.paramSelect.value;
+    const { lat, lng } = this._point;
+    this._els.readout.textContent = `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+    this._els.readout.classList.remove("hidden");
+    const filter = this._configEntryFilter();
+    const wanted = (this._entries || []).filter((e) => {
+      if (!(e.parameters || []).some((p) => p.key === param)) return false;
+      if (!filter) return true;
+      return (
+        filter.has((e.entry_id || "").toLowerCase()) ||
+        filter.has((e.source || "").toLowerCase()) ||
+        filter.has((e.dataset && e.dataset.key || "").toLowerCase()) ||
+        filter.has((e.dataset && e.dataset.name || "").toLowerCase()) ||
+        filter.has((e.title || "").toLowerCase())
+      );
+    });
+    const q = `lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}`;
+    const models = await Promise.all(
+      wanted.map(async (e, i) => {
+        let data = null;
+        try {
+          data = await this._hass.callApi("GET", `grib_overlay/point/${e.entry_id}/${encodeURIComponent(param)}?${q}`);
+        } catch (err) {
+          data = null;
+        }
+        return {
+          entryId: e.entry_id,
+          name: compareModelName(e),
+          source: e.source,
+          color: compareModelColor(i),
+          unit: data && data.unit,
+          legend: data && data.legend,
+          series: (data && data.series) || [],
+          direction_unit: data && data.direction_unit,
+        };
+      })
+    );
+    this._models = models;
+    this._renderComparison();
+  }
+
+  _renderComparison() {
+    const models = this._models || [];
+    // Split into those with data here vs those out of range / empty.
+    const withData = models.filter((m) => m.series.some((s) => s.value != null));
+    const dropped = models.filter((m) => !m.series.some((s) => s.value != null));
+    // Model checkboxes (only for models that have data here).
+    this._els.models.innerHTML = withData
+      .map(
+        (m) =>
+          `<label><input type="checkbox" value="${m.entryId}" ${this._excluded.has(m.entryId) ? "" : "checked"}>` +
+          `<span class="sw" style="background:${m.color}"></span>${m.name}</label>`
+      )
+      .join("");
+    const shown = withData.filter((m) => !this._excluded.has(m.entryId));
+    const unit = shown.length ? displayUnitLabel(this._config, shown[0].unit) : "";
+    if (!withData.length) {
+      this._els.chart.innerHTML = `<div class="grib-cmp-empty">Geen model heeft data voor deze parameter op dit punt.</div>`;
+      this._els.table.innerHTML = "";
+    } else if (!shown.length) {
+      this._els.chart.innerHTML = `<div class="grib-cmp-empty">Alle modellen zijn uitgevinkt.</div>`;
+      this._els.table.innerHTML = "";
+    } else {
+      this._els.chart.innerHTML = compareChartSvg(shown, this._config, unit);
+      this._els.table.innerHTML = compareTableHtml(shown, this._config, this._resolution);
+    }
+    this._els.note.innerHTML = dropped.length
+      ? `<div class="grib-cmp-note">Niet getoond (geen data op dit punt): ${dropped.map((m) => m.name).join("; ")}</div>`
+      : "";
+  }
+}
+
+customElements.define("grib-overlay-compare-card", GribCompareCard);
+
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "grib-overlay-card",
   name: "GRIB Weather Overlay",
   description: "GRIB-weerdata als kaartlaag over OpenSeaMap, met tijd-slider en animatie.",
+});
+window.customCards.push({
+  type: "grib-overlay-compare-card",
+  name: "GRIB Weather Overlay — modelvergelijking",
+  description: "Vergelijk wat verschillende GRIB-bronnen op één punt voorspellen (lijngrafiek + tabel).",
 });
