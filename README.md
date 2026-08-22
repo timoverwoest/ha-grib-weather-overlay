@@ -89,9 +89,16 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   kolom een **gemeten waarde** in te typen. De meting verschijnt als donkere lijn
   in de grafiek en als rij in de tabel, en per model komt er een **Δ-rij**
   (model − meting) bij met een samenvatting: **bias, MAE en RMSE**. Zo zie je
-  direct welk model het dichtst bij de werkelijkheid zit. *(Automatisch ophalen
-  van metingen — KNMI-stations voor weer, RWS Waterinfo voor water/golven/stroming
-  — is de volgende stap; zie “Metingen automatisch ophalen” hieronder.)*
+  direct welk model het dichtst bij de werkelijkheid zit. Ingevoerde metingen
+  worden **voor de sessie bewaard per punt + parameter**: het punt krijgt een
+  **oranje speld** op beide kaarten, en klik je die aan dan opent het punt
+  mét de opgeslagen waarden weer. *(Automatisch ophalen van metingen — KNMI-stations
+  voor weer, RWS Waterinfo voor water/golven/stroming — is de volgende stap; zie
+  “Metingen automatisch ophalen” hieronder.)*
+- **Gedeelde klikpositie.** De aangeklikte positie wordt gedeeld tussen de
+  overlay-card en de vergelijk-card (ook tussen dashboardpagina's, voor de sessie).
+  In de overlay-card opent op die positie meteen het **waarde-venster** (en sluit
+  het vorige).
 - Kaart-kaart met OpenStreetMap-basislaag + OpenSeaMap seamark-laag + de
   GRIB-overlay, volledig los van een internetverbinding voor de kaart-JS zelf
   (Leaflet wordt meegeleverd, geen CDN-afhankelijkheid voor de code — de

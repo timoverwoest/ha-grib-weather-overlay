@@ -474,6 +474,64 @@ function gribReadSharedPoint() {
   return null;
 }
 
+// Manually entered measurements, kept for the browser session and keyed by point
+// (~100 m grid) + parameter, so a place's values can be reopened later. Shape:
+// { "<lat3>,<lon3>": { lat, lng, params: { "<paramKey>": { "<colEpoch>": value } } } }.
+// A `grib-measurements-changed` event lets every card refresh its saved-point pins.
+const GRIB_MEAS_KEY = "grib_measurements";
+const GRIB_MEAS_EVENT = "grib-measurements-changed";
+function gribPointKey(lat, lng) {
+  return `${lat.toFixed(3)},${lng.toFixed(3)}`;
+}
+function gribReadAllMeasurements() {
+  try {
+    return JSON.parse(sessionStorage.getItem(GRIB_MEAS_KEY) || "{}") || {};
+  } catch (e) {
+    return {};
+  }
+}
+function gribWriteAllMeasurements(store) {
+  try {
+    sessionStorage.setItem(GRIB_MEAS_KEY, JSON.stringify(store));
+  } catch (e) {
+    /* ignore */
+  }
+}
+// A Map(colEpoch -> value) of the saved measurements for one point + parameter.
+function gribGetMeasurements(lat, lng, param) {
+  const rec = gribReadAllMeasurements()[gribPointKey(lat, lng)];
+  const m = new Map();
+  if (rec && rec.params && rec.params[param]) {
+    for (const [k, v] of Object.entries(rec.params[param])) m.set(Number(k), v);
+  }
+  return m;
+}
+function gribSetMeasurement(lat, lng, param, colEpoch, value) {
+  const store = gribReadAllMeasurements();
+  const key = gribPointKey(lat, lng);
+  let rec = store[key];
+  if (!rec) {
+    rec = { lat, lng, params: {} };
+    store[key] = rec;
+  }
+  if (!rec.params[param]) rec.params[param] = {};
+  if (value == null || value === "") delete rec.params[param][colEpoch];
+  else rec.params[param][colEpoch] = Number(value);
+  if (!Object.keys(rec.params[param]).length) delete rec.params[param];
+  if (!Object.keys(rec.params).length) delete store[key];
+  gribWriteAllMeasurements(store);
+  window.dispatchEvent(new Event(GRIB_MEAS_EVENT));
+}
+function gribSavedPoints() {
+  return Object.values(gribReadAllMeasurements())
+    .filter((r) => r && r.params && Object.keys(r.params).length)
+    .map((r) => ({ lat: r.lat, lng: r.lng }));
+}
+function gribPointHasMeasurements(lat, lng) {
+  const rec = gribReadAllMeasurements()[gribPointKey(lat, lng)];
+  return !!(rec && rec.params && Object.keys(rec.params).length);
+}
+
 class GribOverlayCard extends HTMLElement {
   static getStubConfig() {
     return { type: "custom:grib-overlay-card" };
@@ -578,13 +636,17 @@ class GribOverlayCard extends HTMLElement {
     // the same reference is idempotent.
     this._boundPointSync = this._boundPointSync || ((ev) => this._onSharedPoint(ev));
     window.addEventListener(GRIB_POINT_EVENT, this._boundPointSync);
+    this._boundMeasSync = this._boundMeasSync || (() => this._renderSavedMarkers());
+    window.addEventListener(GRIB_MEAS_EVENT, this._boundMeasSync);
     // Re-attach (navigating back to the view): the container was hidden/removed,
-    // so nudge Leaflet to re-measure and repaint, and jump to the latest shared
-    // point (picked on another page while this card was detached).
+    // so nudge Leaflet to re-measure and repaint, jump to the latest shared point
+    // (picked on another page while this card was detached), and refresh the pins
+    // for points that have saved measurements.
     if (this._map) {
       this._observeResize();
       this._scheduleInvalidate();
       this._adoptSharedPoint();
+      this._renderSavedMarkers();
     }
   }
 
@@ -593,6 +655,7 @@ class GribOverlayCard extends HTMLElement {
     this._stopPlayback();
     this._closeDetailMeteogram();
     if (this._boundPointSync) window.removeEventListener(GRIB_POINT_EVENT, this._boundPointSync);
+    if (this._boundMeasSync) window.removeEventListener(GRIB_MEAS_EVENT, this._boundMeasSync);
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
@@ -602,6 +665,25 @@ class GribOverlayCard extends HTMLElement {
   _onSharedPoint(ev) {
     if (ev.detail.source === this) return; // ignore our own broadcasts
     this._applySharedPoint(ev.detail.lat, ev.detail.lng, false);
+  }
+
+  // Amber pins for points that have saved measurements this session; clicking one
+  // reopens that point (and its saved values, via the compare card / meteogram).
+  _renderSavedMarkers() {
+    if (!this._map || !window.L) return;
+    if (!this._savedLayer) this._savedLayer = window.L.layerGroup().addTo(this._map);
+    this._savedLayer.clearLayers();
+    const icon = window.L.divIcon({ className: "grib-saved-marker", iconSize: [14, 14], iconAnchor: [7, 7] });
+    for (const p of gribSavedPoints()) {
+      const mk = window.L.marker([p.lat, p.lng], { icon, title: "Opgeslagen meting — klik om te openen" });
+      mk.on("click", () => this._openSavedPoint(p.lat, p.lng));
+      this._savedLayer.addLayer(mk);
+    }
+  }
+
+  _openSavedPoint(lat, lng) {
+    broadcastGribPoint(lat, lng, this); // let the compare card load this point's values
+    this._applySharedPoint(lat, lng, true);
   }
 
   // On (re)connect: jump to the shared point if it changed while we were away.
@@ -621,6 +703,8 @@ class GribOverlayCard extends HTMLElement {
     if (center || !this._map.getBounds().contains(ll)) {
       this._map.setView(ll, this._map.getZoom(), { animate: false });
     }
+    // Show the value window at the shared point (and close any other popup).
+    this._openValuePopup(ll);
   }
 
   _observeResize() {
@@ -717,6 +801,9 @@ class GribOverlayCard extends HTMLElement {
       /* The point shared from the compare card. */
       .grib-shared-marker { border-radius: 50%; background: var(--primary-color, #03a9f4);
         border: 2px solid #fff; box-shadow: 0 0 3px rgba(0,0,0,0.5); box-sizing: border-box; }
+      /* A point that has saved (manually entered) measurements this session. */
+      .grib-saved-marker { border-radius: 50%; background: #e6a817; border: 2px solid #fff;
+        box-shadow: 0 0 3px rgba(0,0,0,0.6); box-sizing: border-box; cursor: pointer; }
       /* Detailed meteogram: a modal overlay with a Windy-style table (one row per
          parameter, colour-coded value cells, all sharing one time-column header). */
       .grib-detail-backdrop {
@@ -1979,6 +2066,13 @@ class GribOverlayCard extends HTMLElement {
   // no hover). Uses the same client-side grid as the readout.
   _onMapClick(latlng) {
     broadcastGribPoint(latlng.lat, latlng.lng, this); // share the point with the compare card
+    this._openValuePopup(latlng);
+  }
+
+  // Open the value popup at a point, closing any other open popup first. Shared by
+  // a direct click and by a point adopted from the other card.
+  _openValuePopup(latlng) {
+    this._closePointPopup();
     const r = this._valueAt(latlng);
     if (!r) return;
     const frame = this._frames[this._frameIndex || 0];
@@ -2550,7 +2644,7 @@ class GribOverlayCard extends HTMLElement {
     });
     backdrop.querySelector(".cmpparam").addEventListener("change", (ev) => {
       this._detailCmpParam = ev.target.value;
-      this._detailMeasure = new Map(); // a new parameter is a different quantity
+      this._loadDetailMeasurements(); // this parameter's saved values for this point
       this._rerenderDetail();
     });
     backdrop.querySelector(".detmeas").addEventListener("change", (ev) => {
@@ -2558,7 +2652,8 @@ class GribOverlayCard extends HTMLElement {
       this._rerenderDetail();
     });
     // Live measurement entry in compare mode: update the map + re-render only the
-    // chart/delta boxes (leaving the focused input untouched).
+    // chart/delta boxes (leaving the focused input untouched), and save the value
+    // for this point + parameter for the session.
     backdrop.querySelector(".grib-detail-scroll").addEventListener("input", (ev) => {
       const inp = ev.target.closest(".grib-cmp-meas");
       if (!inp) return;
@@ -2566,6 +2661,9 @@ class GribOverlayCard extends HTMLElement {
       const val = inp.value.trim();
       if (val === "") this._detailMeasure.delete(key);
       else this._detailMeasure.set(key, Number(val));
+      if (this._detailLatlng) {
+        gribSetMeasurement(this._detailLatlng.lat, this._detailLatlng.lng, this._detailCmpParam, key, val === "" ? null : Number(val));
+      }
       refreshCompareMeasure(this._detailModal.querySelector(".grib-detail-scroll"), {
         models: this._detailShownModels || [],
         config: this._config,
@@ -2649,6 +2747,21 @@ class GribOverlayCard extends HTMLElement {
       this._detailCmpParam = best || seen.keys().next().value || "";
     }
     sel.value = this._detailCmpParam;
+    this._loadDetailMeasurements();
+  }
+
+  // Load the saved measurements for the meteogram's point + compare parameter; if
+  // any exist, switch the meting view on so they (and the delta) reopen.
+  _loadDetailMeasurements() {
+    if (!this._detailLatlng || !this._detailCmpParam) return;
+    this._detailMeasure = gribGetMeasurements(
+      this._detailLatlng.lat, this._detailLatlng.lng, this._detailCmpParam
+    );
+    if (this._detailMeasure.size > 0) {
+      this._detailShowMeasure = true;
+      const cb = this._detailModal && this._detailModal.querySelector(".detmeas");
+      if (cb) cb.checked = true;
+    }
   }
 
   // Compare-mode body: overlaid line chart + per-model table for one parameter.
@@ -3496,19 +3609,23 @@ class GribCompareCard extends HTMLElement {
   connectedCallback() {
     this._connected = true;
     this._tryInitialize();
-    // (Re)attach the cross-card point listener here so it survives HA view
-    // switches (which re-use the element instead of re-running _initialize).
+    // (Re)attach the cross-card listeners here so they survive HA view switches
+    // (which re-use the element instead of re-running _initialize).
     this._boundPointSync = this._boundPointSync || ((ev) => this._onSharedPoint(ev));
     window.addEventListener(GRIB_POINT_EVENT, this._boundPointSync);
+    this._boundMeasSync = this._boundMeasSync || (() => this._renderSavedMarkers());
+    window.addEventListener(GRIB_MEAS_EVENT, this._boundMeasSync);
     if (this._map) {
       this._scheduleInvalidate();
       this._adoptSharedPoint(); // jump to a point picked on another page while away
+      this._renderSavedMarkers();
     }
   }
 
   disconnectedCallback() {
     this._connected = false;
     if (this._boundPointSync) window.removeEventListener(GRIB_POINT_EVENT, this._boundPointSync);
+    if (this._boundMeasSync) window.removeEventListener(GRIB_MEAS_EVENT, this._boundMeasSync);
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
@@ -3532,12 +3649,53 @@ class GribCompareCard extends HTMLElement {
     if (!this._map || !this._marker) return;
     const ll = window.L.latLng(lat, lng);
     this._point = ll;
-    this._measure = new Map();
     this._marker.setLatLng(ll);
+    this._loadMeasurementsForPoint();
     if (center || !this._map.getBounds().contains(ll)) {
       this._map.setView(ll, this._map.getZoom(), { animate: false });
     }
     this._refresh();
+  }
+
+  // Pick a point on this card's own map (user click/drag or a saved pin): set it,
+  // load its saved measurements, share it, and refresh.
+  _pickPoint(ll) {
+    this._point = ll;
+    this._marker.setLatLng(ll);
+    this._loadMeasurementsForPoint();
+    broadcastGribPoint(ll.lat, ll.lng, this);
+    this._refresh();
+  }
+
+  // Load the measurements saved this session for the current point + parameter;
+  // reopening a point that has values switches the meting view on automatically.
+  _loadMeasurementsForPoint() {
+    if (!this._point) return;
+    const param = this._els.paramSelect.value;
+    this._measure = gribGetMeasurements(this._point.lat, this._point.lng, param);
+    if (this._measure.size > 0) {
+      this._showMeasure = true;
+      if (this._els.measToggle) this._els.measToggle.checked = true;
+    }
+  }
+
+  // Amber pins for points with saved measurements; clicking one reopens it.
+  _renderSavedMarkers() {
+    if (!this._map || !window.L) return;
+    if (!this._savedLayer) this._savedLayer = window.L.layerGroup().addTo(this._map);
+    this._savedLayer.clearLayers();
+    const icon = window.L.divIcon({ className: "grib-saved-marker", iconSize: [14, 14], iconAnchor: [7, 7] });
+    for (const p of gribSavedPoints()) {
+      const mk = window.L.marker([p.lat, p.lng], { icon, title: "Opgeslagen meting — klik om te openen" });
+      mk.on("click", () => this._openSavedPoint(p.lat, p.lng));
+      this._savedLayer.addLayer(mk);
+    }
+  }
+
+  _openSavedPoint(lat, lng) {
+    const ll = window.L.latLng(lat, lng);
+    if (!this._map.getBounds().contains(ll)) this._map.setView(ll, this._map.getZoom(), { animate: false });
+    this._pickPoint(ll);
   }
 
   _tryInitialize() {
@@ -3572,6 +3730,8 @@ class GribCompareCard extends HTMLElement {
         font: 12px/1.3 sans-serif; pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
       .grib-cmp-marker { border-radius: 50%; background: var(--primary-color, #03a9f4);
         border: 2px solid #fff; box-shadow: 0 0 3px rgba(0,0,0,0.5); box-sizing: border-box; }
+      .grib-saved-marker { border-radius: 50%; background: #e6a817; border: 2px solid #fff;
+        box-shadow: 0 0 3px rgba(0,0,0,0.6); box-sizing: border-box; cursor: pointer; }
       .hidden { display: none !important; }
       .toolbar .measctl { cursor: pointer; }
       .models { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 12px 0; font-size: 0.85em; }
@@ -3624,7 +3784,7 @@ class GribCompareCard extends HTMLElement {
     };
     this._els.resSelect.value = this._resolution;
     this._els.paramSelect.addEventListener("change", () => {
-      this._measure = new Map(); // a new parameter is a different quantity
+      this._loadMeasurementsForPoint(); // a new parameter has its own saved values
       this._refresh();
     });
     this._els.resSelect.addEventListener("change", () => {
@@ -3643,7 +3803,8 @@ class GribCompareCard extends HTMLElement {
         this._renderComparison();
       }
     });
-    // Live measurement entry: update the map + re-render only the chart/delta.
+    // Live measurement entry: update the map + re-render only the chart/delta,
+    // and save the value for this point + parameter for the session.
     this._els.cmpview.addEventListener("input", (ev) => {
       const inp = ev.target.closest(".grib-cmp-meas");
       if (!inp) return;
@@ -3651,6 +3812,9 @@ class GribCompareCard extends HTMLElement {
       const val = inp.value.trim();
       if (val === "") this._measure.delete(key);
       else this._measure.set(key, Number(val));
+      if (this._point) {
+        gribSetMeasurement(this._point.lat, this._point.lng, this._els.paramSelect.value, key, val === "" ? null : Number(val));
+      }
       refreshCompareMeasure(this._els.cmpview, {
         models: this._shownModels || [],
         config: this._config,
@@ -3694,17 +3858,12 @@ class GribCompareCard extends HTMLElement {
       iconAnchor: [8, 8],
     });
     this._marker = window.L.marker(center, { draggable: true, icon }).addTo(this._map);
-    const pick = (ll) => {
-      this._point = ll;
-      this._measure = new Map(); // a measurement belongs to a point; a new point clears it
-      this._marker.setLatLng(ll);
-      broadcastGribPoint(ll.lat, ll.lng, this); // share with the overlay card
-      this._refresh();
-    };
-    this._marker.on("dragend", () => pick(this._marker.getLatLng()));
-    this._map.on("click", (e) => pick(e.latlng));
-    // The cross-card point listener is (re)attached in connectedCallback so it
-    // survives HA view switches (which re-use this element).
+    this._marker.on("dragend", () => this._pickPoint(this._marker.getLatLng()));
+    this._map.on("click", (e) => this._pickPoint(e.latlng));
+    this._loadMeasurementsForPoint(); // saved values for the starting point, if any
+    this._renderSavedMarkers();
+    // The cross-card listeners are (re)attached in connectedCallback so they
+    // survive HA view switches (which re-use this element).
     if (window.ResizeObserver) {
       this._resizeObserver = new ResizeObserver(() => this._map && this._map.invalidateSize());
       this._resizeObserver.observe(this._els.mapContainer);
@@ -3719,6 +3878,7 @@ class GribCompareCard extends HTMLElement {
       return;
     }
     this._populateParameters();
+    this._loadMeasurementsForPoint(); // now the parameter is known
     this._refresh();
   }
 
