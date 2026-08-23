@@ -16,7 +16,7 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
 from . import field_grid
-from .const import CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_ALL_PATH, HTTP_POINT_PATH, HTTP_WIND_PATH
+from .const import CONF_ALIAS, CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_ALL_PATH, HTTP_POINT_PATH, HTTP_WIND_PATH
 from .coordinator import GribOverlayCoordinator
 
 
@@ -131,6 +131,7 @@ class GribOverlayEntriesView(HomeAssistantView):
                 {
                     "entry_id": entry_id,
                     "title": entry.title,
+                    "alias": (entry.options.get(CONF_ALIAS) or entry.data.get(CONF_ALIAS) or ""),
                     "source": entry.data[CONF_SOURCE],
                     "dataset": {
                         "key": dataset.key,

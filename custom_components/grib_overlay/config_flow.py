@@ -15,6 +15,7 @@ from homeassistant.helpers import config_validation as cv, selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
+    CONF_ALIAS,
     CONF_API_KEY,
     CONF_COLOR_SCALES,
     CONF_DATASET,
@@ -157,6 +158,13 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
             # instead of persisting an empty string.
             if not (options.get(CONF_COLOR_SCALES) or "").strip():
                 options.pop(CONF_COLOR_SCALES, None)
+            # Normalise the short alias: strip, and drop it when blank so an
+            # emptied field falls back to the auto-derived label.
+            alias = (options.get(CONF_ALIAS) or "").strip()
+            if alias:
+                options[CONF_ALIAS] = alias
+            else:
+                options.pop(CONF_ALIAS, None)
             return self.async_create_entry(title="", data=options)
 
         options = self._config_entry.options
@@ -180,6 +188,15 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 ): vol.All(vol.Coerce(int), vol.Range(min=5, max=180)),
                 vol.Optional(
                     CONF_NOTIFICATION_API_KEY, default=current_notification_key
+                ): str,
+                # Optional short alias for this source, shown as its compact label
+                # in the comparison + meteogram views. `suggested_value` (not
+                # `default`) so an emptied field actually clears.
+                vol.Optional(
+                    CONF_ALIAS,
+                    description={
+                        "suggested_value": options.get(CONF_ALIAS, data.get(CONF_ALIAS, ""))
+                    },
                 ): str,
                 # Optional per-parameter colour scales. One parameter per line:
                 # "<param_key>: <value>:<#hex>, <value>:<#hex>, ..." with values

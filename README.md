@@ -267,13 +267,16 @@ zoom: 9
 De vergelijking toont **alle bronnen die de gekozen parameter hebben** als
 gekleurde lijnen + een tabel (rij per model). Modellen die het punt niet dekken
 (bv. BSH landinwaarts) worden onderaan als “niet getoond” benoemd. Vink modellen
-in/uit met de selectievakjes onder de kaart. De **modelnamen** worden in de tabel,
-de grafiek-legenda en de selectievakjes **compact** getoond (de bron-afkorting,
-bv. `KNMI` / `DWD` / `BSH`) zodat op een smartphone de datakolommen en de
-meetwaarde-invoer de ruimte houden; de **volledige naam** staat als tooltip. Heb je
-**meerdere modellen van dezelfde bron** (bv. twee KNMI-datasets), dan krijgt elk een
-onderscheidende toevoeging — een regio- (`KNMI NL` / `KNMI EU`) of modelnaam — zodat
-het verschil duidelijk blijft.
+in/uit met de selectievakjes onder de kaart. De **modelnamen** worden **compact**
+getoond (de bron-afkorting, bv. `KNMI` / `DWD` / `BSH`) — in de tabel, de
+grafiek-legenda en de selectievakjes, én als bron-badge in het **uitgebreide
+meteogram** — zodat op een smartphone de datakolommen en de meetwaarde-invoer de
+ruimte houden; de **volledige naam** staat als tooltip. Heb je **meerdere modellen
+van dezelfde bron** (bv. twee KNMI-datasets), dan krijgt elk een onderscheidende
+toevoeging — een regio- (`KNMI NL` / `KNMI EU`) of modelnaam — zodat het verschil
+duidelijk blijft. Wil je het zelf bepalen, geef dan per bron een **korte alias** op
+in de integratie-opties (Configureren → *Korte alias*); die wordt dan overal als
+compact label gebruikt.
 
 **Meting & delta.** Vink **“Meting invoeren”** aan om per kolom een gemeten waarde
 in te typen (in dezelfde eenheid als de grafiek). Je krijgt dan per model een
@@ -459,6 +462,7 @@ en `pressure_msl` (eenheid hPa) schakelt de isobaren-laag in.
 | `retain_runs` | geheel getal | `2` | 1–10 |
 | `update_interval_minutes` | geheel getal (min) | `30` | 5–180 |
 | `notification_api_key` | tekst | (leeg) | KNMI push-sleutel |
+| `alias` | tekst | (leeg) | **korte naam** voor deze bron, getoond als compact label in de vergelijking en het meteogram (bv. `KNMI NL`). Leeg = automatisch afgeleid uit de bron (bronnen van dezelfde soort worden vanzelf onderscheiden) |
 | `color_scales` | meerregelige tekst | (leeg) | per regel: `parameter: waarde:#hex, waarde:#hex, …` (waarden in de **eigen eenheid** van de parameter) |
 
 ### Card-instellingen (Lovelace-YAML)

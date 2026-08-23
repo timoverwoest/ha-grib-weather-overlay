@@ -184,7 +184,9 @@ def _synth_pressure_field() -> dict:
 
 def _public_entry(entry: dict) -> dict:
     """The subset of an ENTRIES config that the /entries endpoint exposes."""
-    return {k: entry[k] for k in ("entry_id", "title", "source", "dataset", "parameters")}
+    out = {k: entry[k] for k in ("entry_id", "title", "source", "dataset", "parameters")}
+    out["alias"] = entry.get("alias", "")  # optional user-defined short label
+    return out
 
 
 def _point_payload(entry: dict, parameter_key: str, lat: float) -> dict:

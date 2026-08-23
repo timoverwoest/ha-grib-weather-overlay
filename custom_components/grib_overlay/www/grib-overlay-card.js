@@ -3062,7 +3062,10 @@ class GribOverlayCard extends HTMLElement {
       colRow += `<th class="${cls(i)}">${colLabel(d)}</th>`;
     });
 
-    const ctx = { columns, cls, colCount: columns.length, resolution: res };
+    // Compact source labels (alias-aware, same-source disambiguated) over the
+    // full set, so the per-source group badge matches the comparison view.
+    const shortById = compareShortLabels(all.map((g) => g.entry));
+    const ctx = { columns, cls, colCount: columns.length, resolution: res, shortById };
     const body = active.map((g) => this._buildEntryRows(g, ctx)).join("");
     return (
       `<table class="grib-detail-table">` +
@@ -3099,15 +3102,17 @@ class GribOverlayCard extends HTMLElement {
 
   // Rows for one entry: a source/dataset header, then a colour-coded value row
   // per parameter (with a wind/wave from-direction arrow row above where present).
-  _buildEntryRows(group, { columns, cls, colCount, resolution }) {
+  _buildEntryRows(group, { columns, cls, colCount, resolution, shortById }) {
     const { entry, seriesByKey, legendByKey } = group;
     const rows = [];
     const src = String(entry.source || "").toUpperCase();
+    // Compact label (user alias, or source disambiguated per compareShortLabels).
+    const short = (shortById && shortById.get(entry.entry_id)) || compareModelShort(entry);
     const dsName = (entry.dataset && entry.dataset.name) || entry.title || src || "bron";
     const suffix = entry.title && entry.title !== dsName ? ` · ${entry.title}` : "";
     rows.push(
       `<tr class="grouprow">` +
-        `<td class="rowlabel grouplabel"><span class="src">${src || "GRIB"}</span></td>` +
+        `<td class="rowlabel grouplabel"><span class="src" title="${escapeXml(compareModelName(entry))}">${escapeXml(short || "GRIB")}</span></td>` +
         `<td class="grouphead" colspan="${colCount}">` +
         `<span class="ghname" title="${escapeXml(dsName + suffix)}">${escapeXml(dsName)}</span></td></tr>`
     );
@@ -3127,7 +3132,7 @@ class GribOverlayCard extends HTMLElement {
       const legend = legendByKey[p.key];
       // A per-parameter id so a row (and its direction companion) can be hidden.
       const grp = `${entry.entry_id}::${p.key}`;
-      if (this._detailRowNames) this._detailRowNames.set(grp, `${src} · ${p.name}`);
+      if (this._detailRowNames) this._detailRowNames.set(grp, `${short} · ${p.name}`);
 
       // Direction arrow row: the arrow points the way the wind/waves travel, with
       // the from-direction printed below it in the card's chosen unit (compass or
@@ -3344,6 +3349,8 @@ function compareModelName(entry) {
 // source token (KNMI / DWD / BSH); falls back to a short leading word of the
 // full name. The full name stays available as a tooltip everywhere it's used.
 function compareModelShort(entry) {
+  const alias = String(entry.alias || "").trim(); // user-defined short name wins
+  if (alias) return alias;
   const src = String(entry.source || "").trim();
   if (src) return src.toUpperCase();
   const full = compareModelName(entry);
@@ -3379,15 +3386,20 @@ function modelDetailToken(entry) {
 // so labels are always unique. Computed over the whole set so labels stay stable
 // when models are toggled on/off.
 function compareShortLabels(entries) {
-  const rows = entries.map((e) => ({ id: e.entry_id, base: compareModelShort(e), entry: e }));
+  const rows = entries.map((e) => ({
+    id: e.entry_id,
+    base: compareModelShort(e),
+    entry: e,
+    aliased: !!String(e.alias || "").trim(), // user-set alias is used verbatim
+  }));
   const counts = {};
-  for (const r of rows) counts[r.base] = (counts[r.base] || 0) + 1;
+  for (const r of rows) if (!r.aliased) counts[r.base] = (counts[r.base] || 0) + 1;
   const map = new Map();
   const seen = {};
   const fallback = {};
   for (const r of rows) {
     let label = r.base;
-    if (counts[r.base] > 1) {
+    if (!r.aliased && counts[r.base] > 1) {
       const tok = modelDetailToken(r.entry) || String((fallback[r.base] = (fallback[r.base] || 0) + 1));
       label = `${r.base} ${tok}`;
     }

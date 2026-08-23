@@ -7,6 +7,10 @@ CONF_API_KEY = "api_key"
 CONF_NOTIFICATION_API_KEY = "notification_api_key"
 CONF_DATASET = "dataset"
 CONF_PARAMETERS = "parameters"
+# Optional short alias shown as this entry's compact label in the comparison /
+# meteogram views (e.g. "KNMI NL"). Empty -> the card derives a label from the
+# source (and disambiguates same-source entries automatically).
+CONF_ALIAS = "alias"
 
 CONF_RETAIN_RUNS = "retain_runs"
 CONF_FORECAST_HORIZON_HOURS = "forecast_horizon_hours"
