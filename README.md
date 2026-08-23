@@ -270,7 +270,10 @@ gekleurde lijnen + een tabel (rij per model). Modellen die het punt niet dekken
 in/uit met de selectievakjes onder de kaart. De **modelnamen** worden in de tabel,
 de grafiek-legenda en de selectievakjes **compact** getoond (de bron-afkorting,
 bv. `KNMI` / `DWD` / `BSH`) zodat op een smartphone de datakolommen en de
-meetwaarde-invoer de ruimte houden; de **volledige naam** staat als tooltip.
+meetwaarde-invoer de ruimte houden; de **volledige naam** staat als tooltip. Heb je
+**meerdere modellen van dezelfde bron** (bv. twee KNMI-datasets), dan krijgt elk een
+onderscheidende toevoeging — een regio- (`KNMI NL` / `KNMI EU`) of modelnaam — zodat
+het verschil duidelijk blijft.
 
 **Meting & delta.** Vink **“Meting invoeren”** aan om per kolom een gemeten waarde
 in te typen (in dezelfde eenheid als de grafiek). Je krijgt dan per model een

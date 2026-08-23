@@ -2903,6 +2903,7 @@ class GribOverlayCard extends HTMLElement {
   _buildCompareView() {
     const param = this._detailCmpParam;
     if (!param) return `<div class="grib-cmp-empty">Geen parameter geselecteerd.</div>`;
+    const shortById = compareShortLabels((this._detailGroups || []).map((g) => g.entry));
     const models = (this._detailGroups || [])
       .map((g, i) => {
         const resp = g.seriesByKey.get(param);
@@ -2910,7 +2911,7 @@ class GribOverlayCard extends HTMLElement {
         return {
           entryId: g.entry.entry_id,
           name: compareModelName(g.entry),
-          short: compareModelShort(g.entry),
+          short: shortById.get(g.entry.entry_id) || compareModelShort(g.entry),
           color: compareModelColor(i),
           unit: resp.unit,
           legend: resp.legend || (g.legendByKey && g.legendByKey[param]),
@@ -3349,6 +3350,52 @@ function compareModelShort(entry) {
   const cleaned = full.replace(/\s*\(.*?\)\s*$/, "").trim(); // drop a trailing "(...)"
   const head = (cleaned.split(/[\s\-–—·|/]+/)[0] || cleaned).trim();
   return head.length > 12 ? head.slice(0, 12) : head || full;
+}
+
+// A compact token distinguishing models of the SAME organisation (e.g. two KNMI
+// datasets): a region shorthand from the dataset name if present (NL/EU/NZ/…),
+// else the model's leading word (HARMONIE, ICON, …), capped.
+function modelDetailToken(entry) {
+  const src = String(entry.source || "").trim();
+  let s = (entry.dataset && entry.dataset.name) || entry.title || entry.entry_id || "";
+  if (src) s = s.replace(new RegExp("\\b" + src + "\\b", "ig"), " ");
+  s = s.replace(/\(.*?\)/g, " ").replace(/[-–—·|/]+/g, " ").replace(/\s+/g, " ").trim();
+  const region = [
+    [/\bnederland\b|\bnetherlands\b|\bnl\b/i, "NL"],
+    [/\beuropa\b|\beurope\b|\beu\b/i, "EU"],
+    [/\bnoordzee\b|\bnorth sea\b/i, "NZ"],
+    [/\bwadden\b/i, "WAD"],
+    [/\bbelgi/i, "BE"],
+    [/\bduitsland\b|\bgermany\b/i, "DE"],
+  ];
+  for (const [re, code] of region) if (re.test(s)) return code;
+  const w = s.split(" ").filter(Boolean)[0] || "";
+  return w ? (w.length > 10 ? w.slice(0, 10) : w) : "";
+}
+
+// Compact labels for a set of entries, keyed by entry_id. A source that appears
+// once keeps its bare abbreviation (KNMI); when several entries share a source,
+// each gets a distinguishing suffix (KNMI NL / KNMI EU), with a numeric fallback
+// so labels are always unique. Computed over the whole set so labels stay stable
+// when models are toggled on/off.
+function compareShortLabels(entries) {
+  const rows = entries.map((e) => ({ id: e.entry_id, base: compareModelShort(e), entry: e }));
+  const counts = {};
+  for (const r of rows) counts[r.base] = (counts[r.base] || 0) + 1;
+  const map = new Map();
+  const seen = {};
+  const fallback = {};
+  for (const r of rows) {
+    let label = r.base;
+    if (counts[r.base] > 1) {
+      const tok = modelDetailToken(r.entry) || String((fallback[r.base] = (fallback[r.base] || 0) + 1));
+      label = `${r.base} ${tok}`;
+    }
+    if (seen[label]) label = `${label} ${(seen[label] += 1)}`;
+    else seen[label] = 1;
+    map.set(r.id, label);
+  }
+  return map;
 }
 
 // ==========================================================================
@@ -4360,6 +4407,7 @@ class GribCompareCard extends HTMLElement {
       );
     });
     const q = `lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}`;
+    const shortById = compareShortLabels(wanted);
     const models = await Promise.all(
       wanted.map(async (e, i) => {
         let data = null;
@@ -4371,7 +4419,7 @@ class GribCompareCard extends HTMLElement {
         return {
           entryId: e.entry_id,
           name: compareModelName(e),
-          short: compareModelShort(e),
+          short: shortById.get(e.entry_id) || compareModelShort(e),
           source: e.source,
           color: compareModelColor(i),
           unit: data && data.unit,

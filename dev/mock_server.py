@@ -124,6 +124,21 @@ ENTRIES = {
         "frame_count": 5,
         "step_hours": 2,
     },
+    # A SECOND KNMI dataset (same organisation) so the compact model labels have
+    # to disambiguate two same-source models (KNMI Nederland vs KNMI Europa).
+    "mock_entry_4": {
+        "entry_id": "mock_entry_4",
+        "title": "KNMI - HARMONIE-AROME Europa (mock)",
+        "source": "knmi",
+        "dataset": {
+            "key": "harmonie_arome_europe",
+            "name": "HARMONIE-AROME - Europa",
+            "bounds": list(BOUNDS),
+        },
+        "parameters": PARAMETERS,
+        "frame_count": FRAME_COUNT,
+        "step_hours": FRAME_STEP_HOURS,
+    },
     # A source that has frames but no coverage at the test point (mirrors BSH's
     # North-Sea-only grid when clicking inland): `out_of_range` -> null samples,
     # so it is dropped from the table and named in the footer note.
@@ -184,7 +199,8 @@ def _point_payload(entry: dict, parameter_key: str, lat: float) -> dict:
     hi = legend.get("max_value", 20)
     has_dir = parameter_key in ("wind_10m", "wind_gust_10m", "wave_height")
     out_of_range = entry.get("out_of_range", False)  # null samples (point off-grid)
-    phase = 0.0 if entry["entry_id"] == ENTRY_ID else 1.1
+    # A deterministic per-entry phase shift so every model draws a distinct line.
+    phase = 0.0 if entry["entry_id"] == ENTRY_ID else (sum(ord(c) for c in entry["entry_id"]) % 7) * 0.4
     series = []
     for i in range(entry["frame_count"]):
         vt = BASE_RUN_TIME + timedelta(hours=i * entry["step_hours"])
