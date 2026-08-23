@@ -24,6 +24,8 @@ the plumbing around them does not change.
 
 from __future__ import annotations
 
+import json
+import logging
 import math
 from typing import Any
 
@@ -31,8 +33,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import CONF_API_KEY, CONF_OBSERVATIONS_API_KEY, CONF_SOURCE, DOMAIN
-
-import logging
 
 _LOGGER = logging.getLogger(__name__)
 
