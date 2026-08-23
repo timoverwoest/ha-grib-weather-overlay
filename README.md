@@ -53,6 +53,11 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   (band tussen wind en stoot) — en op de **tweede y-as** zowel de **wind- als de
   windstoot-richting** (kompas N/O/Z/W). Windstoten moeten daarvoor als parameter
   aan staan.
+- **Waarde-aanwijzer op elke grafiek.** Ga met de **muis over** een grafiek (of
+  **tik/sleep met je vinger**) en er verschijnt een verticale peillijn met een
+  tooltip die het **tijdstip (x)** en de **waarde(n) (y)** op dat punt toont — in
+  het meteogram, in de modelvergelijking en in de vergelijk-modus. Bij meerdere
+  lijnen staat elk model met zijn eigen waarde in de tooltip.
 - **Uitgebreid meteogram (alle parameters & bronnen).** Onderin elke waarde- en
   meteogram-popup staat de link **“Alle parameters & bronnen ▸”**. Die opent een
   Windy-achtig **tabel-meteogram**: één rij per parameter, gekleurde waarde-cellen
@@ -262,7 +267,10 @@ zoom: 9
 De vergelijking toont **alle bronnen die de gekozen parameter hebben** als
 gekleurde lijnen + een tabel (rij per model). Modellen die het punt niet dekken
 (bv. BSH landinwaarts) worden onderaan als “niet getoond” benoemd. Vink modellen
-in/uit met de selectievakjes onder de kaart.
+in/uit met de selectievakjes onder de kaart. De **modelnamen** worden in de tabel,
+de grafiek-legenda en de selectievakjes **compact** getoond (de bron-afkorting,
+bv. `KNMI` / `DWD` / `BSH`) zodat op een smartphone de datakolommen en de
+meetwaarde-invoer de ruimte houden; de **volledige naam** staat als tooltip.
 
 **Meting & delta.** Vink **“Meting invoeren”** aan om per kolom een gemeten waarde
 in te typen (in dezelfde eenheid als de grafiek). Je krijgt dan per model een

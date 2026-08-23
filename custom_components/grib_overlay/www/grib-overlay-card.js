@@ -946,9 +946,10 @@ class GribOverlayCard extends HTMLElement {
       .grib-detail-table .rowlabel {
         position: sticky; left: 0; z-index: 2; text-align: right;
         background: var(--card-background-color, #fff);
-        padding: 2px 10px 2px 12px; min-width: 92px; font-weight: 600;
+        padding: 2px 8px 2px 10px; min-width: 62px; font-weight: 600;
         box-shadow: 1px 0 0 var(--divider-color, #e2e2e2);
       }
+      .grib-hover-capture { cursor: crosshair; touch-action: pan-y; }
       .grib-detail-table .rowlabel .ru { display: block; font-weight: 400; opacity: 0.6; font-size: 11px; }
       .grib-detail-table thead th { position: sticky; top: 0; z-index: 3;
         background: var(--card-background-color, #fff); }
@@ -992,6 +993,10 @@ class GribOverlayCard extends HTMLElement {
         border-top: 1px solid var(--divider-color, #e2e2e2);
       }
       .grib-detail-table .grouphead { text-align: left; padding: 5px 12px; font: 600 12px/1.2 sans-serif; }
+      .grib-detail-table .grouphead .ghname {
+        display: inline-block; max-width: 52vw; overflow: hidden;
+        text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
+      }
       .grib-detail-table .grouplabel { text-align: left; padding: 5px 10px; }
       .grib-detail-table .grouplabel .src {
         display: inline-block; padding: 0 5px;
@@ -2247,6 +2252,8 @@ class GribOverlayCard extends HTMLElement {
       .setContent(svg)
       .openOn(this._map);
     this._wireDetailLink(latlng);
+    const el = this._pointPopup.getElement && this._pointPopup.getElement();
+    if (el) wireChartHovers(el);
   }
 
   // Link markup (shared by the value + meteogram popups) that opens the full
@@ -2530,6 +2537,29 @@ class GribOverlayCard extends HTMLElement {
 
     // Primary series is wind speed or wave height, depending on the parameter.
     const primaryLabel = sourceUnit === "m" ? "hoogte" : "snelheid";
+
+    // Hover/tap layer: value (and, where shown, gust + direction) at the cursor.
+    const sy2h = (d) => py1 - (d / 360) * (py1 - py0);
+    const hoverSeries = [
+      {
+        label: primaryLabel,
+        color: "var(--primary-color,#03a9f4)",
+        samples: pts.map((p) => ({ t: p.t, x: +sx(p.t).toFixed(1), y: +sy(p.v).toFixed(1), disp: `${fmtCell(sourceUnit, p.v)} ${unit}` })),
+      },
+    ];
+    if (gustPts)
+      hoverSeries.push({
+        label: overlay.label,
+        color: "var(--primary-color,#03a9f4)",
+        samples: gustPts.map((p) => ({ t: p.t, x: +sx(p.t).toFixed(1), y: +sy(p.g).toFixed(1), disp: `${fmtCell(sourceUnit, p.g)} ${unit}` })),
+      });
+    if (showDir)
+      hoverSeries.push({
+        label: showGustDir ? "windrichting" : "richting",
+        color: DIR_COLOR,
+        samples: pts.filter((p) => p.dir != null).map((p) => ({ t: p.t, x: +sx(p.t).toFixed(1), y: +sy2h(p.dir).toFixed(1), disp: this._formatDirection(p.dir) })),
+      });
+    parts.push(chartHoverMarkup({ x0: px0, x1: px1, y0: py0, y1: py1, fs: 12 }, hoverSeries));
     const legendItems = [
       `<span style="color:var(--primary-color,#03a9f4)">━ ${primaryLabel} (${unit})</span>`,
     ];
@@ -2556,7 +2586,7 @@ class GribOverlayCard extends HTMLElement {
       `<div style="width:290px;max-width:78vw;font:14px sans-serif"><b>${title || this._paramName()}</b> · ${unit}` +
       `<div style="opacity:.6;font-size:12px">${latlng.lat.toFixed(2)}, ${latlng.lng.toFixed(2)}</div>` +
       legend +
-      `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;margin-top:4px">` +
+      `<svg class="grib-hover-chart" viewBox="0 0 ${W} ${H}" width="100%" style="display:block;margin-top:4px">` +
       parts.join("") +
       `</svg>` +
       moreLink +
@@ -2779,6 +2809,7 @@ class GribOverlayCard extends HTMLElement {
       if (ev.key === "Escape") this._closeDetailMeteogram();
     };
     document.addEventListener("keydown", this._detailEsc);
+    wireChartHovers(backdrop.querySelector(".grib-detail-scroll"));
     this.shadowRoot.appendChild(backdrop);
     this._detailModal = backdrop;
   }
@@ -2879,6 +2910,7 @@ class GribOverlayCard extends HTMLElement {
         return {
           entryId: g.entry.entry_id,
           name: compareModelName(g.entry),
+          short: compareModelShort(g.entry),
           color: compareModelColor(i),
           unit: resp.unit,
           legend: resp.legend || (g.legendByKey && g.legendByKey[param]),
@@ -3075,7 +3107,8 @@ class GribOverlayCard extends HTMLElement {
     rows.push(
       `<tr class="grouprow">` +
         `<td class="rowlabel grouplabel"><span class="src">${src || "GRIB"}</span></td>` +
-        `<td class="grouphead" colspan="${colCount}">${dsName}${suffix}</td></tr>`
+        `<td class="grouphead" colspan="${colCount}">` +
+        `<span class="ghname" title="${escapeXml(dsName + suffix)}">${escapeXml(dsName)}</span></td></tr>`
     );
 
     for (const p of entry.parameters || []) {
@@ -3305,6 +3338,170 @@ function compareModelName(entry) {
   );
 }
 
+// A compact model label for tight table row-labels / chart legends, so on a
+// phone the data columns and measurement inputs keep the room. Prefers the
+// source token (KNMI / DWD / BSH); falls back to a short leading word of the
+// full name. The full name stays available as a tooltip everywhere it's used.
+function compareModelShort(entry) {
+  const src = String(entry.source || "").trim();
+  if (src) return src.toUpperCase();
+  const full = compareModelName(entry);
+  const cleaned = full.replace(/\s*\(.*?\)\s*$/, "").trim(); // drop a trailing "(...)"
+  const head = (cleaned.split(/[\s\-–—·|/]+/)[0] || cleaned).trim();
+  return head.length > 12 ? head.slice(0, 12) : head || full;
+}
+
+// ==========================================================================
+// Chart hover / tap tooltips (shared by every SVG chart on both cards).
+// Each chart embeds a transparent capture <rect> over its plot box carrying a
+// data-hover JSON payload: the pixel plot box + per-series samples, already in
+// display units with pre-formatted labels and pixel positions. wireChartHovers
+// attaches ONE delegated pointer handler to a container, so charts re-rendered
+// via innerHTML keep working without being re-wired.
+// ==========================================================================
+
+function escapeXml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+  );
+}
+
+// A short "za 23 aug 14:00"-style label for the tooltip header.
+function fmtHoverTime(t) {
+  return new Intl.DateTimeFormat("nl-NL", {
+    weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+  }).format(new Date(t));
+}
+
+// The extra SVG a chart appends to become hover-aware: an (initially hidden)
+// layer that the handler fills with a crosshair + dots + tooltip, and a
+// transparent capture rect (drawn last, so it's on top) holding the payload.
+// box: {x0,x1,y0,y1,fs}; series: [{label,color,samples:[{t,x,y,disp}]}].
+function chartHoverMarkup(box, series) {
+  const payload = escapeXml(JSON.stringify({ box, series }));
+  return (
+    `<g class="grib-hover-layer" style="display:none" pointer-events="none"></g>` +
+    `<rect class="grib-hover-capture" x="${box.x0}" y="${box.y0}" ` +
+    `width="${(box.x1 - box.x0).toFixed(1)}" height="${(box.y1 - box.y0).toFixed(1)}" ` +
+    `fill="transparent" data-hover="${payload}"></rect>`
+  );
+}
+
+// Map a pointer event's client coords into the SVG's own user-unit coordinates
+// (the SVG scales to the container width, so a fixed viewBox needs this).
+function svgUserX(svg, ev) {
+  const ctm = svg.getScreenCTM && svg.getScreenCTM();
+  if (!ctm) return null;
+  const p = svg.createSVGPoint ? svg.createSVGPoint() : null;
+  if (!p) return null;
+  p.x = ev.clientX;
+  p.y = ev.clientY;
+  const local = p.matrixTransform(ctm.inverse());
+  return local.x;
+}
+
+function updateChartHover(svg, data, userX) {
+  const layer = svg.querySelector(".grib-hover-layer");
+  if (!layer) return;
+  const { box, series } = data;
+  const fs = box.fs || 12;
+  // Union of sample times (with their shared x) → snap to the nearest one.
+  const seen = new Set();
+  const xs = [];
+  for (const s of series)
+    for (const smp of s.samples)
+      if (!seen.has(smp.t)) {
+        seen.add(smp.t);
+        xs.push({ t: smp.t, x: smp.x });
+      }
+  if (!xs.length) return;
+  const cx = Math.max(box.x0, Math.min(box.x1, userX));
+  let best = xs[0];
+  let bd = Infinity;
+  for (const e of xs) {
+    const d = Math.abs(e.x - cx);
+    if (d < bd) {
+      bd = d;
+      best = e;
+    }
+  }
+  const snapX = best.x;
+  // Each series shows its own sample nearest the crosshair, so every model
+  // appears even when their time grids differ (e.g. hourly vs 2-hourly). A
+  // sample whose own time differs from the crosshair is tagged with that time.
+  const rows = [];
+  for (const s of series) {
+    let smp = null;
+    let sd = Infinity;
+    for (const q of s.samples) {
+      const d = Math.abs(q.x - snapX);
+      if (d < sd) {
+        sd = d;
+        smp = q;
+      }
+    }
+    if (smp) rows.push({ color: s.color, label: s.label, disp: smp.disp, x: smp.x, y: smp.y, t: smp.t });
+  }
+  if (!rows.length) return;
+  const lines = [`<line x1="${snapX.toFixed(1)}" y1="${box.y0}" x2="${snapX.toFixed(1)}" y2="${box.y1}" stroke="var(--primary-text-color,#37474f)" stroke-width="1" stroke-dasharray="2 2" opacity="0.6"/>`];
+  for (const r of rows)
+    lines.push(`<circle cx="${r.x.toFixed(1)}" cy="${r.y.toFixed(1)}" r="3.4" fill="${r.color}" stroke="#fff" stroke-width="1.2"/>`);
+  // Tooltip box, sized from the longest line (text can't be measured in SVG
+  // user units, so estimate from character count).
+  const hm = (t) => new Intl.DateTimeFormat("nl-NL", { hour: "2-digit", minute: "2-digit" }).format(new Date(t));
+  const texts = [fmtHoverTime(best.t), ...rows.map((r) => `${r.label}: ${r.disp}${r.t === best.t ? "" : " @" + hm(r.t)}`)];
+  const lineH = fs + 4;
+  const pad = 6;
+  const sw = Math.round(fs * 0.7);
+  const maxLen = Math.max(...texts.map((s) => s.length));
+  const boxW = pad * 2 + sw + 5 + maxLen * fs * 0.56;
+  const boxH = pad * 2 + texts.length * lineH;
+  let bx = snapX + 10;
+  if (bx + boxW > box.x1) bx = snapX - 10 - boxW;
+  if (bx < box.x0) bx = box.x0 + 2;
+  const by = box.y0 + 2;
+  lines.push(`<rect x="${bx.toFixed(1)}" y="${by}" width="${boxW.toFixed(1)}" height="${boxH.toFixed(1)}" rx="4" fill="var(--card-background-color,#fff)" stroke="var(--divider-color,#c7ccd1)" opacity="0.97"/>`);
+  let ty = by + pad + fs;
+  lines.push(`<text x="${(bx + pad).toFixed(1)}" y="${ty.toFixed(1)}" font-size="${fs}" fill="var(--secondary-text-color,#888)">${escapeXml(texts[0])}</text>`);
+  rows.forEach((r, i) => {
+    ty += lineH;
+    lines.push(`<rect x="${(bx + pad).toFixed(1)}" y="${(ty - fs + 2).toFixed(1)}" width="${sw}" height="${sw}" rx="2" fill="${r.color}"/>`);
+    lines.push(`<text x="${(bx + pad + sw + 5).toFixed(1)}" y="${ty.toFixed(1)}" font-size="${fs}" fill="var(--primary-text-color,#12324f)">${escapeXml(texts[i + 1])}</text>`);
+  });
+  layer.innerHTML = lines.join("");
+  layer.style.display = "";
+}
+
+function wireChartHovers(root) {
+  if (!root || root.__gribHoverWired) return;
+  root.__gribHoverWired = true;
+  const onMove = (ev) => {
+    const cap = ev.target.closest && ev.target.closest(".grib-hover-capture");
+    if (!cap) return;
+    const svg = cap.ownerSVGElement || (cap.closest && cap.closest("svg"));
+    if (!svg) return;
+    let data;
+    try {
+      data = JSON.parse(cap.getAttribute("data-hover"));
+    } catch (e) {
+      return;
+    }
+    const ux = svgUserX(svg, ev);
+    if (ux == null) return;
+    updateChartHover(svg, data, ux);
+  };
+  const onLeave = (ev) => {
+    const cap = ev.target.closest && ev.target.closest(".grib-hover-capture");
+    if (!cap) return;
+    const svg = cap.ownerSVGElement || (cap.closest && cap.closest("svg"));
+    const layer = svg && svg.querySelector(".grib-hover-layer");
+    if (layer) layer.style.display = "none";
+  };
+  root.addEventListener("pointermove", onMove);
+  root.addEventListener("pointerdown", onMove);
+  root.addEventListener("pointerout", onLeave);
+}
+
 // The shared day/hour column header (group row + label row) for a set of
 // bucket-start epochs at a resolution. Returns {groupRow, colRow, cls}.
 function buildColumnHeader(columns, res) {
@@ -3347,7 +3544,9 @@ function compareChartSvg(models, config, unitLabel, measurePts) {
   const lines = models
     .map((m) => ({
       name: m.name,
+      short: m.short || m.name,
       color: m.color,
+      unit: m.unit,
       pts: (m.series || [])
         .filter((s) => s.value != null)
         .map((s) => ({ t: new Date(s.valid_time).getTime(), v: s.value * factorFor(m.unit) }))
@@ -3434,15 +3633,30 @@ function compareChartSvg(models, config, unitLabel, measurePts) {
     parts.push(`<path d="${d}" fill="none" stroke="var(--primary-text-color,#12324f)" stroke-width="2.6"/>`);
     parts.push(meas.map((p) => `<rect x="${(sx(p.t) - 2.6).toFixed(1)}" y="${(sy(p.v) - 2.6).toFixed(1)}" width="5.2" height="5.2" fill="var(--primary-text-color,#12324f)"/>`).join(""));
   }
+  // Hover/tap layer: one series per model line (+ the measurement line), each
+  // sample carrying its display value so the tooltip can show x (time) and y.
+  const measUnit = (lines[0] && lines[0].unit) || (models[0] && models[0].unit);
+  const hoverSeries = lines.map((l) => ({
+    label: l.short,
+    color: l.color,
+    samples: l.pts.map((p) => ({ t: p.t, x: +sx(p.t).toFixed(1), y: +sy(p.v).toFixed(1), disp: `${fmtCell(l.unit, p.v)} ${unitLabel || ""}`.trim() })),
+  }));
+  if (meas.length)
+    hoverSeries.push({
+      label: "meting",
+      color: "var(--primary-text-color,#12324f)",
+      samples: meas.map((p) => ({ t: p.t, x: +sx(p.t).toFixed(1), y: +sy(p.v).toFixed(1), disp: `${fmtCell(measUnit, p.v)} ${unitLabel || ""}`.trim() })),
+    });
+  parts.push(chartHoverMarkup({ x0: px0, x1: px1, y0: py0, y1: py1, fs: 14 }, hoverSeries));
   const legend =
     lines
-      .map((l) => `<span class="lg"><span class="sw" style="background:${l.color}"></span>${l.name}</span>`)
+      .map((l) => `<span class="lg" title="${escapeXml(l.name)}"><span class="sw" style="background:${l.color}"></span>${escapeXml(l.short)}</span>`)
       .join("") +
     (meas.length ? `<span class="lg"><span class="sw" style="background:var(--primary-text-color,#12324f)"></span>meting</span>` : "");
   return (
     `<div class="grib-cmp-chart">` +
     `<div class="grib-cmp-unit">${unitLabel || ""}</div>` +
-    `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${parts.join("")}</svg>` +
+    `<svg class="grib-hover-chart" viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${parts.join("")}</svg>` +
     `<div class="grib-cmp-legend">${legend}</div></div>`
   );
 }
@@ -3508,13 +3722,14 @@ function compareSummaryHtml(models, columns, measureMap, config, res) {
   return perModel
     .map(({ m, deltas }) => {
       const dot = `<span class="dot" style="background:${m.color}"></span>`;
+      const nm = `<span title="${escapeXml(m.name)}">${escapeXml(m.short || m.name)}</span>`;
       const present = deltas.filter((d) => d != null);
       const n = present.length;
-      if (!n) return `<div class="sumline">${dot}${m.name}: <span class="ru">geen overlap met meting</span></div>`;
+      if (!n) return `<div class="sumline">${dot}${nm}: <span class="ru">geen overlap met meting</span></div>`;
       const bias = present.reduce((a, b) => a + b, 0) / n;
       const mae = present.reduce((a, b) => a + Math.abs(b), 0) / n;
       const rmse = Math.sqrt(present.reduce((a, b) => a + b * b, 0) / n);
-      return `<div class="sumline">${dot}${m.name}: bias ${fmtDelta(bias)} · MAE ${mae.toFixed(1)} · RMSE ${rmse.toFixed(1)} (n=${n})</div>`;
+      return `<div class="sumline">${dot}${nm}: bias ${fmtDelta(bias)} · MAE ${mae.toFixed(1)} · RMSE ${rmse.toFixed(1)} (n=${n})</div>`;
     })
     .join("");
 }
@@ -3542,8 +3757,9 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
     const factor = conv ? conv.factor : 1;
     const dispUnit = conv ? conv.label : m.unit;
     const legend = m.legend;
+    const short = m.short || m.name;
     const label = (sub) =>
-      `<td class="rowlabel"><span class="dot" style="background:${m.color}"></span>${m.name}<span class="ru">${sub}</span></td>`;
+      `<td class="rowlabel" title="${escapeXml(m.name)}"><span class="dot" style="background:${m.color}"></span>${escapeXml(short)}<span class="ru">${sub}</span></td>`;
     if (m.direction_unit && [...byBucket.values()].some((b) => b.direction != null)) {
       let cells = label("richting");
       columns.forEach((key, i) => {
@@ -3578,7 +3794,7 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
     rows.push(compareMeasureRow(columns, cls, measureMap, unitLabel));
     const { perModel, scale } = computeCompareDeltas(active, columns, measureMap, config, res);
     perModel.forEach(({ m, deltas }, mi) => {
-      let cells = `<td class="rowlabel"><span class="dot" style="background:${m.color}"></span>Δ ${m.name}<span class="ru">model − meting</span></td>`;
+      let cells = `<td class="rowlabel" title="${escapeXml(m.name)}"><span class="dot" style="background:${m.color}"></span>Δ ${escapeXml(m.short || m.name)}<span class="ru">− meting</span></td>`;
       deltas.forEach((d, ci) => {
         const style = d == null ? "" : ` style="background:${deltaColor(d, scale)}"`;
         cells += `<td class="${cls(ci)} grib-cmp-delta-cell" data-mi="${mi}" data-ci="${ci}"${style}>${d == null ? "–" : fmtDelta(d)}</td>`;
@@ -3660,10 +3876,12 @@ const COMPARE_TABLE_CSS = `
   .grib-detail-table .rowlabel {
     position: sticky; left: 0; z-index: 2; text-align: right;
     background: var(--card-background-color, #fff);
-    padding: 2px 10px 2px 12px; min-width: 118px; font-weight: 600;
+    padding: 2px 8px 2px 10px; min-width: 62px; font-weight: 600;
     box-shadow: 1px 0 0 var(--divider-color, #e2e2e2);
   }
   .grib-detail-table .rowlabel .ru { display: block; font-weight: 400; opacity: 0.6; font-size: 11px; }
+  .grib-hover-capture { cursor: crosshair; touch-action: pan-y; }
+  .grib-hover-layer text { paint-order: stroke; }
   .grib-detail-table .rowlabel .dot {
     display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle;
   }
@@ -3967,6 +4185,7 @@ class GribCompareCard extends HTMLElement {
     };
     this._els.resSelect.value = this._resolution;
     this._els.radiusInput.value = this._radius;
+    wireChartHovers(this._els.cmpview);
     this._els.paramSelect.addEventListener("change", () => {
       this._loadMeasurementsForPoint(); // a new parameter has its own saved values
       this._refresh();
@@ -4152,6 +4371,7 @@ class GribCompareCard extends HTMLElement {
         return {
           entryId: e.entry_id,
           name: compareModelName(e),
+          short: compareModelShort(e),
           source: e.source,
           color: compareModelColor(i),
           unit: data && data.unit,
@@ -4174,8 +4394,8 @@ class GribCompareCard extends HTMLElement {
     this._els.models.innerHTML = withData
       .map(
         (m) =>
-          `<label><input type="checkbox" value="${m.entryId}" ${this._excluded.has(m.entryId) ? "" : "checked"}>` +
-          `<span class="sw" style="background:${m.color}"></span>${m.name}</label>`
+          `<label title="${escapeXml(m.name)}"><input type="checkbox" value="${m.entryId}" ${this._excluded.has(m.entryId) ? "" : "checked"}>` +
+          `<span class="sw" style="background:${m.color}"></span>${escapeXml(m.short || m.name)}</label>`
       )
       .join("");
     const shown = withData.filter((m) => !this._excluded.has(m.entryId));
