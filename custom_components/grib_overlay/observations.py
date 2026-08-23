@@ -30,7 +30,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import CONF_API_KEY, CONF_SOURCE, DOMAIN
+from .const import CONF_API_KEY, CONF_OBSERVATIONS_API_KEY, CONF_SOURCE, DOMAIN
 
 import logging
 
@@ -84,14 +84,23 @@ def provider_for(param_key: str) -> str | None:
 
 
 def _knmi_api_key(hass: HomeAssistant) -> str | None:
-    """The Open Data key of any configured KNMI entry (they share one platform)."""
+    """The key to use for the EDR observations API.
+
+    Prefers a dedicated `observations_api_key` (options or data) on any KNMI entry
+    -- the HARMONIE key is often not authorised for the observations dataset (403)
+    -- and falls back to the regular HARMONIE Open Data key.
+    """
+    fallback = None
     for coordinator in hass.data.get(DOMAIN, {}).values():
         entry = getattr(coordinator, "entry", None)
-        if entry is not None and entry.data.get(CONF_SOURCE) == "knmi":
-            key = entry.data.get(CONF_API_KEY)
-            if key:
-                return key
-    return None
+        if entry is None or entry.data.get(CONF_SOURCE) != "knmi":
+            continue
+        obs = entry.options.get(CONF_OBSERVATIONS_API_KEY) or entry.data.get(CONF_OBSERVATIONS_API_KEY)
+        if obs:
+            return obs
+        if fallback is None and entry.data.get(CONF_API_KEY):
+            fallback = entry.data.get(CONF_API_KEY)
+    return fallback
 
 
 async def fetch_observations(
@@ -128,18 +137,35 @@ async def _knmi_locations(hass: HomeAssistant, key: str) -> dict | None:
     try:
         async with session.get(
             f"{KNMI_EDR_BASE}/locations",
-            headers={"Authorization": key},
+            headers={"Authorization": key, "Accept": "application/geo+json"},
             timeout=_TIMEOUT,
         ) as resp:
             if resp.status != 200:
-                _LOGGER.warning("KNMI EDR /locations HTTP %s", resp.status)
+                body = (await resp.text())[:200]
+                _LOGGER.warning("KNMI EDR /locations HTTP %s: %s", resp.status, body)
+                # Cache the failure reason so fetch can give a specific message.
+                cache["error"] = _knmi_auth_message(resp.status)
                 return None
             data = await resp.json()
     except Exception as err:  # noqa: BLE001
         _LOGGER.warning("KNMI EDR /locations request failed: %s", err)
+        cache["error"] = f"KNMI EDR onbereikbaar: {err}"
         return None
     cache["data"] = data
     return data
+
+
+def _knmi_auth_message(status: int) -> str:
+    if status == 403:
+        return (
+            "KNMI EDR gaf 403: je sleutel wordt herkend maar heeft GEEN toegang tot "
+            "de observations-dataset. Maak/gebruik een KNMI Open Data-sleutel met "
+            "toegang tot '10-minute-in-situ-meteorological-observations' en zet die in "
+            "de integratie-optie 'Observaties API-sleutel'."
+        )
+    if status == 401:
+        return "KNMI EDR gaf 401: de API-sleutel wordt niet herkend."
+    return f"KNMI EDR gaf HTTP {status}."
 
 
 async def _fetch_knmi(
@@ -147,10 +173,11 @@ async def _fetch_knmi(
 ) -> dict[str, Any]:
     key = _knmi_api_key(hass)
     if not key:
-        return {"error": "no KNMI Open Data key configured"}
+        return {"error": "geen KNMI Open Data-sleutel geconfigureerd"}
     locs = await _knmi_locations(hass, key)
     if not locs:
-        return {"error": "KNMI EDR locations unavailable (check key/network)"}
+        reason = hass.data.get(DOMAIN + "_knmi_locs", {}).get("error")
+        return {"error": reason or "KNMI EDR /locations niet beschikbaar (sleutel/netwerk)"}
     station = nearest_knmi_location(locs, lat, lon)
     if not station:
         return {"error": "no KNMI station found"}

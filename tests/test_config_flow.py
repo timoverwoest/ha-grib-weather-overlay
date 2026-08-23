@@ -10,6 +10,7 @@ from custom_components.grib_overlay.const import (
     CONF_API_KEY,
     CONF_COLOR_SCALES,
     CONF_DATASET,
+    CONF_OBSERVATIONS_API_KEY,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_NOTIFICATION_API_KEY,
     CONF_PARAMETERS,
@@ -208,6 +209,59 @@ async def test_options_flow_can_clear_alias(hass: HomeAssistant) -> None:
     )
     assert result["type"] == "create_entry"
     assert CONF_ALIAS not in result["data"]
+
+
+async def test_options_flow_stores_observations_key(hass: HomeAssistant) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_SOURCE: "knmi",
+            CONF_API_KEY: "k",
+            CONF_DATASET: "harmonie_arome_cy43_p1",
+            CONF_PARAMETERS: ["wind_10m"],
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_FORECAST_HORIZON_HOURS: 24,
+            CONF_RETAIN_RUNS: 2,
+            CONF_UPDATE_INTERVAL_MINUTES: 30,
+            CONF_OBSERVATIONS_API_KEY: "  obs-key  ",
+        },
+    )
+    assert result["type"] == "create_entry"
+    assert result["data"][CONF_OBSERVATIONS_API_KEY] == "obs-key"
+
+
+async def test_options_flow_can_clear_observations_key(hass: HomeAssistant) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_SOURCE: "knmi",
+            CONF_API_KEY: "k",
+            CONF_DATASET: "harmonie_arome_cy43_p1",
+            CONF_PARAMETERS: ["wind_10m"],
+        },
+        options={CONF_OBSERVATIONS_API_KEY: "obs-key"},
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_FORECAST_HORIZON_HOURS: 24,
+            CONF_RETAIN_RUNS: 2,
+            CONF_UPDATE_INTERVAL_MINUTES: 30,
+            CONF_OBSERVATIONS_API_KEY: "",
+        },
+    )
+    assert result["type"] == "create_entry"
+    assert CONF_OBSERVATIONS_API_KEY not in result["data"]
 
 
 def test_source_uses_notification_key_for_mqtt() -> None:

@@ -45,11 +45,13 @@
           "retain_runs": "Number of forecast runs to keep cached",
           "update_interval_minutes": "Polling interval (minutes)",
           "notification_api_key": "Notification Service API key (optional)",
+          "observations_api_key": "Observations API key (optional)",
           "alias": "Short alias (optional)",
           "color_scales": "Custom colour scales (optional)"
         },
         "data_description": {
           "notification_api_key": "Optional: a separate KNMI Notification Service key for instant push updates. Leave empty to rely on periodic polling.",
+          "observations_api_key": "Optional: a KNMI Open Data key with access to the '10-minute-in-situ-meteorological-observations' dataset, used to download station observations. Your HARMONIE key is often not authorised for it (KNMI returns 403). Leave empty to reuse the HARMONIE key.",
           "alias": "Optional short name shown as this source's compact label in the comparison and meteogram views, e.g. `KNMI NL`. Leave empty to derive it automatically from the source (same-source entries are disambiguated automatically).",
           "color_scales": "One parameter per line, e.g. `wind_10m: 0:#2c7fb8, 8:#7fcdbb, 12:#ffffb2, 16:#fd8d3c, 24:#bd0026`. Values are in the parameter's own unit (m/s, °C, hPa, mm, m). Your parameters: {parameters}. Leave empty to use the built-in colours. Changing this re-renders the current run."
         }

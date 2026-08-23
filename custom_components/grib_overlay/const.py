@@ -5,6 +5,10 @@ DOMAIN = "grib_overlay"
 CONF_SOURCE = "source"
 CONF_API_KEY = "api_key"
 CONF_NOTIFICATION_API_KEY = "notification_api_key"
+# Optional dedicated KNMI Open Data key for the EDR **observations** collection
+# (station downloads). The regular HARMONIE key is often not authorised for that
+# dataset (KNMI returns 403); a key with observations access can go here instead.
+CONF_OBSERVATIONS_API_KEY = "observations_api_key"
 CONF_DATASET = "dataset"
 CONF_PARAMETERS = "parameters"
 # Optional short alias shown as this entry's compact label in the comparison /

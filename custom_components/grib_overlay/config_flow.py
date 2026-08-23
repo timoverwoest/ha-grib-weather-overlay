@@ -19,6 +19,7 @@ from .const import (
     CONF_API_KEY,
     CONF_COLOR_SCALES,
     CONF_DATASET,
+    CONF_OBSERVATIONS_API_KEY,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_NOTIFICATION_API_KEY,
     CONF_PARAMETERS,
@@ -165,6 +166,12 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 options[CONF_ALIAS] = alias
             else:
                 options.pop(CONF_ALIAS, None)
+            # Dedicated observations key: strip, drop when blank.
+            obs_key = (options.get(CONF_OBSERVATIONS_API_KEY) or "").strip()
+            if obs_key:
+                options[CONF_OBSERVATIONS_API_KEY] = obs_key
+            else:
+                options.pop(CONF_OBSERVATIONS_API_KEY, None)
             return self.async_create_entry(title="", data=options)
 
         options = self._config_entry.options
@@ -188,6 +195,16 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 ): vol.All(vol.Coerce(int), vol.Range(min=5, max=180)),
                 vol.Optional(
                     CONF_NOTIFICATION_API_KEY, default=current_notification_key
+                ): str,
+                # Optional dedicated key for the EDR observations API (station
+                # downloads); the HARMONIE key is often not authorised for it.
+                vol.Optional(
+                    CONF_OBSERVATIONS_API_KEY,
+                    description={
+                        "suggested_value": options.get(
+                            CONF_OBSERVATIONS_API_KEY, data.get(CONF_OBSERVATIONS_API_KEY, "")
+                        )
+                    },
                 ): str,
                 # Optional short alias for this source, shown as its compact label
                 # in the comparison + meteogram views. `suggested_value` (not

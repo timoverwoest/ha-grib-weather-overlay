@@ -325,6 +325,12 @@ mislukking zie je nu een melding in de card **én** een `WARNING` in de HA-log m
 exacte oorzaak. De response-parsers zijn met fixtures getest. *(Neerslag komt van KNMI
 als intensiteit `rg` in mm/u — geen directe som per interval; hou daar rekening mee.)*
 
+> **KNMI 403 bij downloaden?** Je HARMONIE-sleutel is vaak **niet** geautoriseerd voor de
+> observations-dataset (KNMI antwoordt dan `403`). Maak/vraag op het
+> [KNMI Developer Portal](https://developer.dataplatform.knmi.nl/) een sleutel met toegang
+> tot `10-minute-in-situ-meteorological-observations` aan en zet die in de integratie-optie
+> **Observaties API-sleutel** (Configureren). `401` = sleutel niet herkend.
+
 Met `dataset` kies je welke dataset de kaart bij het laden standaard toont;
 de waarde mag de datasetsleutel zijn (bv. `bsh_current_northsea`), de
 datasetnaam, of de titel zoals die in de keuzelijst van de kaart staat
@@ -481,6 +487,7 @@ en `pressure_msl` (eenheid hPa) schakelt de isobaren-laag in.
 | `retain_runs` | geheel getal | `2` | 1–10 |
 | `update_interval_minutes` | geheel getal (min) | `30` | 5–180 |
 | `notification_api_key` | tekst | (leeg) | KNMI push-sleutel |
+| `observations_api_key` | tekst | (leeg) | KNMI Open Data-sleutel mét toegang tot `10-minute-in-situ-meteorological-observations`, voor het **downloaden van stationswaarnemingen**. Je HARMONIE-sleutel heeft daar vaak géén toegang toe (KNMI geeft 403). Leeg = HARMONIE-sleutel hergebruiken |
 | `alias` | tekst | (leeg) | **korte naam** voor deze bron, getoond als compact label in de vergelijking en het meteogram (bv. `KNMI NL`). Leeg = automatisch afgeleid uit de bron (bronnen van dezelfde soort worden vanzelf onderscheiden) |
 | `color_scales` | meerregelige tekst | (leeg) | per regel: `parameter: waarde:#hex, waarde:#hex, …` (waarden in de **eigen eenheid** van de parameter) |
 
@@ -959,6 +966,12 @@ card **and** a `WARNING` in the HA log with the exact cause. The response parser
 covered by fixture tests. *(Precipitation comes from KNMI as intensity `rg` in mm/h — not
 a direct per-interval sum; keep that in mind.)*
 
+> **KNMI 403 on download?** Your HARMONIE key is often **not** authorised for the
+> observations dataset (KNMI then returns `403`). Create/request a key with access to
+> `10-minute-in-situ-meteorological-observations` on the
+> [KNMI Developer Portal](https://developer.dataplatform.knmi.nl/) and put it in the
+> integration option **Observations API key** (Configure). `401` = key not recognised.
+
 With `dataset` you choose which dataset the card shows by default on load; the value
 may be the dataset key (e.g. `bsh_current_northsea`), the dataset name, or the title
 as it appears in the card's picker (case-insensitive). To fix an exact config
@@ -1112,6 +1125,7 @@ parameter (unit °, i.e. `wave_direction`) enables `wavevectors`; and `pressure_
 | `retain_runs` | integer | `2` | 1–10 |
 | `update_interval_minutes` | integer (min) | `30` | 5–180 |
 | `notification_api_key` | text | (empty) | KNMI push key |
+| `observations_api_key` | text | (empty) | KNMI Open Data key with access to `10-minute-in-situ-meteorological-observations`, for **downloading station observations**. Your HARMONIE key is often not authorised for it (KNMI returns 403). Empty = reuse the HARMONIE key |
 | `alias` | text | (empty) | **short name** for this source, shown as the compact label in the comparison and meteogram (e.g. `KNMI NL`). Empty = derived automatically from the source (same-source entries are disambiguated automatically) |
 | `color_scales` | multi-line text | (empty) | per line: `parameter: value:#hex, value:#hex, …` (values in the parameter's **own unit**) |
 
