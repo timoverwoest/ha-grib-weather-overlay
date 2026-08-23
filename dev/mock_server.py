@@ -223,6 +223,48 @@ def _point_payload(entry: dict, parameter_key: str, lat: float) -> dict:
 
 _WATER_PARAMS = ("wave_height", "wave_period", "wave_direction", "current")
 
+# A few mock stations to exercise the "only stations with data" filter. Wijk aan
+# Zee is flagged as having NO wind data, so it must be filtered out for wind.
+_MOCK_KNMI_STATIONS = [
+    {"name": "Schiphol", "lat": 52.318, "lon": 4.790},
+    {"name": "Wijk aan Zee", "lat": 52.506, "lon": 4.603, "no": ("wind_10m", "wind_gust_10m")},
+    {"name": "De Bilt", "lat": 52.100, "lon": 5.180},
+    {"name": "Berkhout", "lat": 52.644, "lon": 4.979},
+    {"name": "Lelystad", "lat": 52.458, "lon": 5.520},
+]
+_MOCK_RWS_STATIONS = [
+    {"name": "Europlatform (NZ)", "lat": 51.999, "lon": 3.276},
+    {"name": "IJmuiden", "lat": 52.462, "lon": 4.555},
+]
+
+
+def _haversine_km(a_lat, a_lon, b_lat, b_lon):
+    r = 6371.0
+    d_lat = math.radians(b_lat - a_lat)
+    d_lon = math.radians(b_lon - a_lon)
+    s = (
+        math.sin(d_lat / 2) ** 2
+        + math.cos(math.radians(a_lat)) * math.cos(math.radians(b_lat)) * math.sin(d_lon / 2) ** 2
+    )
+    return 2 * r * math.asin(math.sqrt(s))
+
+
+def _stations_near(param: str, lat: float, lon: float, radius_km: float) -> list[dict]:
+    """Mock of the /stations endpoint: nearby stations that HAVE data for `param`."""
+    is_water = param in _WATER_PARAMS
+    src = _MOCK_RWS_STATIONS if is_water else _MOCK_KNMI_STATIONS
+    provider = "rws" if is_water else "knmi"
+    out = []
+    for s in src:
+        if param in (s.get("no") or ()):  # this station has no data for this param
+            continue
+        d = _haversine_km(lat, lon, s["lat"], s["lon"])
+        if d > radius_km:
+            continue
+        out.append({"name": s["name"], "lat": s["lat"], "lon": s["lon"], "dist_km": round(d, 1), "provider": provider})
+    out.sort(key=lambda x: x["dist_km"])
+    return out
+
 
 def _station_obs(param: str, lat: float, lon: float) -> dict:
     """A synthetic station-observation series (past -> now) for one parameter.
@@ -366,6 +408,14 @@ class Handler(BaseHTTPRequestHandler):
             lat = float(q.get("lat", [52.0])[0])
             lon = float(q.get("lon", [4.5])[0])
             self._json(_station_obs(param, lat, lon))
+        elif parts[:3] == ["api", "grib_overlay", "stations"]:
+            # /api/grib_overlay/stations?param=&lat=&lon=&radius=
+            q = parse_qs(parsed.query)
+            param = q.get("param", ["wind_10m"])[0]
+            lat = float(q.get("lat", [52.0])[0])
+            lon = float(q.get("lon", [4.5])[0])
+            radius = float(q.get("radius", [10])[0])
+            self._json({"stations": _stations_near(param, lat, lon, radius)})
         elif parts[:3] == ["api", "grib_overlay", "point"]:
             # /api/grib_overlay/point/{entry_id}/{parameter_key}?lat=&lon=
             entry = ENTRIES.get(parts[3], ENTRIES[ENTRY_ID])

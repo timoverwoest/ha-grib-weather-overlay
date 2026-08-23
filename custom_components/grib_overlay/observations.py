@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -119,6 +120,118 @@ async def fetch_observations(
     if provider == "rws":
         return await _fetch_rws(hass, param_key, lat, lon, start, end)
     return None
+
+
+async def nearby_stations(
+    hass: HomeAssistant, param_key: str, lat: float, lon: float, radius_km: float
+) -> list[dict[str, Any]]:
+    """Stations within ``radius_km`` that actually have data for ``param_key``.
+
+    So the card only presents stations that will return something: KNMI filters
+    via the EDR ``/locations?parameter-name=&datetime=`` query (stations with
+    recent data for that variable); RWS filters via the catalogue coupling. Each
+    item: ``{name, lat, lon, dist_km, provider}``. Returns ``[]`` (never raises)
+    when the provider/network is unavailable, so the card can fall back.
+    """
+    provider = provider_for(param_key)
+    if provider == "knmi":
+        return await _knmi_nearby(hass, param_key, lat, lon, radius_km)
+    if provider == "rws":
+        return await _rws_nearby(hass, param_key, lat, lon, radius_km)
+    return []
+
+
+async def _knmi_nearby(
+    hass: HomeAssistant, param_key: str, lat: float, lon: float, radius_km: float
+) -> list[dict[str, Any]]:
+    key = _knmi_api_key(hass)
+    if not key:
+        return []
+    code, _ = KNMI_EDR[param_key]
+    end = datetime.now(timezone.utc).replace(microsecond=0)
+    start = end - timedelta(hours=3)
+    params = {
+        "parameter-name": code,
+        "datetime": f"{_iso_seconds(start.isoformat())}/{_iso_seconds(end.isoformat())}",
+    }
+    session = async_get_clientsession(hass)
+    data = None
+    try:
+        async with session.get(
+            f"{KNMI_EDR_BASE}/locations",
+            params=params,
+            headers={"Authorization": key, "Accept": "application/geo+json"},
+            timeout=_TIMEOUT,
+        ) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+            else:
+                _LOGGER.debug("KNMI EDR /locations filter HTTP %s", resp.status)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("KNMI EDR /locations filter failed: %s", err)
+    if not data:  # fall back to the unfiltered cached metadata (no data-guarantee)
+        data = await _knmi_locations(hass, key)
+    return _features_within(data, lat, lon, radius_km, "knmi")
+
+
+def _features_within(
+    geojson: dict | None, lat: float, lon: float, radius_km: float, provider: str
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for feat in (geojson or {}).get("features") or []:
+        try:
+            coords = feat["geometry"]["coordinates"]
+            flon, flat = float(coords[0]), float(coords[1])
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+        d = _haversine_km(lat, lon, flat, flon)
+        if d > radius_km:
+            continue
+        props = feat.get("properties") or {}
+        out.append(
+            {
+                "name": props.get("name") or props.get("locationName") or feat.get("id"),
+                "lat": flat,
+                "lon": flon,
+                "dist_km": round(d, 1),
+                "provider": provider,
+            }
+        )
+    out.sort(key=lambda s: s["dist_km"])
+    return out
+
+
+async def _rws_nearby(
+    hass: HomeAssistant, param_key: str, lat: float, lon: float, radius_km: float
+) -> list[dict[str, Any]]:
+    grootheid, _ = RWS_AQUO[param_key]
+    cat = await _rws_catalogus(hass)
+    if not cat:
+        return []
+    allowed = _rws_allowed_locations(cat, grootheid)
+    out: list[dict[str, Any]] = []
+    for loc in cat.get("LocatieLijst") or []:
+        if allowed is not None and loc.get("Locatie_MessageID") not in allowed:
+            continue
+        try:
+            x, y = float(loc["X"]), float(loc["Y"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        slat, slon = utm31n_to_wgs84(x, y)
+        d = _haversine_km(lat, lon, slat, slon)
+        if d > radius_km:
+            continue
+        out.append(
+            {
+                "name": loc.get("Naam") or loc.get("Code") or "RWS-station",
+                "lat": slat,
+                "lon": slon,
+                "dist_km": round(d, 1),
+                "provider": "rws",
+            }
+        )
+    out.sort(key=lambda s: s["dist_km"])
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +493,25 @@ def _rws_waarnemingen_body(station: dict, grootheid: str, start: str, end: str) 
     }
 
 
+def _rws_allowed_locations(cat: dict, grootheid: str) -> set | None:
+    """Set of Locatie_MessageIDs that offer ``grootheid`` (None = coupling absent)."""
+    coupling = cat.get("AquoMetadataLocatieLijst")
+    meta = cat.get("AquoMetadataLijst")
+    if not (coupling and meta):
+        return None
+    meta_ids = {
+        m.get("AquoMetadata_MessageID")
+        for m in meta
+        if (m.get("Grootheid") or {}).get("Code") == grootheid
+    }
+    return {
+        c.get("Locatie_MessageID")
+        for c in coupling
+        if c.get("AquoMetaData_MessageID") in meta_ids
+        or c.get("AquoMetadata_MessageID") in meta_ids
+    }
+
+
 def nearest_rws_station(
     cat: dict, grootheid: str, lat: float, lon: float
 ) -> dict | None:
@@ -389,22 +521,7 @@ def nearest_rws_station(
     rank by distance and to report the station position back to the card.
     """
     locs = cat.get("LocatieLijst") or []
-    # Which location codes offer this grootheid (via the coupling list, when present).
-    allowed: set[str] | None = None
-    coupling = cat.get("AquoMetadataLocatieLijst")
-    meta = cat.get("AquoMetadataLijst")
-    if coupling and meta:
-        meta_ids = {
-            m.get("AquoMetadata_MessageID")
-            for m in meta
-            if (m.get("Grootheid") or {}).get("Code") == grootheid
-        }
-        allowed = {
-            c.get("Locatie_MessageID")
-            for c in coupling
-            if c.get("AquoMetaData_MessageID") in meta_ids
-            or c.get("AquoMetadata_MessageID") in meta_ids
-        }
+    allowed = _rws_allowed_locations(cat, grootheid)
     best = None
     best_d = float("inf")
     for loc in locs:

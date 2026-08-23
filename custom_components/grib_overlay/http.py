@@ -18,7 +18,7 @@ from homeassistant.core import HomeAssistant
 
 from . import field_grid
 from . import observations
-from .const import CONF_ALIAS, CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_ALL_PATH, HTTP_POINT_PATH, HTTP_STATION_OBS_PATH, HTTP_WIND_PATH
+from .const import CONF_ALIAS, CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_ALL_PATH, HTTP_POINT_PATH, HTTP_STATION_OBS_PATH, HTTP_STATIONS_PATH, HTTP_WIND_PATH
 from .coordinator import GribOverlayCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -373,6 +373,31 @@ class GribOverlayStationObsView(HomeAssistantView):
         return web.json_response(result, status=200)
 
 
+class GribOverlayStationsView(HomeAssistantView):
+    """Lists measurement stations near a point that actually HAVE data for one
+    parameter, so the card only offers stations that will return something."""
+
+    url = HTTP_STATIONS_PATH
+    name = "api:grib_overlay:stations"
+    requires_auth = True
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        try:
+            param = request.query["param"]
+            lat = float(request.query["lat"])
+            lon = float(request.query["lon"])
+            radius = float(request.query.get("radius", "10"))
+        except (KeyError, ValueError):
+            return web.json_response({"error": "param/lat/lon required"}, status=400)
+        try:
+            stations = await observations.nearby_stations(hass, param, lat, lon, radius)
+        except Exception as err:  # noqa: BLE001 - never break the card over this
+            _LOGGER.warning("stations lookup failed for %s: %s", param, err)
+            stations = []
+        return web.json_response({"stations": stations})
+
+
 VIEWS = (
     GribOverlayEntriesView,
     GribOverlayFramesView,
@@ -382,4 +407,5 @@ VIEWS = (
     GribOverlayPointView,
     GribOverlayPointAllView,
     GribOverlayStationObsView,
+    GribOverlayStationsView,
 )

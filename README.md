@@ -107,13 +107,16 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 - **Meetstations in de buurt + downloaden.** Zodra “Meting invoeren” aanstaat
   verschijnen de **meetstations binnen een instelbare straal** (standaard **10 km**,
   via `measurement_radius_km` of het straal-veld) rond het punt: als **groene stippen
-  op de mini-kaart** én als **knoppen** (met afstand) onder de tabel. **Klik een
-  station** (of de knop **“Meetstation downloaden”**) om de **werkelijke waarnemingen
-  op te halen** en als meting te tonen — precies zoals handmatige meetwaarden
-  (bewaard per punt + parameter, met een oranje speld). Weerparameters komen van
-  **KNMI**-stations, water/golven/stroming van **RWS Waterinfo**. *(De koppeling met
-  de echte KNMI/RWS-API's is best-effort en moet je op je eigen HAOS met je
-  KNMI-sleutel verifiëren; zie “Metingen automatisch ophalen”.)*
+  op de mini-kaart** én als **knoppen** (met afstand) onder de tabel. Alleen stations
+  die **daadwerkelijk data hebben voor de gekozen parameter** worden getoond (de
+  integratie vraagt dit vooraf op bij KNMI/RWS), en voor **water/golven/stroming**
+  komen de stations van **RWS**, voor weer van **KNMI**. **Klik een station** (of de
+  knop **“Meetstation downloaden”**) om de **werkelijke waarnemingen op te halen** en
+  als meting te tonen — precies zoals handmatige meetwaarden (bewaard per punt +
+  parameter, met een oranje speld). Geeft een station tóch geen data terug, dan wordt
+  het meteen verborgen. *(De koppeling met de echte KNMI/RWS-API's is best-effort en
+  moet je op je eigen HAOS met je KNMI-sleutel verifiëren; zie “Metingen automatisch
+  ophalen”.)*
 - **Absolute én relatieve delta.** De Δ-rijen tonen per kolom zowel de **absolute**
   afwijking (**meting − model**, `+` = meting hoger dan de bron) als de **relatieve**
   (%, t.o.v. de bronwaarde). De samenvatting geeft bias (abs + %), MAE en RMSE per model.
@@ -302,13 +305,15 @@ het punt in één klik.
 
 **Meetstations downloaden.** Met “Meting invoeren” aan verschijnen de meetstations
 binnen `measurement_radius_km` (standaard 10 km; ook via het straal-veld in de
-werkbalk) als **groene stippen op de mini-kaart** en als **knoppen met afstand**. Klik
-een station — of de knop **“Meetstation downloaden”** (dichtstbijzijnde) — om de
-**werkelijke waarnemingen** op te halen en als meting te tonen/bewaren. Weer komt van
-**KNMI**-stations, water/golven/stroming van **RWS Waterinfo**. In de aparte
-vergelijk-card verspringt het punt naar het station (voorspelling én meting op exact
-dezelfde plek); in het meteogram blijft het punt staan (de meting komt dan van het
-nabije station, zoals een handmatige waarde).
+werkbalk) als **groene stippen op de mini-kaart** en als **knoppen met afstand** —
+**alleen stations die data hebben voor de gekozen parameter** (vooraf gecheckt bij
+KNMI/RWS; water/golven/stroming van **RWS**, weer van **KNMI**). Klik een station — of
+de knop **“Meetstation downloaden”** (dichtstbijzijnde) — om de **werkelijke
+waarnemingen** op te halen en als meting te tonen/bewaren. Komt er toch niets terug,
+dan wordt het station meteen verborgen. In de aparte vergelijk-card verspringt het punt
+naar het station (voorspelling én meting op exact dezelfde plek); in het meteogram
+blijft het punt staan (de meting komt dan van het nabije station, zoals een handmatige
+waarde).
 
 **Gecorreleerde voorspelling.** Kies bij **“Correctie”** *absoluut* (verschuiven) of
 *relatief* (schalen) en vink de **bronnen** aan waarop je het toepast. Elke aangevinkte
@@ -759,11 +764,13 @@ changing the map card or the rest of the backend):
 - **Download measurement stations.** Once “Meting invoeren” is on, the **measurement
   stations within an adjustable radius** (default **10 km**, via
   `measurement_radius_km` or the radius field) appear as **green dots on the
-  mini-map** and as **buttons with distance**. Click a station — or the
-  **“Meetstation downloaden”** button (nearest) — to **fetch its real observations**
-  and show/store them as the measurement, exactly like a hand-entered value. Weather
-  comes from **KNMI** stations, water/waves/current from **RWS Waterinfo**. In the
-  separate compare card the point moves to the station (forecast and measurement at
+  mini-map** and as **buttons with distance**. Only stations that **actually have data
+  for the chosen parameter** are offered (the integration asks KNMI/RWS up front), and
+  **water/waves/current** stations come from **RWS** while weather comes from **KNMI**.
+  Click a station — or the **“Meetstation downloaden”** button (nearest) — to **fetch
+  its real observations** and show/store them as the measurement, exactly like a
+  hand-entered value. If a station still returns nothing, it is hidden immediately. In
+  the separate compare card the point moves to the station (forecast and measurement at
   the exact same place); in the meteogram the point stays put (the measurement then
   comes from the nearby station, like a manual value). *(The live KNMI/RWS API calls
   are best-effort and should be verified on your own HAOS with your KNMI key.)*
@@ -946,10 +953,12 @@ as a dark line in the chart. The same measurement/delta is also in the meteogram
 
 **Download measurement stations.** With “Meting invoeren” on, the measurement stations
 within `measurement_radius_km` (default 10 km; also via the radius field) appear as
-**green dots on the mini-map** and as **buttons with distance**. Click a station — or
-the **“Meetstation downloaden”** button (nearest) — to **fetch its real observations**
-and show/store them as the measurement, just like a hand-entered value. Weather comes
-from **KNMI** stations, water/waves/current from **RWS Waterinfo**. In the separate
+**green dots on the mini-map** and as **buttons with distance** — **only stations that
+have data for the chosen parameter** (checked up front with KNMI/RWS; water/waves/current
+from **RWS**, weather from **KNMI**). Click a station — or the **“Meetstation
+downloaden”** button (nearest) — to **fetch its real observations** and show/store them
+as the measurement, just like a hand-entered value. If a station still returns nothing,
+it is hidden immediately. In the separate
 compare card the point moves to the station; in the meteogram the point stays put (the
 measurement then comes from the nearby station).
 

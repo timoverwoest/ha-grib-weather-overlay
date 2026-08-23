@@ -2820,16 +2820,20 @@ class GribOverlayCard extends HTMLElement {
       this._detailMode = ev.target.value === "compare" ? "compare" : "bron";
       this._syncDetailToolsMode();
       this._rerenderDetail();
+      if (this._detailMode === "compare") this._loadDetailStations();
     });
     backdrop.querySelector(".cmpparam").addEventListener("change", (ev) => {
       this._detailCmpParam = ev.target.value;
+      this._detailStationsData = null; // stations differ per parameter
       this._loadDetailMeasurements(); // this parameter's saved values for this point
       this._rerenderDetail();
+      this._loadDetailStations();
     });
     backdrop.querySelector(".detmeas").addEventListener("change", (ev) => {
       this._detailShowMeasure = ev.target.checked;
       backdrop.querySelector(".detradctl").classList.toggle("hidden", !this._detailShowMeasure);
       this._rerenderDetail();
+      if (this._detailShowMeasure) this._loadDetailStations();
     });
     const detRadius = backdrop.querySelector(".detradius");
     detRadius.value = this._detailRadius;
@@ -2838,6 +2842,7 @@ class GribOverlayCard extends HTMLElement {
       this._detailRadius = v > 0 ? v : 10;
       detRadius.value = this._detailRadius;
       this._rerenderDetail();
+      this._loadDetailStations();
     });
     // Live measurement entry in compare mode: update the map + re-render only the
     // chart/delta boxes (leaving the focused input untouched), and save the value
@@ -2991,7 +2996,7 @@ class GribOverlayCard extends HTMLElement {
       : "";
     if (!this._detailMeasure) this._detailMeasure = new Map();
     const stations = this._detailShowMeasure && this._detailLatlng
-      ? stationsWithin(this._detailLatlng.lat, this._detailLatlng.lng, this._detailRadius)
+      ? this._detailCurrentStations()
       : [];
     const station = this._detailLatlng
       ? gribGetStation(this._detailLatlng.lat, this._detailLatlng.lng, this._detailCmpParam)
@@ -3002,6 +3007,39 @@ class GribOverlayCard extends HTMLElement {
         this._detailMeasure, !!this._detailShowMeasure,
         { stations, radiusKm: this._detailRadius, station, corrMode: this._detailCorrMode, corrSources: this._detailCorrSources }
       ) + note
+    );
+  }
+
+  // Stations to present in the meteogram compare mode: the backend list (only
+  // those with data for the compare parameter) when loaded, else the built-in list.
+  _detailCurrentStations() {
+    if (this._detailStationsData != null && this._detailStationsParam === this._detailCmpParam) return this._detailStationsData;
+    return this._detailLatlng ? stationsWithin(this._detailLatlng.lat, this._detailLatlng.lng, this._detailRadius) : [];
+  }
+
+  async _loadDetailStations() {
+    if (!this._detailShowMeasure || !this._detailLatlng || !this._hass || !this._detailCmpParam) {
+      this._detailStationsData = null;
+      return;
+    }
+    const q = new URLSearchParams({ param: this._detailCmpParam, lat: this._detailLatlng.lat.toFixed(4), lon: this._detailLatlng.lng.toFixed(4), radius: String(this._detailRadius) });
+    let stations = null;
+    try {
+      const data = await this._hass.callApi("GET", `grib_overlay/stations?${q}`);
+      stations = ((data && data.stations) || []).map((s) => ({ name: s.name, lat: s.lat, lon: s.lon, distKm: s.dist_km }));
+    } catch (e) {
+      stations = null;
+    }
+    this._detailStationsData = stations;
+    this._detailStationsParam = this._detailCmpParam;
+    if (this._detailMode === "compare") this._rerenderDetail();
+  }
+
+  _dropDetailStation(lat, lng) {
+    if (this._detailStationsData == null) this._detailStationsData = this._detailCurrentStations();
+    this._detailStationsParam = this._detailCmpParam;
+    this._detailStationsData = this._detailStationsData.filter(
+      (s) => Math.abs(s.lat - lat) > 1e-4 || Math.abs(s.lon - lng) > 1e-4
     );
   }
 
@@ -3033,11 +3071,13 @@ class GribOverlayCard extends HTMLElement {
       data = { error: String((err && err.message) || err) };
     }
     if (!data || data.error || !data.series || !data.series.length) {
+      if (name) this._dropDetailStation(lat, lng); // no data -> stop offering it
       if (btn) {
         btn.disabled = false;
         btn.textContent = "Meetstation downloaden";
-        btn.title = data && data.error ? String(data.error) : "Geen data";
+        btn.title = data && data.error ? String(data.error) : "Geen data — station verborgen";
       }
+      this._rerenderDetail();
       return;
     }
     const unit = (models[0] && models[0].unit) || "";
@@ -4467,8 +4507,10 @@ class GribCompareCard extends HTMLElement {
     this._marker.setLatLng(ll);
     this._loadMeasurementsForPoint();
     broadcastGribPoint(ll.lat, ll.lng, this);
+    this._stationsData = null; // stations depend on the point
     this._refresh();
     this._renderStationMarkers();
+    this._loadStations();
   }
 
   // Load the measurements saved this session for the current point + parameter;
@@ -4502,20 +4544,60 @@ class GribCompareCard extends HTMLElement {
     this._pickPoint(ll);
   }
 
-  // Green square markers for the measurement stations within the radius of the
-  // current point (only while entering measurements); clicking one jumps there.
+  // The stations to present: the backend list (only stations that HAVE data for
+  // the current parameter) when available, else the built-in list as a fallback.
+  _currentStations() {
+    const param = this._els.paramSelect.value;
+    if (this._stationsData != null && this._stationsParam === param) return this._stationsData;
+    return this._point ? stationsWithin(this._point.lat, this._point.lng, this._radius) : [];
+  }
+
+  // Fetch the nearby stations that actually have data for the current parameter,
+  // then re-render. Falls back to the built-in list if the endpoint is unavailable.
+  async _loadStations() {
+    const param = this._els.paramSelect.value;
+    if (!this._showMeasure || !this._point || !this._hass || !param) {
+      this._stationsData = null;
+      return;
+    }
+    const q = new URLSearchParams({ param, lat: this._point.lat.toFixed(4), lon: this._point.lng.toFixed(4), radius: String(this._radius) });
+    let stations = null;
+    try {
+      const data = await this._hass.callApi("GET", `grib_overlay/stations?${q}`);
+      stations = ((data && data.stations) || []).map((s) => ({ name: s.name, lat: s.lat, lon: s.lon, distKm: s.dist_km }));
+    } catch (e) {
+      stations = null; // fall back to the built-in list
+    }
+    this._stationsData = stations;
+    this._stationsParam = param;
+    this._renderComparison();
+    this._renderStationMarkers();
+  }
+
+  // Drop a station (matched by position) from the shown list -- used when a
+  // download turns out to have no data for it, so it isn't offered again.
+  _dropStation(lat, lng) {
+    if (this._stationsData == null) this._stationsData = this._currentStations();
+    this._stationsParam = this._els.paramSelect.value;
+    this._stationsData = this._stationsData.filter(
+      (s) => Math.abs(s.lat - lat) > 1e-4 || Math.abs(s.lon - lng) > 1e-4
+    );
+  }
+
+  // Green square markers for the measurement stations that have data for the
+  // current parameter (only while entering measurements); clicking one downloads it.
   _renderStationMarkers() {
     if (!this._map || !window.L) return;
     if (!this._stationLayer) this._stationLayer = window.L.layerGroup().addTo(this._map);
     this._stationLayer.clearLayers();
     if (!this._showMeasure || !this._point) return;
     const icon = window.L.divIcon({ className: "grib-station-marker", iconSize: [11, 11], iconAnchor: [6, 6] });
-    for (const s of stationsWithin(this._point.lat, this._point.lng, this._radius)) {
+    for (const s of this._currentStations()) {
       const mk = window.L.marker([s.lat, s.lon], {
         icon,
-        title: `${s.name} · ${s.distKm.toFixed(1)} km — klik om hierheen te gaan`,
+        title: `${s.name} · ${s.distKm.toFixed(1)} km — klik om te downloaden`,
       });
-      mk.on("click", () => this._openSavedPoint(s.lat, s.lon));
+      mk.on("click", () => this._downloadStation(s.lat, s.lon, s.name));
       this._stationLayer.addLayer(mk);
     }
   }
@@ -4617,7 +4699,9 @@ class GribCompareCard extends HTMLElement {
     wireChartHovers(this._els.cmpview);
     this._els.paramSelect.addEventListener("change", () => {
       this._loadMeasurementsForPoint(); // a new parameter has its own saved values
+      this._stationsData = null; // stations differ per parameter
       this._refresh();
+      this._loadStations();
     });
     this._els.resSelect.addEventListener("change", () => {
       this._resolution = normalizeResolution(this._els.resSelect.value);
@@ -4628,6 +4712,7 @@ class GribCompareCard extends HTMLElement {
       this._els.radctl.classList.toggle("hidden", !this._showMeasure);
       this._renderComparison();
       this._renderStationMarkers();
+      if (this._showMeasure) this._loadStations();
     });
     this._els.radiusInput.addEventListener("change", () => {
       const v = Number(this._els.radiusInput.value);
@@ -4635,6 +4720,7 @@ class GribCompareCard extends HTMLElement {
       this._els.radiusInput.value = this._radius;
       this._renderComparison();
       this._renderStationMarkers();
+      this._loadStations();
     });
     this._els.models.addEventListener("change", (ev) => {
       if (ev.target.matches("input[type=checkbox]")) {
@@ -4729,7 +4815,11 @@ class GribCompareCard extends HTMLElement {
       data = { error: String((err && err.message) || err) };
     }
     if (!data || data.error || !data.series || !data.series.length) {
-      this._els.note.innerHTML = `<div class="grib-cmp-note">Kon meetstation niet laden${data && data.error ? ": " + escapeXml(String(data.error)) : ""}.</div>`;
+      // No data for this station -> stop offering it (this session).
+      if (name) this._dropStation(lat, lng);
+      this._els.note.innerHTML = `<div class="grib-cmp-note">Geen data voor ${name ? "“" + escapeXml(name) + "”" : "dit station"}${data && data.error ? ": " + escapeXml(String(data.error)) : ""} — station verborgen.</div>`;
+      this._renderComparison();
+      this._renderStationMarkers();
       if (btn) {
         btn.disabled = false;
         btn.textContent = "Meetstation downloaden";
@@ -4925,9 +5015,7 @@ class GribCompareCard extends HTMLElement {
     } else if (!shown.length) {
       this._els.cmpview.innerHTML = `<div class="grib-cmp-empty">Alle modellen zijn uitgevinkt.</div>`;
     } else {
-      const stations = this._showMeasure && this._point
-        ? stationsWithin(this._point.lat, this._point.lng, this._radius)
-        : [];
+      const stations = this._showMeasure && this._point ? this._currentStations() : [];
       const station = this._point
         ? gribGetStation(this._point.lat, this._point.lng, this._els.paramSelect.value)
         : null;

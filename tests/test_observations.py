@@ -8,7 +8,9 @@ what breaks silently if a provider tweaks its shape.
 from __future__ import annotations
 
 from custom_components.grib_overlay.observations import (
+    _features_within,
     _iso_seconds,
+    _rws_allowed_locations,
     nearest_knmi_location,
     nearest_rws_station,
     parse_knmi_coveragejson,
@@ -89,6 +91,39 @@ def test_nearest_knmi_location_picks_closest_feature() -> None:
     assert st is not None
     assert st["id"] == "0-20000-0-06269"
     assert st["name"] == "Lelystad"
+
+
+def test_features_within_filters_by_radius_and_sorts() -> None:
+    geo = {
+        "features": [
+            {"id": "A", "properties": {"name": "Near"}, "geometry": {"type": "Point", "coordinates": [5.18, 52.10]}},
+            {"id": "B", "properties": {"name": "Mid"}, "geometry": {"type": "Point", "coordinates": [5.52, 52.458]}},
+            {"id": "C", "properties": {"name": "Far"}, "geometry": {"type": "Point", "coordinates": [6.60, 53.20]}},
+        ]
+    }
+    out = _features_within(geo, 52.10, 5.18, 60.0, "knmi")
+    names = [s["name"] for s in out]
+    assert names[0] == "Near"  # nearest first
+    assert "Far" not in names  # beyond 60 km, dropped
+    assert all(s["provider"] == "knmi" for s in out)
+    assert all("dist_km" in s for s in out)
+
+
+def test_rws_allowed_locations_maps_grootheid_to_locations() -> None:
+    cat = {
+        "AquoMetadataLijst": [
+            {"AquoMetadata_MessageID": 10, "Grootheid": {"Code": "Hm0"}},
+            {"AquoMetadata_MessageID": 11, "Grootheid": {"Code": "WATHTE"}},
+        ],
+        "AquoMetadataLocatieLijst": [
+            {"Locatie_MessageID": 1, "AquoMetaData_MessageID": 11},
+            {"Locatie_MessageID": 2, "AquoMetaData_MessageID": 10},
+        ],
+    }
+    allowed = _rws_allowed_locations(cat, "Hm0")
+    assert allowed == {2}
+    # No coupling info -> None (can't filter)
+    assert _rws_allowed_locations({}, "Hm0") is None
 
 
 def test_iso_seconds_trims_millis_and_offset() -> None:
