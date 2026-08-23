@@ -8,6 +8,7 @@ different datasets, or later a different source) can coexist.
 from __future__ import annotations
 
 import json
+import logging
 import math
 
 from aiohttp import web
@@ -19,6 +20,8 @@ from . import field_grid
 from . import observations
 from .const import CONF_ALIAS, CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_ALL_PATH, HTTP_POINT_PATH, HTTP_STATION_OBS_PATH, HTTP_WIND_PATH
 from .coordinator import GribOverlayCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _coordinator(hass: HomeAssistant, entry_id: str) -> GribOverlayCoordinator | None:
@@ -356,11 +359,18 @@ class GribOverlayStationObsView(HomeAssistantView):
         end = request.query.get("end", "")
         result = await observations.fetch_observations(hass, param, lat, lon, start, end)
         if result is None:
+            _LOGGER.warning("station_obs: no observation source for parameter %s", param)
             return web.json_response(
                 {"error": f"no observation source for parameter '{param}'"}, status=404
             )
-        status = 502 if result.get("error") else 200
-        return web.json_response(result, status=status)
+        if result.get("error"):
+            _LOGGER.warning("station_obs %s @ %.3f,%.3f -> %s", param, lat, lon, result["error"])
+            return web.json_response(result, status=502)
+        _LOGGER.debug(
+            "station_obs %s @ %.3f,%.3f -> %s obs from %s",
+            param, lat, lon, len(result.get("series") or []), (result.get("station") or {}).get("name"),
+        )
+        return web.json_response(result, status=200)
 
 
 VIEWS = (

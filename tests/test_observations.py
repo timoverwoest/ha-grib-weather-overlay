@@ -8,6 +8,8 @@ what breaks silently if a provider tweaks its shape.
 from __future__ import annotations
 
 from custom_components.grib_overlay.observations import (
+    _iso_seconds,
+    nearest_knmi_location,
     nearest_rws_station,
     parse_knmi_coveragejson,
     parse_rws_waarnemingen,
@@ -57,6 +59,42 @@ def test_parse_knmi_coveragejson_applies_scale() -> None:
 def test_parse_knmi_coveragejson_handles_missing_shape() -> None:
     assert parse_knmi_coveragejson({}, "ff", None) == []
     assert parse_knmi_coveragejson({"ranges": {}}, "ff", None) == []
+
+
+def test_parse_knmi_coveragecollection() -> None:
+    # EDR /locations returns a CoverageCollection; descend into coverages[0].
+    data = {
+        "type": "CoverageCollection",
+        "coverages": [
+            {
+                "domain": {"axes": {"t": {"values": ["2026-08-23T10:00:00Z"]}}},
+                "ranges": {"ff": {"values": [7.1]}},
+            }
+        ],
+    }
+    assert parse_knmi_coveragejson(data, "ff", None) == [
+        {"valid_time": "2026-08-23T10:00:00Z", "value": 7.1}
+    ]
+
+
+def test_nearest_knmi_location_picks_closest_feature() -> None:
+    locs = {
+        "type": "FeatureCollection",
+        "features": [
+            {"id": "0-20000-0-06260", "properties": {"name": "De Bilt"}, "geometry": {"type": "Point", "coordinates": [5.18, 52.10]}},
+            {"id": "0-20000-0-06269", "properties": {"name": "Lelystad"}, "geometry": {"type": "Point", "coordinates": [5.52, 52.458]}},
+        ],
+    }
+    st = nearest_knmi_location(locs, 52.458, 5.52)  # Lelystad
+    assert st is not None
+    assert st["id"] == "0-20000-0-06269"
+    assert st["name"] == "Lelystad"
+
+
+def test_iso_seconds_trims_millis_and_offset() -> None:
+    assert _iso_seconds("2026-08-23T12:00:00.000Z") == "2026-08-23T12:00:00Z"
+    assert _iso_seconds("2026-08-23T12:00:00+00:00") == "2026-08-23T12:00:00Z"
+    assert _iso_seconds("2026-08-23T12:00:00Z") == "2026-08-23T12:00:00Z"
 
 
 def test_parse_rws_waarnemingen_filters_missing_sentinel() -> None:

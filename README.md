@@ -315,12 +315,15 @@ t.o.v. de meting over de overlappende (verleden) kolommen, vooruit doorgetrokken
 hele voorspelling.
 
 **Over de station-API's (verifiëren).** De koppelingen zijn best-effort geïmplementeerd:
-KNMI via de **EDR**-positie-query op `10-minute-in-situ-meteorological-observations`
-(met **dezelfde KNMI Open Data-sleutel** die de integratie al gebruikt), RWS via de
-**sleutelloze** WaterWebservices (`OphalenCatalogus` → dichtstbijzijnde station →
-`OphalenWaarnemingen`, AQUO-parametermodel). De exacte parametercodes/aanroepen kunnen
-per provider afwijken; verifieer ze op je eigen HAOS (netwerk + sleutel). De
-response-parsers zijn met fixtures getest.
+KNMI via de **EDR**-API — `.../collections/10-minute-in-situ-meteorological-observations/locations/{id}`
+(het dichtstbijzijnde station wordt uit `/locations` bepaald; `/position` bestaat hier
+niet), met **dezelfde KNMI Open Data-sleutel** die de integratie al gebruikt en de
+EDR-variabelen `ff`/`gff`/`dd`/`ta`/`td`/`rh`/`rg`/`pp`/`zm`. RWS via de **sleutelloze**
+WaterWebservices (`OphalenCatalogus` → dichtstbijzijnde station → `OphalenWaarnemingen`,
+AQUO-parametermodel). De exacte codes/aanroepen kunnen per provider afwijken; bij een
+mislukking zie je nu een melding in de card **én** een `WARNING` in de HA-log met de
+exacte oorzaak. De response-parsers zijn met fixtures getest. *(Neerslag komt van KNMI
+als intensiteit `rg` in mm/u — geen directe som per interval; hou daar rekening mee.)*
 
 Met `dataset` kies je welke dataset de kaart bij het laden standaard toont;
 de waarde mag de datasetsleutel zijn (bv. `bsh_current_northsea`), de
@@ -946,12 +949,15 @@ row + dashed line**: its own average deviation from the measurement over the
 overlapping (past) columns, carried forward across the whole forecast.
 
 **About the station APIs (verify).** The providers are implemented best-effort: KNMI
-via the **EDR** position query on `10-minute-in-situ-meteorological-observations` (with
-the **same KNMI Open Data key** the integration already uses), RWS via the **keyless**
-WaterWebservices (`OphalenCatalogus` → nearest station → `OphalenWaarnemingen`, AQUO
-parameter model). The exact parameter codes/requests may differ per provider; verify
-them on your own HAOS (network + key). The response parsers are covered by fixture
-tests.
+via the **EDR** API — `.../collections/10-minute-in-situ-meteorological-observations/locations/{id}`
+(the nearest station is resolved from `/locations`; `/position` does not exist here),
+with the **same KNMI Open Data key** the integration already uses and the EDR variables
+`ff`/`gff`/`dd`/`ta`/`td`/`rh`/`rg`/`pp`/`zm`. RWS via the **keyless** WaterWebservices
+(`OphalenCatalogus` → nearest station → `OphalenWaarnemingen`, AQUO parameter model). The
+exact codes/requests may differ per provider; on a failure you now get a message in the
+card **and** a `WARNING` in the HA log with the exact cause. The response parsers are
+covered by fixture tests. *(Precipitation comes from KNMI as intensity `rg` in mm/h — not
+a direct per-interval sum; keep that in mind.)*
 
 With `dataset` you choose which dataset the card shows by default on load; the value
 may be the dataset key (e.g. `bsh_current_northsea`), the dataset name, or the title

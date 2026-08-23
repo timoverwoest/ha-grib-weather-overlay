@@ -3044,8 +3044,17 @@ class GribOverlayCard extends HTMLElement {
     const columns = compareColumns(models, this._detailResolution);
     const colValues = stationColValues(data.series, unit, this._detailResolution, columns, this._config);
     const st = data.station || {};
+    const stName = name || st.name || "meetstation";
+    if (!colValues.length) {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Geen overlap";
+        btn.title = `“${stName}” gaf ${data.series.length} waarneming(en), maar geen overlap met de voorspelkolommen.`;
+      }
+      return;
+    }
     gribSetMeasurementsBulk(this._detailLatlng.lat, this._detailLatlng.lng, param, colValues, {
-      name: name || st.name || "meetstation",
+      name: stName,
       provider: st.provider || data.provider || "",
     });
     this._detailShowMeasure = true;
@@ -4727,16 +4736,20 @@ class GribCompareCard extends HTMLElement {
     const columns = compareColumns(models, this._resolution);
     const colValues = stationColValues(data.series, unit, this._resolution, columns, this._config);
     const st = data.station || {};
-    gribSetMeasurementsBulk(lat, lng, param, colValues, {
-      name: name || st.name || "meetstation",
-      provider: st.provider || data.provider || "",
-    });
+    const stName = name || st.name || "meetstation";
+    if (!colValues.length) {
+      this._els.note.innerHTML = `<div class="grib-cmp-note">Station “${escapeXml(stName)}” gaf ${data.series.length} waarneming(en), maar geen enkele overlapt met de voorspelkolommen (metingen liggen in het verleden, de voorspelling in de toekomst).</div>`;
+      return;
+    }
+    gribSetMeasurementsBulk(lat, lng, param, colValues, { name: stName, provider: st.provider || data.provider || "" });
     this._showMeasure = true;
     this._els.measToggle.checked = true;
     this._els.radctl.classList.remove("hidden");
     this._measure = gribGetMeasurements(lat, lng, param);
     this._renderComparison();
     this._renderStationMarkers();
+    // Set after the re-render (which rewrites the note area).
+    this._els.note.innerHTML = `<div class="grib-cmp-note">${colValues.length} waarde(n) van “${escapeXml(stName)}” geladen als meting.</div>`;
   }
 
   // Earliest model time (ISO) as the observation-window start; obs can't be future.
