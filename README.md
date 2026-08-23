@@ -1,5 +1,7 @@
 # GRIB Weather Overlay voor Home Assistant
 
+> **Taal / Language:** 🇳🇱 Nederlands (hieronder) · 🇬🇧 [English documentation](#english) (onderaan deze pagina)
+
 Toont GRIB-weerdata (wind, neerslag, temperatuur, druk, zicht, bewolking, ...)
 als kleurenlaag over een [OpenSeaMap](https://map.openseamap.org)-kaart in
 Home Assistant. Je kiest een tijdstip via een slider, of een begin/eind/stap
@@ -615,5 +617,622 @@ geregistreerd in `sources/registry.py`. De rest van de integratie
 KNMI-specifieke aannames buiten `sources/knmi.py` zelf.
 
 ## Licentie
+
+[MIT](LICENSE)
+
+---
+
+<a id="english"></a>
+
+# GRIB Weather Overlay for Home Assistant — English
+
+> **Taal / Language:** 🇬🇧 English · 🇳🇱 [Nederlandse documentatie](#grib-weather-overlay-voor-home-assistant) (top of this page)
+
+Shows GRIB weather data (wind, precipitation, temperature, pressure, visibility,
+cloud cover, ...) as a colour layer over an [OpenSeaMap](https://map.openseamap.org)
+map in Home Assistant. Pick a single time with a slider, or a start/end/step to
+play an animation of the forecast.
+
+Data sources (via a `GribSource` interface, so sources can be added without
+changing the map card or the rest of the backend):
+
+- [KNMI Data Platform](https://dataplatform.knmi.nl/) — HARMONIE-AROME
+  (Netherlands and Europe/DINI), GRIB1. Requires a free Open Data key.
+- [DWD Open Data](https://opendata.dwd.de/) — the **EWAM wave model** for the
+  European seas (significant wave height, mean wave direction and period), GRIB2,
+  **no key**.
+- [BSH](https://www.bsh.de/) — **sea current** (surface u/v) for the whole North
+  Sea including the Dutch, Belgian and northern French coast, 15-minute steps,
+  GRIB1, **no key** (open FTP).
+
+## Features
+
+- Configurable parameters: wind (10m), gusts, temperature (2m), dew point (2m),
+  relative humidity (2m), precipitation, mean-sea-level pressure, visibility,
+  cloud cover.
+- **Waves** (DWD EWAM): significant wave height, mean wave direction and wave
+  period as a colour layer over the European seas — with a meteogram and a
+  value-under-the-cursor, just like the other parameters.
+- **Sea current** (BSH): surface current (speed + direction) for the North Sea
+  as a colour layer with particles/arrows — like wind, but for the water. At
+  15-minute resolution, so fine tidal detail.
+- A single-time slider and an animation mode (start, end, step, playback speed).
+- **Windy.com-style animated wind particles** (via the bundled `leaflet-velocity`),
+  alongside the coloured raster overlay. Choose "Wind (particles)" on the map for
+  a wind parameter; the particles flow with the wind direction over a dimmed
+  speed map. There is also a **"Wind (vectors)"** mode with arrows (direction +
+  magnitude); the arrows are **coloured by wind speed** (the same colours as the
+  raster legend) with a white outline so they stay legible over the overlay.
+- **Isobars + pressure centres** as a separate layer: tick **"Isobars"** and you
+  get pressure contour lines every 4 hPa (the round 20 hPa lines thicker) with
+  value labels on top, plus **H**igh (blue) and **L**ow (red) pressure centres
+  with their core pressure. This lays **over any other overlay of the same
+  dataset** (e.g. wind + isobars), as long as that dataset has a pressure
+  parameter. The pressure is taken from that same integration's pressure
+  parameter. *(Fronts/occlusions are drawn by analysts and are not in the open
+  GRIB data; they are deliberately not included yet.)*
+- **Value under the cursor** (for every parameter) is shown live at the bottom
+  left of the map, in the configured units; for wind also the direction.
+  **Click/tap** pins the value in a popup, and **press-and-hold / right-click**
+  opens a dismissable **meteogram** (value-over-time at that point) with major
+  gridlines and minor ticks on both axes. For **wind**, **wind and gusts are
+  drawn together** on the same speed axis — with a gust envelope (a band between
+  wind and gust) — and on the **second y-axis** both the **wind and gust
+  direction** (compass N/E/S/W). Gusts must be enabled as a parameter for this.
+- **Value inspector on every chart.** Move the **mouse over** a chart (or
+  **tap/drag with your finger**) and a vertical guideline appears with a tooltip
+  showing the **time (x)** and the **value(s) (y)** at that point — in the
+  meteogram, in the model comparison and in the compare mode. With multiple
+  lines, each model appears with its own value in the tooltip.
+- **Detailed meteogram (all parameters & sources).** At the bottom of every value
+  and meteogram popup is the link **“Alle parameters & bronnen ▸”** (All
+  parameters & sources). It opens a Windy-style **table meteogram**: one row per
+  parameter, colour-coded value cells, and all rows on the **same time axis**
+  (columns). It shows **all available GRIB data at that point from every
+  configured integration** (KNMI, DWD, BSH …), grouped by source; sources with a
+  different time step simply fill their own columns (the rest stays empty). Cell
+  colours and units follow exactly the **colour scales** configured on the
+  card/integration (including custom `color_scales`) and the **units**
+  (`wind_unit`, `visibility_unit`, `direction_unit`); directions are shown as an
+  **arrow and a number** (compass or 0–360°). **Tap a row label** to temporarily
+  hide that row (so you can view a limited set side by side); hidden rows come
+  back via the chips at the top or **“Alle rijen tonen”** (Show all rows). The
+  default selection is set with the card option
+  [`meteogram_parameters`](#card-settings-lovelace-yaml). With the **“Kolommen”**
+  (Columns) selector at the top (or the card option `meteogram_resolution`) you
+  choose the column time step: **quarter-hour, hour, 3-hour or day**. For
+  quarter/hour/3-hour the **actual value at that time** is shown (not an
+  average); for **day** the **daily average** of all data that day (a
+  vector/compass average for direction). **Precipitation** is the exception: it
+  is **summed** per column — the total over the period *ending* at that column
+  (e.g. the 3-hour column `03` = precipitation of 01+02+03; the `00` column =
+  22+23 of the previous day plus 00), and the daily sum for the day step. While
+  it is being built the popup shows a **loading indicator**; the data is fetched
+  per source in **one request** (the `point_all` endpoint), so opening stays fast.
+- **Model comparison.** A second card (`custom:grib-overlay-compare-card`) and a
+  mode in the meteogram (**Weergave → “vergelijk modellen”**, i.e. View → compare
+  models) show what the **different GRIB sources** predict at one point for **one
+  parameter**: a **line chart** with a line per model (Windy-style) plus a
+  **table** with a row per model (the same quarter/hour/3-hour/day columns,
+  colours and units). In the separate card you pick the point on a **mini-map**
+  (OpenStreetMap + OpenSeaMap) and tick models on/off. The **chosen point is
+  shared** with the regular overlay card and vice versa (click on one, the other
+  adopts it).
+- **Measurement & delta.** In the comparison, enable **“Meting invoeren”** (Enter
+  measurement) to type a **measured value** per column. The measurement appears
+  as a dark line in the chart and as a row in the table, and each model gets a
+  **Δ row** (model − measurement) with a summary: **bias, MAE and RMSE**. That
+  tells you at a glance which model is closest to reality. Entered measurements
+  are **saved per point + parameter** (in `localStorage`, so they persist across
+  reloads and are available in every card view): the point gets an **amber pin**
+  on **every** map (overlay and compare card), and clicking it reopens the point
+  with its saved values — also in the overlay card's meteogram (View → compare
+  models). **“Wis meting”** (Clear measurement) removes the saved measurement of
+  the point in one click (the pin disappears everywhere).
+- **Nearby measurement stations.** Once “Meting invoeren” is on, the **measurement
+  stations within an adjustable radius** (default **10 km**, changed with
+  `measurement_radius_km` or the radius field in the toolbar) around the chosen
+  point appear: as **green dots on the mini-map** and as **buttons** (with
+  distance) below the table. Click a station to move the point there, so you can
+  compare the forecast at the exact station location with the measurement.
+  *(Automatically fetching the measured values themselves — KNMI stations for
+  weather, RWS Waterinfo for water/waves/current — is the next step; see
+  “Fetching measurements automatically” below.)*
+- **Shared click position.** The clicked position is shared between the overlay
+  card and the compare card (also across dashboard pages, for the session). In
+  the overlay card the **value window** opens at that position immediately (and
+  closes the previous one).
+- Map with an OpenStreetMap base layer + OpenSeaMap seamark layer + the GRIB
+  overlay, fully independent of an internet connection for the map JS itself
+  (Leaflet is bundled, no CDN dependency for the code — the OSM/OpenSeaMap map
+  tiles of course still come from the internet).
+- Only the configured parameters and the configured time range are
+  decoded/rendered; older forecast runs are cleaned up automatically
+  (configurable).
+- New forecast runs are fetched immediately via KNMI's MQTT Notification Service
+  (instead of waiting for the next poll), with the regular polling interval as a
+  reliable fallback if the MQTT connection fails for any reason. Your regular
+  Open Data API key works for this; a separate Notification Service key is not
+  required.
+
+## Requirements
+
+- Home Assistant OS or Supervised. All dependencies are pure-Python / universal
+  wheels (`numpy`, `Pillow`, `paho-mqtt`); both GRIB1 (KNMI) and GRIB2 (DWD EWAM,
+  simple packing) are read by a bundled custom decoder, so **no** `eccodes`/`cfgrib`
+  binary library is needed (that one does not have a wheel for every Python
+  version/CPU and previously broke installation).
+- A free API key from the
+  [KNMI Developer Portal](https://developer.dataplatform.knmi.nl/) for the Open
+  Data API.
+
+## Installation
+
+### Via HACS (recommended)
+
+1. HACS → Integrations → menu (⋮) → Custom repositories.
+2. Add the URL of this repository, category "Integration".
+3. Search for "GRIB Weather Overlay" in HACS and install it.
+4. Restart Home Assistant.
+
+### Manual
+
+1. Copy `custom_components/grib_overlay` to `/config/custom_components/`.
+2. Restart Home Assistant.
+
+## Configuration
+
+1. Settings → Devices & services → Add integration → "GRIB Weather Overlay".
+2. Choose the source. For **KNMI Data Platform** enter your Open Data API key (it
+   is also used for the push notifications/MQTT; the optional **Notification
+   Service API key** field can be left empty). For **DWD Open Data (waves)** leave
+   the key fields empty — DWD needs no key.
+3. Choose a dataset. KNMI: HARMONIE-AROME Cy43 **Netherlands** (default) or
+   **Europe (DINI)**. DWD: **EWAM** (European waves). If you want both weather and
+   waves, add two integration instances (one per source); in the card you switch
+   between instances.
+4. Choose which parameters should be kept up to date.
+5. Optional: via the integration options, adjust the forecast horizon (default
+   24 hours, max 60 hours — that is as far as the KNMI HARMONIE forecast reaches),
+   the number of forecast runs to keep (default 2), the polling interval (default
+   30 minutes) and **custom colour scales per parameter** (see below).
+
+### Custom colour scales
+
+In the integration options you can define, per parameter, between which colours
+the overlay interpolates — so you can, for example, make visible which wind speed
+you still find acceptable and which not. This is **baked into the map render (PNG)**
+at full resolution, so the legend and the arrows follow the scale automatically.
+
+The **"Custom colour scales"** field takes one parameter per line:
+
+```
+wind_10m: 0:#2c7fb8, 8:#7fcdbb, 12:#ffffb2, 16:#fd8d3c, 24:#bd0026
+temperature_2m: -10:#313695, 0:#ffffbf, 35:#a50026
+```
+
+- The **values are in the parameter's own unit** (m/s, °C, hPa, mm, m).
+- Below the lowest and above the highest stop the colour is held.
+- A parameter without a line keeps the built-in colours.
+- A change **re-renders the current run** (in the background) so the new colours
+  come through immediately — this is meant as a setting you rarely change.
+
+## Adding cards to a dashboard
+
+The integration provides **two** Lovelace cards:
+
+- **`custom:grib-overlay-card`** — the map with the GRIB overlay, time
+  slider/animation and the detailed meteogram (all parameters of every source at
+  a point).
+- **`custom:grib-overlay-compare-card`** — a **model comparison**: pick one
+  parameter and see, at a point (click on the mini-map), what the different GRIB
+  sources predict, as a **line chart + table** per model. The same comparison is
+  also in the detailed meteogram under **Weergave → “vergelijk modellen”** (View →
+  compare models).
+
+### Overlay card (`grib-overlay-card`)
+
+Add a card of type `custom:grib-overlay-card`, for example via a dashboard's YAML
+editor:
+
+```yaml
+type: custom:grib-overlay-card
+# optional: fix a specific dataset/parameter on load
+# dataset: bsh_current_northsea   # dataset key, name, or the title from the picker
+# entry_id: <config entry id>     # exact config entry (wins over dataset)
+# parameter: wind_10m
+# render_mode: vectors  # initial view: raster (default), particles, vectors or wavevectors
+# arrow_halo_color: "#ffffff"  # colour of the outline (halo) around the wind arrows (default white)
+# particle view (contrast against the layer behind it):
+# particle_color: "#0b1f3a"    # one fixed colour instead of velocity colours (high contrast, e.g. on mobile)
+# particle_width: 2            # line width of the particles (default 2)
+# particle_base_opacity: 0.35  # how strongly the raster underneath is dimmed (0-1; default 0.35)
+# isobar layer (only meaningful if the dataset has pressure):
+# show_isobars: true           # open with the isobars + pressure-centres layer on
+# isobar_interval: 2           # hPa between isobars (default 4; smaller = more lines)
+# isobar_levels: [1000, 1005, 1010]  # or: exactly these isobars (overrides isobar_interval)
+# isobar_smoothing: 60         # smoothing of the pressure field in km (default 60; 0 = off; 100-150 = more synoptic)
+# show_pressure_centres: false # hide the H/L pressure centres (default on)
+# pressure_prominence: 4       # hPa an H/L must "enclose" to be shown (default = isobar_interval)
+# max_pressure_centres: 3      # show at most this many H and this many L (default 4)
+# center: [52.1, 5.3]
+# zoom: 7
+# size in a Sections dashboard:
+# columns: full   # width: "full" (default) or a number of columns
+# rows: 8         # height in grid rows
+# units (nautical):
+# wind_unit: kn        # wind + gusts: m/s (default), kn, km/h or mph
+# visibility_unit: NM  # visibility: km (default) or NM (nautical miles)
+# direction_unit: deg  # wind direction: compass (N/E/S/W, default) or deg (0-360°)
+# detailed meteogram — rows visible by default (the rest starts hidden; empty = all):
+# meteogram_parameters: [wind_10m, wind_gust_10m, temperature_2m, precipitation]
+# meteogram_resolution: uur   # column time step: kwartier, uur, 3uur or dag (day = average; precipitation = sum)
+# measurement_radius_km: 10   # meteogram → compare models → Measurement: radius for nearby stations
+```
+
+### Model-comparison card (`grib-overlay-compare-card`)
+
+Compare, at one point, what the different sources predict. Click on the mini-map
+to move the point; at the top choose the parameter and the column time step.
+
+```yaml
+type: custom:grib-overlay-compare-card
+parameter: wind_10m          # initial parameter (union of all sources)
+center: [52.98, 4.12]        # initial position of the mini-map (e.g. a harbour)
+zoom: 9
+# meteogram_resolution: 3uur # table column time step: kwartier, uur, 3uur or dag
+# entries: [knmi, dwd]       # optional: compare only these sources
+#                            #   (match on source, dataset key/name, title or entry-id)
+# measurement_radius_km: 10  # radius for "nearby measurement stations" (default 10 km)
+# units work just like on the overlay card:
+# wind_unit: kn
+# direction_unit: deg
+```
+
+The comparison shows **all sources that have the chosen parameter** as coloured
+lines + a table (row per model). Models that do not cover the point (e.g. BSH
+inland) are listed at the bottom as “niet getoond” (not shown). Tick models on/off
+with the checkboxes below the map. The **model names** are shown **compactly** (the
+source abbreviation, e.g. `KNMI` / `DWD` / `BSH`) — in the table, the chart legend
+and the checkboxes, and as the source badge in the **detailed meteogram** — so that
+on a smartphone the data columns and the measurement inputs keep the room; the
+**full name** is available as a tooltip. If you have **several models from the same
+source** (e.g. two KNMI datasets), each gets a distinguishing suffix — a region
+(`KNMI NL` / `KNMI EU`) or model name — so the difference stays clear. To decide it
+yourself, set a **short alias** per source in the integration options (Configure →
+*Short alias*); that is then used as the compact label everywhere.
+
+**Measurement & delta.** Tick **“Meting invoeren”** (Enter measurement) to type a
+measured value per column (in the same unit as the chart). You then get a **Δ row**
+(model − measurement) per model with a **bias / MAE / RMSE** summary, and the
+measurement appears as a dark line in the chart. The same measurement/delta is also
+in the meteogram under **Weergave → “vergelijk modellen” → Meting** (View → compare
+models → Measurement). **“Wis meting”** (Clear measurement) clears the point's saved
+measurement in one click.
+
+**Nearby measurement stations.** With “Meting invoeren” on, the measurement stations
+within `measurement_radius_km` (default 10 km; also adjustable with the radius field
+in the toolbar) appear as **green dots on the mini-map** and as **buttons with
+distance** below the table. Click a station to move the point to that location.
+
+**Fetching measurements automatically (roadmap).** Manual entry exists now;
+automatic fetching is the next step. Relevant, suitable sources for the Netherlands:
+
+- **KNMI station observations** (wind, gusts, temperature, precipitation, pressure,
+  …) to validate the KNMI HARMONIE forecasts. KNMI Data Platform, dataset
+  `Actuele10mindataKNMIstations` (succeeded by
+  `10-minute-in-situ-meteorological-observations` + an EDR position API). Works with
+  the **same KNMI Open Data key** the integration already uses; pick the nearest
+  station to the point.
+- **RWS Waterinfo — WaterWebservices** (water level, wave height/direction, current,
+  water temperature) to validate the DWD waves and BSH current. **Keyless** JSON
+  (`OphalenCatalogus` / `OphalenWaarnemingen` / `OphalenLaatsteWaarnemingen`),
+  ~450 stations, AQUO parameter model.
+
+The manual “Meting” row is exactly the interface such an automatic feed would later
+populate.
+
+With `dataset` you choose which dataset the card shows by default on load; the value
+may be the dataset key (e.g. `bsh_current_northsea`), the dataset name, or the title
+as it appears in the card's picker (case-insensitive). To fix an exact config
+instance instead, use `entry_id` (which wins over `dataset`). Without
+`dataset`/`entry_id`/`parameter` the card automatically picks the first configured
+dataset and the first selected parameter type, and you can switch within the card.
+
+**`render_mode` — initial view.** Determines which view the card opens with (you can
+always switch in the card via the view picker). Choices:
+
+- `raster` — coloured area fill of the parameter (**default**).
+- `particles` — windy.com-like animated particles over a dimmed raster; **wind
+  only**. Hard to see against the layer behind it (especially on mobile)? Increase
+  the contrast with `particle_color` (one fixed colour instead of the velocity
+  colours — e.g. `#0b1f3a` dark or `#ffffff` white), `particle_width` (thicker
+  lines) and/or `particle_base_opacity` (dim the raster further).
+- `vectors` — arrows (direction + magnitude), coloured by wind speed with an
+  outline; **wind only**.
+- `wavevectors` — arrows for the wave direction; **waves only**.
+
+If the chosen mode does not match the parameter (e.g. `vectors` while there is no
+wind), the card automatically falls back to `raster`. The outline colour of the wind
+arrows is set with `arrow_halo_color` (default white).
+
+**Isobar layer.** `show_isobars: true` opens with the isobars + H/L pressure centres
+as a **separate layer** on top of the chosen view (so not a `render_mode`; in the
+card this is the *Isobars* checkbox). This layer appears only if the dataset has a
+pressure parameter. Control which isobars are drawn with `isobar_interval` (hPa
+between the lines, default 4) or `isobar_levels` (a list of exact hPa values). With
+`isobar_smoothing` (km, default 60) you smooth the pressure field to synoptic scale
+— that gives cleaner isobars and more reliable H/L; the same smoothed field feeds
+both, so they stay consistent (0 = no smoothing, 100–150 = more synoptic).
+
+The **H/L pressure centres** are determined as on a real weather map: a centre is
+shown only if it is enclosed by at least one closed isobar (adjustable with
+`pressure_prominence`, default equal to `isobar_interval`), plus a minimum mutual
+distance and a maximum. That removes the many small "noise" centres. Limit them
+further with `max_pressure_centres` (default 4 per type) or turn them off with
+`show_pressure_centres: false`.
+
+### Size / layout
+
+In a **Sections dashboard** the card fills the full width by default and the map
+height adapts to the assigned cell. You set the height/width in a Sections dashboard
+the HA way:
+
+- **Drag** the handles on the edge of the card in the dashboard editor (the most
+  reliable way), or
+- **In YAML with HA's own `grid_options`**:
+  ```yaml
+  type: custom:grib-overlay-card
+  grid_options:
+    rows: 10       # height in grid rows
+    columns: full  # or a number of columns
+  ```
+  Note: the card's own `rows:`/`columns:` only apply as an *initial size* and are
+  overridden by HA once a `grid_options` is saved (which happens as soon as you
+  place or drag the card). So in a Sections dashboard use `grid_options` or the drag
+  handles.
+
+In a regular (**masonry**) dashboard the card's own `rows:` determines the map
+height.
+
+### Units
+
+For nautical use the card can optionally show different units. This is purely a
+display choice in the card (the underlying data does not change):
+
+- `wind_unit`: unit for wind and gusts — `m/s` (default), `kn` (knots / nautical
+  miles per hour), `km/h` or `mph`.
+- `visibility_unit`: unit for visibility — `km` (default) or `NM` (nautical miles).
+- `direction_unit`: display of the wind direction (in the readout under the cursor
+  and on the second axis of the wind meteogram) — `compass` (`N/E/S/W`, default) or
+  `deg` (numeric `0–360°`).
+
+The legend and the label in the parameter picker are then converted automatically.
+
+## All settings — reference
+
+Complete, exact list of every key and value you can use in the integration
+(config-flow/options) and in the card YAML. The keys are case-sensitive; use them
+exactly as below.
+
+### Sources (`source`)
+
+| `source` | Name | API key |
+| --- | --- | --- |
+| `knmi` | KNMI Data Platform | yes (Open Data key) |
+| `dwd` | DWD Open Data (waves) | no |
+| `bsh` | BSH (North Sea current) | no |
+
+### Datasets (`dataset`)
+
+| Source | `dataset` | Name | Grid | Horizon (max) | Step |
+| --- | --- | --- | --- | --- | --- |
+| `knmi` | `harmonie_arome_cy43_p1` | HARMONIE-AROME Cy43 — Netherlands | regular lat/lon | 60 h | 1 h |
+| `knmi` | `harmonie_arome_cy43_p3` | HARMONIE-AROME Cy43 — Europe (DINI) | rotated lat/lon | 60 h | 1 h |
+| `dwd` | `ewam` | DWD EWAM — European waves | regular lat/lon | 78 h | 1 h |
+| `bsh` | `bsh_current_northsea` | BSH — North Sea current | regular lat/lon | 48 h | 15 min |
+
+### Parameters (`parameter` / `parameters`)
+
+**KNMI** (`harmonie_arome_cy43_p1` and `harmonie_arome_cy43_p3`, identical):
+
+| `parameter` | Name | Unit | Type |
+| --- | --- | --- | --- |
+| `wind_10m` | Wind (10m) | m/s | vector |
+| `wind_gust_10m` | Gusts (10m) | m/s | vector |
+| `temperature_2m` | Temperature (2m) | °C | scalar |
+| `dewpoint_2m` | Dew point (2m) | °C | scalar |
+| `humidity_2m` | Relative humidity (2m) | % | scalar |
+| `precipitation` | Precipitation | mm | scalar |
+| `pressure_msl` | Pressure (mean sea level) | hPa | scalar |
+| `visibility` | Visibility | km | scalar |
+| `cloud_cover` | Cloud cover | % | scalar |
+
+**DWD** (`ewam`):
+
+| `parameter` | Name | Unit | Type |
+| --- | --- | --- | --- |
+| `wave_height` | Wave height (significant) | m | scalar |
+| `wave_period` | Wave period (mean) | s | scalar |
+| `wave_direction` | Wave direction (mean) | ° | scalar |
+
+**BSH** (`bsh_current_northsea`):
+
+| `parameter` | Name | Unit | Type |
+| --- | --- | --- | --- |
+| `current` | Sea current (surface) | m/s | vector |
+
+The **type** determines which views are available: `vector` parameters
+(`wind_10m`, `wind_gust_10m`, `current`) support `particles`/`vectors`; a direction
+parameter (unit °, i.e. `wave_direction`) enables `wavevectors`; and `pressure_msl`
+(unit hPa) enables the isobar layer.
+
+### Integration: setup fields (config flow)
+
+| Key | Values |
+| --- | --- |
+| `source` | `knmi`, `dwd` or `bsh` |
+| `api_key` | KNMI Open Data key (leave empty for DWD/BSH) |
+| `notification_api_key` | optional; KNMI push key (empty = polling only) |
+| `dataset` | a dataset key from the table above |
+| `parameters` | list of parameter keys you want to keep up to date |
+
+### Integration: options (Configure)
+
+| Key | Type | Default | Range / form |
+| --- | --- | --- | --- |
+| `forecast_horizon_hours` | number (hours) | `24` | 1–60 |
+| `retain_runs` | integer | `2` | 1–10 |
+| `update_interval_minutes` | integer (min) | `30` | 5–180 |
+| `notification_api_key` | text | (empty) | KNMI push key |
+| `alias` | text | (empty) | **short name** for this source, shown as the compact label in the comparison and meteogram (e.g. `KNMI NL`). Empty = derived automatically from the source (same-source entries are disambiguated automatically) |
+| `color_scales` | multi-line text | (empty) | per line: `parameter: value:#hex, value:#hex, …` (values in the parameter's **own unit**) |
+
+### Card settings (Lovelace YAML)
+
+| Key | Type | Default | Values / meaning |
+| --- | --- | --- | --- |
+| `dataset` | text | (first) | dataset key, name or title — which dataset on load |
+| `entry_id` | text | (first) | exact config entry id (wins over `dataset`) |
+| `parameter` | text | (first) | parameter key — which parameter on load |
+| `render_mode` | text | `raster` | `raster`, `particles`, `vectors`, `wavevectors` (falls back to `raster` if the parameter does not support it) |
+| `arrow_halo_color` | hex colour | `#ffffff` | outline (halo) around the wind arrows |
+| `particle_color` | hex colour | (velocity colours) | one fixed particle colour for high contrast |
+| `particle_width` | number | `2` | line width of the particles |
+| `particle_base_opacity` | number `0`–`1` | `0.35` | dimming of the raster under the particles |
+| `show_isobars` | bool | `false` | isobars + H/L pressure centres as a separate layer |
+| `isobar_interval` | number (hPa) | `4` | distance between isobars |
+| `isobar_levels` | list of numbers (hPa) | — | exact isobars (overrides `isobar_interval`) |
+| `isobar_smoothing` | number (km) | `60` | smoothing of the pressure field (`0` = off) |
+| `show_pressure_centres` | bool | `true` | show H/L pressure centres |
+| `pressure_prominence` | number (hPa) | = `isobar_interval` | enclosure threshold for an H/L |
+| `max_pressure_centres` | integer | `4` | max. number of H and L |
+| `center` | `[lat, lon]` | `[52.1, 5.3]` | initial position of the map |
+| `zoom` | number | `7` | initial zoom level |
+| `columns` | `full` or number | `full` | width in a Sections dashboard |
+| `rows` | number | — | height in grid rows (masonry) / initial size |
+| `grid_options` | object | — | HA-native `{rows, columns}` (wins over `rows`/`columns`) |
+| `wind_unit` | text | `m/s` | `m/s`, `kn`, `km/h`, `mph` |
+| `visibility_unit` | text | `km` | `km`, `NM` |
+| `direction_unit` | text | `compass` | `compass`, `deg` |
+| `meteogram_parameters` | list or text | — | parameter keys that are **visible by default** in the detailed meteogram; the rest starts hidden (enable via the chips). Empty = show all rows. Match on parameter key, so it applies to all sources |
+| `meteogram_resolution` | text | `uur` | time step of the meteogram columns: `kwartier`, `uur`, `3uur` or `dag`. For `dag` the daily average (precipitation: daily sum); finer = value at that time. Also switchable via “Kolommen” in the window itself |
+
+The old spelling `renderMode` (camelCase) also keeps working alongside
+`render_mode`. `meteogram_parameters` may be either a YAML list or a
+comma/space-separated string; e.g. `[wind_10m, wind_gust_10m, temperature_2m]` or
+`"wind_10m, wind_gust_10m, temperature_2m"`. The hidden/visible choice you make
+afterwards in the meteogram itself (tapping a row label, chips, “Alle rijen tonen”)
+applies temporarily, for that opened window.
+
+### Model-comparison card (`grib-overlay-compare-card`)
+
+| Key | Type | Default | Values / meaning |
+| --- | --- | --- | --- |
+| `parameter` | text | (first) | initial parameter being compared (union of all sources) |
+| `center` | `[lat, lon]` | `[52.1, 5.3]` | initial position of the mini-map |
+| `zoom` | number | `7` | initial zoom level of the mini-map |
+| `entries` (or `models`) | list or text | — | compare only these sources; match on `source`, dataset key/name, title or entry-id. Empty = all sources that have the parameter |
+| `meteogram_resolution` | text | `uur` | column time step of the table: `kwartier`, `uur`, `3uur`, `dag` |
+| `wind_unit`, `visibility_unit`, `direction_unit` | text | see below | same unit options as the overlay card |
+
+### Units (valid values + aliases)
+
+- **`wind_unit`** — applies to all m/s parameters (wind, gusts, sea current): `m/s`
+  (default), `kn` (knots; also `kt`, `kts`, `knots`, `knopen`, `knoop`), `km/h`
+  (also `km/u`, `kmh`, `kph`), `mph`.
+- **`visibility_unit`** — applies to `visibility`: `km` (default), `NM` (nautical
+  miles; also `nm`, `zeemijl`, `zeemijlen`).
+- **`direction_unit`** — wind direction in the readout and on the meteogram axis:
+  `compass` (`N/E/S/W`, default), `deg` (`0–360°`; also `degrees`, `graden`, `360`,
+  `0-360`, `°`).
+
+Units are purely a display choice in the card (the underlying data and the colour
+scale do not change; only the legend numbers and labels).
+
+## Backups
+
+The integration caches its working files under `/config/grib_overlay/…`, and Home
+Assistant includes all of `/config` in a backup. Because the integration
+continuously downloads new GRIB files and discards old ones, a file can disappear
+right between "backup takes inventory" and "backup writes" — which previously failed
+the **whole** backup with `FileNotFoundError`. That is now fixed:
+
+- **Pause during the backup.** Via HA's backup platform (`async_pre_backup` /
+  `async_post_backup`) the integration pauses processing and cleaning up runs while
+  a backup runs; an in-progress processing step is finished cleanly before
+  archiving starts. The next poll after the backup still picks up a new run. This
+  uses the same mechanism as the recorder and requires HA's backup system of
+  **2025.1+** (both core and HAOS backups).
+- **Raw downloads outside the backup.** Per-file sources (BSH, DWD) download their
+  raw GRIB files to `/tmp` (outside `/config`), so those transient files never end
+  up in a backup anyway. The large KNMI tar (~850MB) stays on disk under `/config`
+  — in RAM (`/tmp` is often tmpfs) it would be too large — and is protected by the
+  pause above.
+
+## Known limitations
+
+- One HARMONIE forecast run from KNMI is a tar archive of ~850MB (all lead times
+  together). There is no API to download individual lead times, so a **new** run
+  costs that full download (a few minutes); only the lead times within the
+  configured forecast horizon are decoded and kept as PNG, the rest is deleted
+  again immediately. Do not set the horizon higher than needed. On a **restart**
+  the already-processed run is reused from disk (no new download), and any download
+  of a newer run happens in the background — the integration is available
+  immediately after start with the already-cached images.
+- Supported datasets: `harmonie_arome_cy43_p1` (Netherlands, regular lat-lon) and
+  `harmonie_arome_cy43_p3` (Europe/DINI domain, deterministic). The latter is on a
+  **rotated lat-lon grid** and is projected to a regular geographic grid during
+  decoding (including rotating the wind u/v components to true north/east). The
+  Europe domain is larger, so download and processing take more time/memory than
+  the Netherlands — do not set the forecast horizon higher than needed.
+- The **ensemble** variant `harmonie_arome_cy43_p4a` (EPS) is not supported yet;
+  that requires a choice/aggregation over the ensemble members.
+- From **DWD Open Data** only the **EWAM wave model** is supported (for now). EWAM
+  uses simple GRIB2 packing and is therefore readable without a binary library;
+  other DWD models (e.g. ICON-EU) often use CCSDS/AEC or JPEG2000 compression,
+  which would require such a library.
+- **BSH sea current** is 15-minute data: one BSH file contains a whole day of time
+  steps (96 per 24 h). The integration splits that into individual time steps, but
+  note that a longer forecast horizon yields many frames (24 h = 96 frames). Only
+  the BSH North Sea area is supported (which covers the NL/BE/FR coast); the finer
+  sub-areas and the Baltic are not yet.
+
+## Development & testing
+
+```bash
+python3 -m pip install -r requirements-dev.txt  # numpy, Pillow, paho-mqtt, homeassistant, pytest-homeassistant-custom-component
+python3 -m pytest tests/
+```
+
+The following standalone dev scripts work without Home Assistant:
+
+- `dev/verify_knmi_source.py` — checks the KNMI source implementation against the
+  real Open Data API (dataset catalogue, file listing, download URL).
+- `dev/render_preview.py <grib-file>` — decodes and renders all configured
+  parameters from one GRIB lead-time file to PNGs in `dev/output/`, handy to
+  visually check colormaps/reprojection.
+- `dev/mock_server.py` + `dev/dev.html` — runs the map card in a real browser
+  against a mocked API (reuses the PNGs from `dev/render_preview.py`), without
+  needing a Home Assistant instance.
+- `dev/verify_knmi_mqtt.py <api-key>` — checks the connection to KNMI's MQTT
+  Notification Service and shows incoming "new file" messages. Note: this needs a
+  **self-registered** API key; the public anonymous demo key (which the REST API
+  does accept) is rejected for MQTT.
+
+`tests/test_coordinator.py`, `tests/test_http.py` and `tests/test_init.py` are
+opt-in: set `GRIB_OVERLAY_SAMPLE_GRIB` to the path of a real decoded GRIB
+lead-time file (see `dev/render_preview.py`'s docstring for how to get one) to run
+them; otherwise they are skipped.
+
+## Architecture / adding new sources
+
+Each data source implements the `GribSource` interface in
+`custom_components/grib_overlay/sources/base.py` (dataset catalogue, file listing,
+download) and is registered in `sources/registry.py`. The rest of the integration
+(coordinator, decode/render pipeline, HTTP API, map card) has no KNMI-specific
+assumptions outside `sources/knmi.py` itself.
+
+## License
 
 [MIT](LICENSE)
