@@ -95,7 +95,8 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 - **Meting & delta.** Zet in de vergelijking **“Meting invoeren”** aan om per
   kolom een **gemeten waarde** in te typen. De meting verschijnt als donkere lijn
   in de grafiek en als rij in de tabel, en per model komt er een **Δ-rij**
-  (model − meting) bij met een samenvatting: **bias, MAE en RMSE**. Zo zie je
+  (**meting − model**; `+` = meting hoger dan de bron) bij met een samenvatting:
+  **bias, MAE en RMSE**. Zo zie je
   direct welk model het dichtst bij de werkelijkheid zit. Ingevoerde metingen
   worden **bewaard per punt + parameter** (in `localStorage`, dus ze blijven staan
   na herladen en zijn in elke card-weergave beschikbaar): het punt krijgt een
@@ -114,14 +115,15 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   de echte KNMI/RWS-API's is best-effort en moet je op je eigen HAOS met je
   KNMI-sleutel verifiëren; zie “Metingen automatisch ophalen”.)*
 - **Absolute én relatieve delta.** De Δ-rijen tonen per kolom zowel de **absolute**
-  afwijking (model − meting) als de **relatieve** (%). De samenvatting geeft bias
-  (abs + %), MAE en RMSE per model.
+  afwijking (**meting − model**, `+` = meting hoger dan de bron) als de **relatieve**
+  (%, t.o.v. de bronwaarde). De samenvatting geeft bias (abs + %), MAE en RMSE per model.
 - **Gecorreleerde (gecorrigeerde) voorspelling.** Kies bij **“Correctie”** *absoluut*
   (verschuiven) of *relatief* (schalen) en vink aan **op welke bronnen** je het
   toepast. Elke aangevinkte bron krijgt dan een **gecorrigeerde lijn/rij**: zijn
   eigen gemiddelde afwijking t.o.v. de meting over de overlappende (verleden)
   kolommen, vooruit doorgetrokken op de hele voorspelling — zodat je een op de
-  meting bijgestelde voorspelling ziet (stippellijn in de grafiek).
+  meting bijgestelde voorspelling ziet (stippellijn in de grafiek). Was de meting
+  gemiddeld **hoger** dan de bron, dan gaat de correctie **omhoog** (en omgekeerd).
 - **Gedeelde klikpositie.** De aangeklikte positie wordt gedeeld tussen de
   overlay-card en de vergelijk-card (ook tussen dashboardpagina's, voor de sessie).
   In de overlay-card opent op die positie meteen het **waarde-venster** (en sluit
@@ -745,8 +747,9 @@ changing the map card or the rest of the backend):
 - **Measurement & delta.** In the comparison, enable **“Meting invoeren”** (Enter
   measurement) to type a **measured value** per column. The measurement appears
   as a dark line in the chart and as a row in the table, and each model gets a
-  **Δ row** with the **absolute** (model − measurement) and the **relative** (%)
-  deviation, plus a summary: **bias (abs + %), MAE and RMSE**. That tells you at a
+  **Δ row** with the **absolute** (**measurement − model**; `+` = measurement higher
+  than the source) and the **relative** (%) deviation, plus a summary: **bias (abs +
+  %), MAE and RMSE**. That tells you at a
   glance which model is closest to reality. Entered measurements are **saved per
   point + parameter** (in `localStorage`, so they persist across reloads and are
   available in every card view): the point gets an **amber pin** on **every** map
@@ -935,8 +938,8 @@ yourself, set a **short alias** per source in the integration options (Configure
 
 **Measurement & delta.** Tick **“Meting invoeren”** (Enter measurement) to type a
 measured value per column (in the same unit as the chart). You then get a **Δ row**
-per model with the **absolute** (model − measurement) and the **relative** (%)
-deviation, plus a **bias (abs + %) / MAE / RMSE** summary, and the measurement appears
+per model with the **absolute** (**measurement − model**; `+` = measurement higher)
+and the **relative** (%) deviation, plus a **bias (abs + %) / MAE / RMSE** summary, and the measurement appears
 as a dark line in the chart. The same measurement/delta is also in the meteogram under
 **Weergave → “vergelijk modellen” → Meting** (View → compare models → Measurement).
 **“Wis meting”** (Clear measurement) clears the point's saved measurement in one click.
@@ -953,7 +956,9 @@ measurement then comes from the nearby station).
 **Corrected forecast.** Under **“Correctie”** choose *absolute* (shift) or *relative*
 (scale) and tick the **sources** to apply it to. Each ticked source gets a **corrected
 row + dashed line**: its own average deviation from the measurement over the
-overlapping (past) columns, carried forward across the whole forecast.
+overlapping (past) columns, carried forward across the whole forecast. If the
+measurement was on average **higher** than the source, the correction moves **up**
+(and vice versa).
 
 **About the station APIs (verify).** The providers are implemented best-effort: KNMI
 via the **EDR** API — `.../collections/10-minute-in-situ-meteorological-observations/locations/{id}`

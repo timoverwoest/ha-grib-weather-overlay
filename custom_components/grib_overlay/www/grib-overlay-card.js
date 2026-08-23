@@ -3892,11 +3892,12 @@ function compareMeasureRow(columns, cls, measureMap, unitLabel, station) {
   return `<tr class="measrow">${cells}</tr>`;
 }
 
-// Delta block: per model a row of (model − meting) per column (tinted by sign) and
+// Delta block: per model a row of (meting − model) per column (tinted by sign) and
 // a summary (bias / MAE / RMSE / n) over the columns that have both a model value
-// and a measurement. Values are in display units.
-// Per-model per-column delta (model − meting, in display units) plus a shared
-// colour scale. `perModel[i].deltas[j]` is null where either side is missing.
+// and a measurement. Values are in display units. The sign convention is
+// **measurement − forecast**: positive when the measurement is HIGHER than the
+// source (so a positive correction also raises the forecast). The relative delta
+// is that difference as a percentage of the source value.
 function computeCompareDeltas(models, columns, measureMap, config, res) {
   let scale = 1e-6;
   const perModel = models.map((m) => {
@@ -3913,14 +3914,14 @@ function computeCompareDeltas(models, columns, measureMap, config, res) {
         rels.push(null);
         return null;
       }
-      const d = b.value * factor - Number(meas);
+      const md = b.value * factor; // source (forecast) value in display units
+      const d = Number(meas) - md; // measurement − source
       if (!Number.isFinite(d)) {
         rels.push(null);
         return null;
       }
       scale = Math.max(scale, Math.abs(d));
-      const mv = Number(meas);
-      rels.push(!isDir && mv !== 0 ? (d / mv) * 100 : null);
+      rels.push(!isDir && md !== 0 ? (d / md) * 100 : null);
       return d;
     });
     return { m, deltas, rels };
@@ -3947,8 +3948,10 @@ function fmtRelDelta(r) {
 
 // Per-source forecast correction ("gecorreleerde voorspelling"): each selected
 // source's own average error vs the measurement over the overlapping (past) columns,
-// applied forward. Absolute = shift by mean(model − meting); relative = scale by
-// mean(meting / model). Returns one entry per correctable source in `corrSet`.
+// applied forward. `bias = mean(meting − model)` so it is positive when the
+// measurement is higher; absolute = shift by +bias (raises the forecast when the
+// measurement is higher); relative = scale by mean(meting / model). Returns one
+// entry per correctable source in `corrSet`.
 function computeCorrections(models, columns, measureMap, config, res, mode, corrSet) {
   if (!mode || mode === "none" || !measureMap) return [];
   const out = [];
@@ -3970,7 +3973,7 @@ function computeCorrections(models, columns, measureMap, config, res, mode, corr
       const md = b.value * factor;
       const ms = Number(meas);
       if (!Number.isFinite(md) || !Number.isFinite(ms)) continue;
-      sumDiff += md - ms;
+      sumDiff += ms - md; // measurement − model (positive when measurement higher)
       n++;
       if (md !== 0) {
         sumRatio += ms / md;
@@ -3996,10 +3999,11 @@ function computeCorrections(models, columns, measureMap, config, res, mode, corr
   return out;
 }
 
-// Apply a correction to a display-unit value.
+// Apply a correction to a display-unit value: +bias (raises when the measurement
+// was higher on average) for absolute, ×ratio for relative.
 function applyCorrection(dispValue, corr) {
   if (dispValue == null || !Number.isFinite(dispValue)) return null;
-  return corr.mode === "rel" ? dispValue * corr.ratio : dispValue - corr.bias;
+  return corr.mode === "rel" ? dispValue * corr.ratio : dispValue + corr.bias;
 }
 
 // The sorted column epochs (bucket starts) for a set of models at a resolution.
@@ -4029,7 +4033,7 @@ function stationColValues(series, unit, res, columns, config) {
 // Per-model bias / MAE / RMSE summary lines shown below the table.
 function compareSummaryHtml(models, columns, measureMap, config, res) {
   if (!measureMap || !measurePtsFromMap(measureMap).length) {
-    return `<div class="grib-cmp-note">Vul een meetwaarde in om de afwijking (model − meting) en bias/MAE/RMSE te zien.</div>`;
+    return `<div class="grib-cmp-note">Vul een meetwaarde in om de afwijking (meting − model) en bias/MAE/RMSE te zien.</div>`;
   }
   const { perModel } = computeCompareDeltas(models, columns, measureMap, config, res);
   return perModel
@@ -4113,7 +4117,7 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
     // Δ rows: absolute delta (main) + relative delta (% below), both per column.
     const { perModel, scale } = computeCompareDeltas(active, columns, measureMap, config, res);
     perModel.forEach(({ m, deltas, rels }, mi) => {
-      let cells = `<td class="rowlabel" title="${escapeXml(m.name)}"><span class="dot" style="background:${m.color}"></span>Δ ${escapeXml(m.short || m.name)}<span class="ru">abs · %</span></td>`;
+      let cells = `<td class="rowlabel" title="${escapeXml(m.name)} — Δ = meting − model (+ = meting hoger)"><span class="dot" style="background:${m.color}"></span>Δ ${escapeXml(m.short || m.name)}<span class="ru">mtg−model · %</span></td>`;
       deltas.forEach((d, ci) => {
         const style = d == null ? "" : ` style="background:${deltaColor(d, scale)}"`;
         const inner = d == null ? "–" : `<span class="da">${fmtDelta(d)}</span><span class="dr">${fmtRelDelta(rels[ci])}</span>`;
@@ -4127,7 +4131,7 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
     corrections.forEach((corr, si) => {
       const src = active.find((m) => m.entryId === corr.entryId);
       const byBucket = aggregateSeries(src.series, res, src.unit === "mm", columns);
-      const modeLbl = corr.mode === "rel" ? `×${corr.ratio.toFixed(2)}` : `${fmtDelta(-corr.bias)}`;
+      const modeLbl = corr.mode === "rel" ? `×${corr.ratio.toFixed(2)}` : `${fmtDelta(corr.bias)}`;
       let cells = `<td class="rowlabel" title="${escapeXml(corr.name)} — gecorrigeerd (${corr.mode === "rel" ? "relatief" : "absoluut"}, n=${corr.n})"><span class="dot" style="background:${corr.color}"></span>${escapeXml(corr.short)} ✓<span class="ru">corr ${modeLbl}</span></td>`;
       columns.forEach((key, ci) => {
         const b = byBucket.get(key);
