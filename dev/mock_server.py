@@ -221,6 +221,46 @@ def _point_payload(entry: dict, parameter_key: str, lat: float) -> dict:
     return payload
 
 
+_WATER_PARAMS = ("wave_height", "wave_period", "wave_direction", "current")
+
+
+def _station_obs(param: str, lat: float, lon: float) -> dict:
+    """A synthetic station-observation series (past -> now) for one parameter.
+
+    Mirrors the real station_obs endpoint: values in the parameter's SOURCE unit,
+    deliberately a bit off the forecast so the delta/correction is visible. Only
+    past+present instants (observations can't be in the future)."""
+    legend = LEGENDS.get(param, {})
+    lo = legend.get("min_value", 0)
+    hi = legend.get("max_value", 20)
+    has_dir = param in ("wind_10m", "wind_gust_10m", "wave_height", "current")
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    series = []
+    t = BASE_RUN_TIME
+    i = 0
+    while t <= now:
+        frac = 0.5 + 0.4 * math.sin(i / 2.0 + lat + 0.3)  # own phase vs the forecast
+        value = round(lo + frac * (hi - lo) * 0.9, 1)  # ~10% low -> a real delta
+        point = {"valid_time": t.isoformat(), "value": value}
+        if has_dir:
+            point["direction"] = round((305 + i * 22) % 360, 0)
+        series.append(point)
+        t += timedelta(hours=1)
+        i += 1
+    is_water = param in _WATER_PARAMS
+    return {
+        "provider": "rws" if is_water else "knmi",
+        "unit": None,
+        "station": {
+            "name": "Mockstation Noordzee" if is_water else "Mockstation Schiphol",
+            "lat": lat,
+            "lon": lon,
+            "provider": "rws" if is_water else "knmi",
+        },
+        "series": series,
+    }
+
+
 def _frame_list(entry: dict, parameter_key: str) -> list[dict]:
     frames = []
     eid = entry["entry_id"]
@@ -319,6 +359,13 @@ class Handler(BaseHTTPRequestHandler):
                 p["key"]: _point_payload(entry, p["key"], lat) for p in entry["parameters"]
             }
             self._json({"params": params})
+        elif parts[:3] == ["api", "grib_overlay", "station_obs"]:
+            # /api/grib_overlay/station_obs?param=&lat=&lon=&start=&end=
+            q = parse_qs(parsed.query)
+            param = q.get("param", ["wind_10m"])[0]
+            lat = float(q.get("lat", [52.0])[0])
+            lon = float(q.get("lon", [4.5])[0])
+            self._json(_station_obs(param, lat, lon))
         elif parts[:3] == ["api", "grib_overlay", "point"]:
             # /api/grib_overlay/point/{entry_id}/{parameter_key}?lat=&lon=
             entry = ENTRIES.get(parts[3], ENTRIES[ENTRY_ID])

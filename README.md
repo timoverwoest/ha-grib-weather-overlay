@@ -103,15 +103,25 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   aan dan opent het punt mét de opgeslagen waarden weer — ook in het meteogram van
   de overlay-card (Weergave → vergelijk modellen). Met **“Wis meting”** verwijder
   je de opgeslagen meting van het punt in één klik (de speld verdwijnt overal).
-- **Meetstations in de buurt.** Zodra “Meting invoeren” aanstaat verschijnen de
-  **meetstations binnen een instelbare straal** (standaard **10 km**, aan te passen
-  met `measurement_radius_km` of het straal-veld in de werkbalk) rond het gekozen
-  punt: als **groene stippen op de mini-kaart** én als **knoppen** (met afstand)
-  onder de tabel. Klik een station aan om het punt daarheen te verplaatsen, zodat
-  je de voorspelling op de exacte stationslocatie kunt vergelijken met de meting.
-  *(Automatisch ophalen van de meetwaarden zelf — KNMI-stations voor weer, RWS
-  Waterinfo voor water/golven/stroming — is de volgende stap; zie “Metingen
-  automatisch ophalen” hieronder.)*
+- **Meetstations in de buurt + downloaden.** Zodra “Meting invoeren” aanstaat
+  verschijnen de **meetstations binnen een instelbare straal** (standaard **10 km**,
+  via `measurement_radius_km` of het straal-veld) rond het punt: als **groene stippen
+  op de mini-kaart** én als **knoppen** (met afstand) onder de tabel. **Klik een
+  station** (of de knop **“Meetstation downloaden”**) om de **werkelijke waarnemingen
+  op te halen** en als meting te tonen — precies zoals handmatige meetwaarden
+  (bewaard per punt + parameter, met een oranje speld). Weerparameters komen van
+  **KNMI**-stations, water/golven/stroming van **RWS Waterinfo**. *(De koppeling met
+  de echte KNMI/RWS-API's is best-effort en moet je op je eigen HAOS met je
+  KNMI-sleutel verifiëren; zie “Metingen automatisch ophalen”.)*
+- **Absolute én relatieve delta.** De Δ-rijen tonen per kolom zowel de **absolute**
+  afwijking (model − meting) als de **relatieve** (%). De samenvatting geeft bias
+  (abs + %), MAE en RMSE per model.
+- **Gecorreleerde (gecorrigeerde) voorspelling.** Kies bij **“Correctie”** *absoluut*
+  (verschuiven) of *relatief* (schalen) en vink aan **op welke bronnen** je het
+  toepast. Elke aangevinkte bron krijgt dan een **gecorrigeerde lijn/rij**: zijn
+  eigen gemiddelde afwijking t.o.v. de meting over de overlappende (verleden)
+  kolommen, vooruit doorgetrokken op de hele voorspelling — zodat je een op de
+  meting bijgestelde voorspelling ziet (stippellijn in de grafiek).
 - **Gedeelde klikpositie.** De aangeklikte positie wordt gedeeld tussen de
   overlay-card en de vergelijk-card (ook tussen dashboardpagina's, voor de sessie).
   In de overlay-card opent op die positie meteen het **waarde-venster** (en sluit
@@ -282,31 +292,35 @@ compact label gebruikt.
 
 **Meting & delta.** Vink **“Meting invoeren”** aan om per kolom een gemeten waarde
 in te typen (in dezelfde eenheid als de grafiek). Je krijgt dan per model een
-**Δ-rij** (model − meting) met een samenvatting **bias / MAE / RMSE**, en de meting
-verschijnt als donkere lijn in de grafiek. Dezelfde meting/delta zit ook in het
-meteogram onder **Weergave → “vergelijk modellen” → Meting**. Met **“Wis meting”**
-wis je de opgeslagen meting van het punt in één klik.
+**Δ-rij** met **absolute** (model − meting) én **relatieve** (%) afwijking, plus een
+samenvatting **bias (abs + %) / MAE / RMSE**; de meting verschijnt als donkere lijn
+in de grafiek. Dezelfde meting/delta zit ook in het meteogram onder **Weergave →
+“vergelijk modellen” → Meting**. Met **“Wis meting”** wis je de opgeslagen meting van
+het punt in één klik.
 
-**Meetstations in de buurt.** Met “Meting invoeren” aan verschijnen de meetstations
-binnen `measurement_radius_km` (standaard 10 km; ook aan te passen met het straal-veld
-in de werkbalk) als **groene stippen op de mini-kaart** en als **knoppen met afstand**
-onder de tabel. Klik een station om het punt naar die locatie te verplaatsen.
+**Meetstations downloaden.** Met “Meting invoeren” aan verschijnen de meetstations
+binnen `measurement_radius_km` (standaard 10 km; ook via het straal-veld in de
+werkbalk) als **groene stippen op de mini-kaart** en als **knoppen met afstand**. Klik
+een station — of de knop **“Meetstation downloaden”** (dichtstbijzijnde) — om de
+**werkelijke waarnemingen** op te halen en als meting te tonen/bewaren. Weer komt van
+**KNMI**-stations, water/golven/stroming van **RWS Waterinfo**. In de aparte
+vergelijk-card verspringt het punt naar het station (voorspelling én meting op exact
+dezelfde plek); in het meteogram blijft het punt staan (de meting komt dan van het
+nabije station, zoals een handmatige waarde).
 
-**Metingen automatisch ophalen (roadmap).** Handmatig invoeren is er nu; automatisch
-ophalen is de volgende stap. Relevante, geschikte bronnen voor Nederland:
+**Gecorreleerde voorspelling.** Kies bij **“Correctie”** *absoluut* (verschuiven) of
+*relatief* (schalen) en vink de **bronnen** aan waarop je het toepast. Elke aangevinkte
+bron krijgt een **gecorrigeerde rij + stippellijn**: zijn eigen gemiddelde afwijking
+t.o.v. de meting over de overlappende (verleden) kolommen, vooruit doorgetrokken op de
+hele voorspelling.
 
-- **KNMI-stationswaarnemingen** (wind, windstoten, temperatuur, neerslag, druk, …)
-  om de KNMI-HARMONIE-voorspellingen te toetsen. KNMI Data Platform, dataset
-  `Actuele10mindataKNMIstations` (opgevolgd door `10-minute-in-situ-meteorological-observations`
-  + een EDR-positie-API). Werkt met **dezelfde KNMI Open Data-sleutel** die de
-  integratie al gebruikt; kies het dichtstbijzijnde station bij het punt.
-- **RWS Waterinfo — WaterWebservices** (waterhoogte, golfhoogte/-richting, stroming,
-  watertemperatuur) om de DWD-golven en BSH-stroming te toetsen. **Sleutelloze** JSON
-  (`OphalenCatalogus` / `OphalenWaarnemingen` / `OphalenLaatsteWaarnemingen`),
-  ~450 stations, AQUO-parametermodel.
-
-De handmatige “Meting”-rij is precies de interface die zo’n automatische feed later
-vult.
+**Over de station-API's (verifiëren).** De koppelingen zijn best-effort geïmplementeerd:
+KNMI via de **EDR**-positie-query op `10-minute-in-situ-meteorological-observations`
+(met **dezelfde KNMI Open Data-sleutel** die de integratie al gebruikt), RWS via de
+**sleutelloze** WaterWebservices (`OphalenCatalogus` → dichtstbijzijnde station →
+`OphalenWaarnemingen`, AQUO-parametermodel). De exacte parametercodes/aanroepen kunnen
+per provider afwijken; verifieer ze op je eigen HAOS (netwerk + sleutel). De
+response-parsers zijn met fixtures getest.
 
 Met `dataset` kies je welke dataset de kaart bij het laden standaard toont;
 de waarde mag de datasetsleutel zijn (bv. `bsh_current_northsea`), de
@@ -721,23 +735,30 @@ changing the map card or the rest of the backend):
 - **Measurement & delta.** In the comparison, enable **“Meting invoeren”** (Enter
   measurement) to type a **measured value** per column. The measurement appears
   as a dark line in the chart and as a row in the table, and each model gets a
-  **Δ row** (model − measurement) with a summary: **bias, MAE and RMSE**. That
-  tells you at a glance which model is closest to reality. Entered measurements
-  are **saved per point + parameter** (in `localStorage`, so they persist across
-  reloads and are available in every card view): the point gets an **amber pin**
-  on **every** map (overlay and compare card), and clicking it reopens the point
-  with its saved values — also in the overlay card's meteogram (View → compare
-  models). **“Wis meting”** (Clear measurement) removes the saved measurement of
-  the point in one click (the pin disappears everywhere).
-- **Nearby measurement stations.** Once “Meting invoeren” is on, the **measurement
-  stations within an adjustable radius** (default **10 km**, changed with
-  `measurement_radius_km` or the radius field in the toolbar) around the chosen
-  point appear: as **green dots on the mini-map** and as **buttons** (with
-  distance) below the table. Click a station to move the point there, so you can
-  compare the forecast at the exact station location with the measurement.
-  *(Automatically fetching the measured values themselves — KNMI stations for
-  weather, RWS Waterinfo for water/waves/current — is the next step; see
-  “Fetching measurements automatically” below.)*
+  **Δ row** with the **absolute** (model − measurement) and the **relative** (%)
+  deviation, plus a summary: **bias (abs + %), MAE and RMSE**. That tells you at a
+  glance which model is closest to reality. Entered measurements are **saved per
+  point + parameter** (in `localStorage`, so they persist across reloads and are
+  available in every card view): the point gets an **amber pin** on **every** map
+  (overlay and compare card), and clicking it reopens the point with its saved
+  values — also in the overlay card's meteogram (View → compare models).
+  **“Wis meting”** (Clear measurement) removes the saved measurement in one click.
+- **Download measurement stations.** Once “Meting invoeren” is on, the **measurement
+  stations within an adjustable radius** (default **10 km**, via
+  `measurement_radius_km` or the radius field) appear as **green dots on the
+  mini-map** and as **buttons with distance**. Click a station — or the
+  **“Meetstation downloaden”** button (nearest) — to **fetch its real observations**
+  and show/store them as the measurement, exactly like a hand-entered value. Weather
+  comes from **KNMI** stations, water/waves/current from **RWS Waterinfo**. In the
+  separate compare card the point moves to the station (forecast and measurement at
+  the exact same place); in the meteogram the point stays put (the measurement then
+  comes from the nearby station, like a manual value). *(The live KNMI/RWS API calls
+  are best-effort and should be verified on your own HAOS with your KNMI key.)*
+- **Corrected ("gecorreleerde") forecast.** Under **“Correctie”** choose *absolute*
+  (shift) or *relative* (scale) and tick **which sources** to apply it to. Each ticked
+  source gets a **corrected row + dashed line**: its own average deviation from the
+  measurement over the overlapping (past) columns, carried forward across the whole
+  forecast.
 - **Shared click position.** The clicked position is shared between the overlay
   card and the compare card (also across dashboard pages, for the session). In
   the overlay card the **value window** opens at that position immediately (and
@@ -904,33 +925,33 @@ yourself, set a **short alias** per source in the integration options (Configure
 
 **Measurement & delta.** Tick **“Meting invoeren”** (Enter measurement) to type a
 measured value per column (in the same unit as the chart). You then get a **Δ row**
-(model − measurement) per model with a **bias / MAE / RMSE** summary, and the
-measurement appears as a dark line in the chart. The same measurement/delta is also
-in the meteogram under **Weergave → “vergelijk modellen” → Meting** (View → compare
-models → Measurement). **“Wis meting”** (Clear measurement) clears the point's saved
-measurement in one click.
+per model with the **absolute** (model − measurement) and the **relative** (%)
+deviation, plus a **bias (abs + %) / MAE / RMSE** summary, and the measurement appears
+as a dark line in the chart. The same measurement/delta is also in the meteogram under
+**Weergave → “vergelijk modellen” → Meting** (View → compare models → Measurement).
+**“Wis meting”** (Clear measurement) clears the point's saved measurement in one click.
 
-**Nearby measurement stations.** With “Meting invoeren” on, the measurement stations
-within `measurement_radius_km` (default 10 km; also adjustable with the radius field
-in the toolbar) appear as **green dots on the mini-map** and as **buttons with
-distance** below the table. Click a station to move the point to that location.
+**Download measurement stations.** With “Meting invoeren” on, the measurement stations
+within `measurement_radius_km` (default 10 km; also via the radius field) appear as
+**green dots on the mini-map** and as **buttons with distance**. Click a station — or
+the **“Meetstation downloaden”** button (nearest) — to **fetch its real observations**
+and show/store them as the measurement, just like a hand-entered value. Weather comes
+from **KNMI** stations, water/waves/current from **RWS Waterinfo**. In the separate
+compare card the point moves to the station; in the meteogram the point stays put (the
+measurement then comes from the nearby station).
 
-**Fetching measurements automatically (roadmap).** Manual entry exists now;
-automatic fetching is the next step. Relevant, suitable sources for the Netherlands:
+**Corrected forecast.** Under **“Correctie”** choose *absolute* (shift) or *relative*
+(scale) and tick the **sources** to apply it to. Each ticked source gets a **corrected
+row + dashed line**: its own average deviation from the measurement over the
+overlapping (past) columns, carried forward across the whole forecast.
 
-- **KNMI station observations** (wind, gusts, temperature, precipitation, pressure,
-  …) to validate the KNMI HARMONIE forecasts. KNMI Data Platform, dataset
-  `Actuele10mindataKNMIstations` (succeeded by
-  `10-minute-in-situ-meteorological-observations` + an EDR position API). Works with
-  the **same KNMI Open Data key** the integration already uses; pick the nearest
-  station to the point.
-- **RWS Waterinfo — WaterWebservices** (water level, wave height/direction, current,
-  water temperature) to validate the DWD waves and BSH current. **Keyless** JSON
-  (`OphalenCatalogus` / `OphalenWaarnemingen` / `OphalenLaatsteWaarnemingen`),
-  ~450 stations, AQUO parameter model.
-
-The manual “Meting” row is exactly the interface such an automatic feed would later
-populate.
+**About the station APIs (verify).** The providers are implemented best-effort: KNMI
+via the **EDR** position query on `10-minute-in-situ-meteorological-observations` (with
+the **same KNMI Open Data key** the integration already uses), RWS via the **keyless**
+WaterWebservices (`OphalenCatalogus` → nearest station → `OphalenWaarnemingen`, AQUO
+parameter model). The exact parameter codes/requests may differ per provider; verify
+them on your own HAOS (network + key). The response parsers are covered by fixture
+tests.
 
 With `dataset` you choose which dataset the card shows by default on load; the value
 may be the dataset key (e.g. `bsh_current_northsea`), the dataset name, or the title

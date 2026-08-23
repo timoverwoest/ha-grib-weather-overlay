@@ -1,0 +1,121 @@
+"""Unit tests for the pure observation parsers + the UTM->WGS84 conversion.
+
+The live KNMI/RWS HTTP calls need a real key/network and are verified on a real
+HA instance; here we lock down the response parsing and the geometry, which is
+what breaks silently if a provider tweaks its shape.
+"""
+
+from __future__ import annotations
+
+from custom_components.grib_overlay.observations import (
+    nearest_rws_station,
+    parse_knmi_coveragejson,
+    parse_rws_waarnemingen,
+    provider_for,
+    utm31n_to_wgs84,
+)
+
+
+def test_provider_routing() -> None:
+    assert provider_for("wind_10m") == "knmi"
+    assert provider_for("temperature_2m") == "knmi"
+    assert provider_for("wave_height") == "rws"
+    assert provider_for("current") == "rws"
+    assert provider_for("nonexistent") is None
+
+
+def test_parse_knmi_coveragejson_zips_value_and_direction() -> None:
+    data = {
+        "domain": {
+            "axes": {
+                "t": {"values": ["2026-08-23T10:00:00Z", "2026-08-23T10:10:00Z"]},
+                "x": {"values": [4.79]},
+                "y": {"values": [52.318]},
+            }
+        },
+        "ranges": {
+            "ff": {"values": [5.2, None]},  # second instant missing -> dropped
+            "dd": {"values": [210, 220]},
+        },
+    }
+    series = parse_knmi_coveragejson(data, "ff", "dd", scale=1.0)
+    assert len(series) == 1
+    assert series[0]["valid_time"] == "2026-08-23T10:00:00Z"
+    assert series[0]["value"] == 5.2
+    assert series[0]["direction"] == 210
+
+
+def test_parse_knmi_coveragejson_applies_scale() -> None:
+    data = {
+        "domain": {"axes": {"t": {"values": ["2026-08-23T10:00:00Z"]}}},
+        "ranges": {"zm": {"values": [8000]}},  # metres
+    }
+    series = parse_knmi_coveragejson(data, "zm", None, scale=0.001)  # -> km
+    assert series == [{"valid_time": "2026-08-23T10:00:00Z", "value": 8.0}]
+
+
+def test_parse_knmi_coveragejson_handles_missing_shape() -> None:
+    assert parse_knmi_coveragejson({}, "ff", None) == []
+    assert parse_knmi_coveragejson({"ranges": {}}, "ff", None) == []
+
+
+def test_parse_rws_waarnemingen_filters_missing_sentinel() -> None:
+    data = {
+        "Succesvol": True,
+        "WaarnemingenLijst": [
+            {
+                "MetingenLijst": [
+                    {
+                        "Tijdstip": "2026-08-23T10:00:00.000+00:00",
+                        "Meetwaarde": {"Waarde_Numeriek": 1.23},
+                    },
+                    {
+                        "Tijdstip": "2026-08-23T10:10:00.000+00:00",
+                        "Meetwaarde": {"Waarde_Numeriek": 999999999.0},  # missing
+                    },
+                ]
+            }
+        ],
+    }
+    series = parse_rws_waarnemingen(data)
+    assert series == [{"valid_time": "2026-08-23T10:00:00.000+00:00", "value": 1.23}]
+
+
+def test_parse_rws_waarnemingen_unsuccessful() -> None:
+    assert parse_rws_waarnemingen({"Succesvol": False}) == []
+    assert parse_rws_waarnemingen({}) == []
+
+
+def test_utm31n_central_meridian_is_3E() -> None:
+    lat, lon = utm31n_to_wgs84(500000.0, 5764000.0)
+    assert abs(lon - 3.0) < 1e-6  # false easting 500000 sits on 3°E
+    assert 51.0 < lat < 53.0  # plausible for the southern North Sea
+
+
+def test_utm31n_offset_is_east_and_plausible() -> None:
+    # ~Europlatform (52.0 N, 3.28 E): a small easting offset east of 3°E.
+    lat, lon = utm31n_to_wgs84(518900.0, 5763800.0)
+    assert 3.1 < lon < 3.5
+    assert 51.8 < lat < 52.2
+
+
+def test_nearest_rws_station_picks_closest_offering_the_grootheid() -> None:
+    # Two stations; only the far one offers Hm0 -> it must be chosen despite distance.
+    cat = {
+        "LocatieLijst": [
+            {"Locatie_MessageID": 1, "Code": "NEAR", "Naam": "Near", "X": 500000, "Y": 5764000},
+            {"Locatie_MessageID": 2, "Code": "FAR", "Naam": "Far", "X": 600000, "Y": 5900000},
+        ],
+        "AquoMetadataLijst": [
+            {"AquoMetadata_MessageID": 10, "Grootheid": {"Code": "Hm0"}},
+            {"AquoMetadata_MessageID": 11, "Grootheid": {"Code": "WATHTE"}},
+        ],
+        "AquoMetadataLocatieLijst": [
+            {"Locatie_MessageID": 1, "AquoMetaData_MessageID": 11},
+            {"Locatie_MessageID": 2, "AquoMetaData_MessageID": 10},
+        ],
+    }
+    station = nearest_rws_station(cat, "Hm0", 52.0, 3.0)
+    assert station is not None
+    assert station["Code"] == "FAR"
+    assert "_lat" in station and "_lon" in station

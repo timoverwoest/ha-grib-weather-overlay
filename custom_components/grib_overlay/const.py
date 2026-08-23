@@ -32,5 +32,6 @@ HTTP_WIND_PATH = "/api/grib_overlay/wind"
 HTTP_FIELD_PATH = "/api/grib_overlay/field"
 HTTP_POINT_PATH = "/api/grib_overlay/point"
 HTTP_POINT_ALL_PATH = "/api/grib_overlay/point_all"
+HTTP_STATION_OBS_PATH = "/api/grib_overlay/station_obs"
 
 STORAGE_VERSION = 1

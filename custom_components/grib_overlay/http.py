@@ -16,7 +16,8 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
 from . import field_grid
-from .const import CONF_ALIAS, CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_ALL_PATH, HTTP_POINT_PATH, HTTP_WIND_PATH
+from . import observations
+from .const import CONF_ALIAS, CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_ALL_PATH, HTTP_POINT_PATH, HTTP_STATION_OBS_PATH, HTTP_WIND_PATH
 from .coordinator import GribOverlayCoordinator
 
 
@@ -332,6 +333,36 @@ class GribOverlayPointAllView(HomeAssistantView):
         return web.json_response({"params": params})
 
 
+class GribOverlayStationObsView(HomeAssistantView):
+    """Downloads recent measurement-station observations for one parameter near a
+    point, so the comparison can plot/store real measured values (KNMI weather
+    stations via EDR, or RWS Waterinfo for water parameters). Values come back in
+    the parameter's SOURCE unit, like the forecast point endpoint.
+    """
+
+    url = HTTP_STATION_OBS_PATH
+    name = "api:grib_overlay:station_obs"
+    requires_auth = True
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        try:
+            param = request.query["param"]
+            lat = float(request.query["lat"])
+            lon = float(request.query["lon"])
+        except (KeyError, ValueError):
+            return web.json_response({"error": "param/lat/lon required"}, status=400)
+        start = request.query.get("start", "")
+        end = request.query.get("end", "")
+        result = await observations.fetch_observations(hass, param, lat, lon, start, end)
+        if result is None:
+            return web.json_response(
+                {"error": f"no observation source for parameter '{param}'"}, status=404
+            )
+        status = 502 if result.get("error") else 200
+        return web.json_response(result, status=status)
+
+
 VIEWS = (
     GribOverlayEntriesView,
     GribOverlayFramesView,
@@ -340,4 +371,5 @@ VIEWS = (
     GribOverlayFieldView,
     GribOverlayPointView,
     GribOverlayPointAllView,
+    GribOverlayStationObsView,
 )

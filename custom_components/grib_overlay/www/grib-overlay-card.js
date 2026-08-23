@@ -519,10 +519,39 @@ function gribSetMeasurement(lat, lng, param, colEpoch, value) {
   if (!rec.params[param]) rec.params[param] = {};
   if (value == null || value === "") delete rec.params[param][colEpoch];
   else rec.params[param][colEpoch] = Number(value);
-  if (!Object.keys(rec.params[param]).length) delete rec.params[param];
+  if (!Object.keys(rec.params[param]).length) {
+    delete rec.params[param];
+    if (rec.stations) delete rec.stations[param]; // hand-edited away from the station
+  }
   if (!Object.keys(rec.params).length) delete store[key];
   gribWriteAllMeasurements(store);
   window.dispatchEvent(new Event(GRIB_MEAS_EVENT));
+}
+// Bulk-write a station's observations (colEpoch -> value, display units) for one
+// point + parameter, tagging which station they came from, in one event.
+function gribSetMeasurementsBulk(lat, lng, param, colValues, station) {
+  const store = gribReadAllMeasurements();
+  const key = gribPointKey(lat, lng);
+  let rec = store[key];
+  if (!rec) {
+    rec = { lat, lng, params: {} };
+    store[key] = rec;
+  }
+  const bucket = {};
+  for (const [col, v] of colValues) if (v != null && Number.isFinite(v)) bucket[col] = Number(v);
+  if (!Object.keys(bucket).length) return;
+  rec.params[param] = bucket;
+  if (station) {
+    rec.stations = rec.stations || {};
+    rec.stations[param] = { name: station.name || "meetstation", provider: station.provider || "" };
+  }
+  gribWriteAllMeasurements(store);
+  window.dispatchEvent(new Event(GRIB_MEAS_EVENT));
+}
+// The station a point's parameter measurements were downloaded from, or null.
+function gribGetStation(lat, lng, param) {
+  const rec = gribReadAllMeasurements()[gribPointKey(lat, lng)];
+  return (rec && rec.stations && rec.stations[param]) || null;
 }
 function gribSavedPoints() {
   return Object.values(gribReadAllMeasurements())
@@ -540,6 +569,7 @@ function gribClearMeasurements(lat, lng, param) {
   const rec = store[key];
   if (!rec) return;
   if (param && rec.params) delete rec.params[param];
+  if (param && rec.stations) delete rec.stations[param];
   if (!param || !rec.params || !Object.keys(rec.params).length) delete store[key];
   gribWriteAllMeasurements(store);
   window.dispatchEvent(new Event(GRIB_MEAS_EVENT));
@@ -2691,6 +2721,8 @@ class GribOverlayCard extends HTMLElement {
     this._detailMode = "bron"; // "bron" (per-source table) | "compare" (models)
     this._detailMeasure = new Map(); // manual measurements (display units) for compare mode
     this._detailShowMeasure = false;
+    this._detailCorrMode = "none"; // forecast correction: none | abs | rel
+    this._detailCorrSources = null; // null = all shown sources
     this._detailRadius = Number((this._config || {}).measurement_radius_km) > 0
       ? Number(this._config.measurement_radius_km)
       : 10;
@@ -2744,8 +2776,31 @@ class GribOverlayCard extends HTMLElement {
         this._rerenderDetail();
         return;
       }
+      if (ev.target.closest(".grib-cmp-dl-station")) {
+        if (this._detailLatlng) this._downloadDetailStation(this._detailLatlng.lat, this._detailLatlng.lng, null);
+        return;
+      }
+      const st = ev.target.closest(".grib-cmp-station");
+      if (st) {
+        this._downloadDetailStation(Number(st.getAttribute("data-lat")), Number(st.getAttribute("data-lng")), st.getAttribute("data-name"));
+        return;
+      }
       const label = ev.target.closest("td.rowlabel[data-grp]");
       if (label) this._toggleDetailRow(label.getAttribute("data-grp"));
+    });
+    // Correction mode / per-source toggles in compare mode (delegated on the scroll).
+    backdrop.querySelector(".grib-detail-scroll").addEventListener("change", (ev) => {
+      if (ev.target.classList.contains("grib-cmp-corrmode")) {
+        this._detailCorrMode = ev.target.value;
+        this._detailCorrSources = null;
+        this._rerenderDetail();
+      } else if (ev.target.closest(".grib-cmp-corrsrc")) {
+        const eid = ev.target.getAttribute("data-eid");
+        if (!this._detailCorrSources) this._detailCorrSources = new Set((this._detailShownModels || []).map((m) => m.entryId));
+        if (ev.target.checked) this._detailCorrSources.add(eid);
+        else this._detailCorrSources.delete(eid);
+        this._rerenderDetail();
+      }
     });
     backdrop.querySelector(".chips").addEventListener("click", (ev) => {
       const chip = ev.target.closest(".chip[data-grp]");
@@ -2803,6 +2858,9 @@ class GribOverlayCard extends HTMLElement {
         res: this._detailResolution,
         unitLabel: this._detailShownUnit || "",
         measureMap: this._detailMeasure,
+        corrMode: this._detailCorrMode,
+        corrSources: this._detailCorrSources,
+        rerender: () => this._rerenderDetail(),
       });
     });
     this._detailEsc = (ev) => {
@@ -2935,13 +2993,68 @@ class GribOverlayCard extends HTMLElement {
     const stations = this._detailShowMeasure && this._detailLatlng
       ? stationsWithin(this._detailLatlng.lat, this._detailLatlng.lng, this._detailRadius)
       : [];
+    const station = this._detailLatlng
+      ? gribGetStation(this._detailLatlng.lat, this._detailLatlng.lng, this._detailCmpParam)
+      : null;
     return (
       compareViewHtml(
         withData, this._config, this._detailResolution, unit,
         this._detailMeasure, !!this._detailShowMeasure,
-        { stations, radiusKm: this._detailRadius }
+        { stations, radiusKm: this._detailRadius, station, corrMode: this._detailCorrMode, corrSources: this._detailCorrSources }
       ) + note
     );
+  }
+
+  // Download a station's observations for the compare parameter and store them as
+  // the meteogram point's measurement (the meteogram point stays put; the station
+  // may be a few km away, like a hand-entered measurement).
+  async _downloadDetailStation(lat, lng, name) {
+    if (!this._detailLatlng || !this._detailCmpParam) return;
+    const param = this._detailCmpParam;
+    const models = this._detailShownModels || [];
+    const btn = this._detailModal && this._detailModal.querySelector(".grib-cmp-dl-station");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Bezig…";
+    }
+    let tMin = Infinity;
+    for (const m of models) for (const s of m.series || []) if (s.value != null) tMin = Math.min(tMin, new Date(s.valid_time).getTime());
+    const q = new URLSearchParams({
+      param,
+      lat: Number(lat).toFixed(4),
+      lon: Number(lng).toFixed(4),
+      start: new Date(Number.isFinite(tMin) ? tMin : Date.now() - 48 * 3600e3).toISOString(),
+      end: new Date().toISOString(),
+    });
+    let data = null;
+    try {
+      data = await this._hass.callApi("GET", `grib_overlay/station_obs?${q}`);
+    } catch (err) {
+      data = { error: String((err && err.message) || err) };
+    }
+    if (!data || data.error || !data.series || !data.series.length) {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Meetstation downloaden";
+        btn.title = data && data.error ? String(data.error) : "Geen data";
+      }
+      return;
+    }
+    const unit = (models[0] && models[0].unit) || "";
+    const columns = compareColumns(models, this._detailResolution);
+    const colValues = stationColValues(data.series, unit, this._detailResolution, columns, this._config);
+    const st = data.station || {};
+    gribSetMeasurementsBulk(this._detailLatlng.lat, this._detailLatlng.lng, param, colValues, {
+      name: name || st.name || "meetstation",
+      provider: st.provider || data.provider || "",
+    });
+    this._detailShowMeasure = true;
+    this._detailMeasure = gribGetMeasurements(this._detailLatlng.lat, this._detailLatlng.lng, param);
+    const detmeas = this._detailModal.querySelector(".detmeas");
+    if (detmeas) detmeas.checked = true;
+    const radctl = this._detailModal.querySelector(".detradctl");
+    if (radctl) radctl.classList.remove("hidden");
+    this._rerenderDetail();
   }
 
   // Show/hide one parameter's rows (its value row plus any direction row).
@@ -3595,7 +3708,8 @@ function buildColumnHeader(columns, res) {
 
 // Overlaid multi-model line chart for one parameter. Values are converted to the
 // configured display unit; a dashed vertical "now" line is drawn when in range.
-function compareChartSvg(models, config, unitLabel, measurePts) {
+// `corrections` (optional) adds a dashed corrected ("gecorreleerde") line per source.
+function compareChartSvg(models, config, unitLabel, measurePts, corrections) {
   const factorFor = (u) => {
     const c = conversionFor(config, u);
     return c ? c.factor : 1;
@@ -3612,11 +3726,25 @@ function compareChartSvg(models, config, unitLabel, measurePts) {
         .sort((a, b) => a.t - b.t),
     }))
     .filter((l) => l.pts.length);
+  // Corrected lines: each source's raw series shifted/scaled by its own bias.
+  const corrById = new Map((corrections || []).map((c) => [c.entryId, c]));
+  const corrLines = (models || [])
+    .map((m) => {
+      const c = corrById.get(m.entryId);
+      if (!c) return null;
+      const pts = (m.series || [])
+        .filter((s) => s.value != null)
+        .map((s) => ({ t: new Date(s.valid_time).getTime(), v: applyCorrection(s.value * factorFor(m.unit), c) }))
+        .filter((p) => p.v != null)
+        .sort((a, b) => a.t - b.t);
+      return pts.length ? { short: (m.short || m.name) + " ✓", name: m.name, color: m.color, unit: m.unit, pts } : null;
+    })
+    .filter(Boolean);
   const meas = (measurePts || []).filter((p) => p.v != null).sort((a, b) => a.t - b.t);
   if (!lines.length && !meas.length) return `<div class="grib-cmp-empty">Geen gegevens om te vergelijken.</div>`;
 
   let tMin = Infinity, tMax = -Infinity, vMin = Infinity, vMax = -Infinity;
-  for (const l of lines) {
+  for (const l of [...lines, ...corrLines]) {
     for (const p of l.pts) {
       if (p.t < tMin) tMin = p.t;
       if (p.t > tMax) tMax = p.t;
@@ -3686,6 +3814,12 @@ function compareChartSvg(models, config, unitLabel, measurePts) {
     parts.push(`<path d="${d}" fill="none" stroke="${l.color}" stroke-width="2"/>`);
     parts.push(l.pts.map((p) => `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy(p.v).toFixed(1)}" r="1.8" fill="${l.color}"/>`).join(""));
   }
+  // Corrected forecasts: a dashed line in the source's colour (no dots, so it
+  // reads as the "adjusted" companion of the solid model line).
+  for (const l of corrLines) {
+    const d = l.pts.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`).join("");
+    parts.push(`<path d="${d}" fill="none" stroke="${l.color}" stroke-width="1.8" stroke-dasharray="5 3" opacity="0.9"/>`);
+  }
   // Measurements: a thick dark line with square markers ("the truth").
   if (meas.length) {
     const d = meas.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`).join("");
@@ -3700,6 +3834,12 @@ function compareChartSvg(models, config, unitLabel, measurePts) {
     color: l.color,
     samples: l.pts.map((p) => ({ t: p.t, x: +sx(p.t).toFixed(1), y: +sy(p.v).toFixed(1), disp: `${fmtCell(l.unit, p.v)} ${unitLabel || ""}`.trim() })),
   }));
+  for (const l of corrLines)
+    hoverSeries.push({
+      label: l.short,
+      color: l.color,
+      samples: l.pts.map((p) => ({ t: p.t, x: +sx(p.t).toFixed(1), y: +sy(p.v).toFixed(1), disp: `${fmtCell(l.unit, p.v)} ${unitLabel || ""}`.trim() })),
+    });
   if (meas.length)
     hoverSeries.push({
       label: "meting",
@@ -3710,6 +3850,9 @@ function compareChartSvg(models, config, unitLabel, measurePts) {
   const legend =
     lines
       .map((l) => `<span class="lg" title="${escapeXml(l.name)}"><span class="sw" style="background:${l.color}"></span>${escapeXml(l.short)}</span>`)
+      .join("") +
+    corrLines
+      .map((l) => `<span class="lg" title="${escapeXml(l.name)} (gecorrigeerd)"><span class="sw dash" style="background:${l.color}"></span>${escapeXml(l.short)}</span>`)
       .join("") +
     (meas.length ? `<span class="lg"><span class="sw" style="background:var(--primary-text-color,#12324f)"></span>meting</span>` : "");
   return (
@@ -3727,8 +3870,12 @@ function measurePtsFromMap(measureMap) {
 
 // The editable "Meting" row: a number input per column, pre-filled from the map.
 // Inputs carry data-col="<epoch>" so a delegated listener can update the map.
-function compareMeasureRow(columns, cls, measureMap, unitLabel) {
-  let cells = `<td class="rowlabel"><span class="dot" style="background:var(--primary-text-color,#12324f)"></span>Meting<span class="ru">${unitLabel}</span></td>`;
+function compareMeasureRow(columns, cls, measureMap, unitLabel, station) {
+  const title = station ? `Meting van ${station.name}${station.provider ? " (" + station.provider.toUpperCase() + ")" : ""}` : "Handmatig ingevoerde meting";
+  const label = station
+    ? `Meting<span class="ru">${escapeXml(station.name)}</span>`
+    : `Meting<span class="ru">${unitLabel}</span>`;
+  let cells = `<td class="rowlabel" title="${escapeXml(title)}"><span class="dot" style="background:var(--primary-text-color,#12324f)"></span>${label}</td>`;
   columns.forEach((key, i) => {
     const v = measureMap && measureMap.has(key) ? measureMap.get(key) : "";
     cells += `<td class="${cls(i)} meascell"><input class="grib-cmp-meas" type="number" step="any" inputmode="decimal" data-col="${key}" value="${v}"></td>`;
@@ -3748,16 +3895,26 @@ function computeCompareDeltas(models, columns, measureMap, config, res) {
     const byBucket = aggregateSeries(m.series, res, sum, columns);
     const conv = conversionFor(config, m.unit);
     const factor = conv ? conv.factor : 1;
+    const rels = [];
+    const isDir = m.unit === "°"; // a bearing has no meaningful percentage delta
     const deltas = columns.map((key) => {
       const b = byBucket.get(key);
       const meas = measureMap && measureMap.get(key);
-      if (!b || b.value == null || meas == null || meas === "") return null;
+      if (!b || b.value == null || meas == null || meas === "") {
+        rels.push(null);
+        return null;
+      }
       const d = b.value * factor - Number(meas);
-      if (!Number.isFinite(d)) return null;
+      if (!Number.isFinite(d)) {
+        rels.push(null);
+        return null;
+      }
       scale = Math.max(scale, Math.abs(d));
+      const mv = Number(meas);
+      rels.push(!isDir && mv !== 0 ? (d / mv) * 100 : null);
       return d;
     });
-    return { m, deltas };
+    return { m, deltas, rels };
   });
   return { perModel, scale };
 }
@@ -3772,6 +3929,94 @@ function fmtDelta(d) {
   return (d >= 0 ? "+" : "−") + Math.abs(d).toFixed(1);
 }
 
+// Relative delta as a signed percentage (null-safe).
+function fmtRelDelta(r) {
+  if (r == null || !Number.isFinite(r)) return "";
+  const a = Math.abs(r);
+  return (r >= 0 ? "+" : "−") + (a >= 100 ? a.toFixed(0) : a.toFixed(a >= 10 ? 0 : 1)) + "%";
+}
+
+// Per-source forecast correction ("gecorreleerde voorspelling"): each selected
+// source's own average error vs the measurement over the overlapping (past) columns,
+// applied forward. Absolute = shift by mean(model − meting); relative = scale by
+// mean(meting / model). Returns one entry per correctable source in `corrSet`.
+function computeCorrections(models, columns, measureMap, config, res, mode, corrSet) {
+  if (!mode || mode === "none" || !measureMap) return [];
+  const out = [];
+  for (const m of models) {
+    if (corrSet && !corrSet.has(m.entryId)) continue;
+    if (m.unit === "°") continue; // no sensible bias for a bearing
+    const sum = m.unit === "mm";
+    const byBucket = aggregateSeries(m.series, res, sum, columns);
+    const conv = conversionFor(config, m.unit);
+    const factor = conv ? conv.factor : 1;
+    let sumDiff = 0;
+    let sumRatio = 0;
+    let n = 0;
+    let nRatio = 0;
+    for (const key of columns) {
+      const b = byBucket.get(key);
+      const meas = measureMap.get(key);
+      if (!b || b.value == null || meas == null || meas === "") continue;
+      const md = b.value * factor;
+      const ms = Number(meas);
+      if (!Number.isFinite(md) || !Number.isFinite(ms)) continue;
+      sumDiff += md - ms;
+      n++;
+      if (md !== 0) {
+        sumRatio += ms / md;
+        nRatio++;
+      }
+    }
+    if (!n) continue;
+    if (mode === "rel" && !nRatio) continue;
+    out.push({
+      entryId: m.entryId,
+      short: m.short || m.name,
+      name: m.name,
+      color: m.color,
+      unit: m.unit,
+      legend: m.legend,
+      factor,
+      mode,
+      bias: sumDiff / n,
+      ratio: nRatio ? sumRatio / nRatio : 1,
+      n,
+    });
+  }
+  return out;
+}
+
+// Apply a correction to a display-unit value.
+function applyCorrection(dispValue, corr) {
+  if (dispValue == null || !Number.isFinite(dispValue)) return null;
+  return corr.mode === "rel" ? dispValue * corr.ratio : dispValue - corr.bias;
+}
+
+// The sorted column epochs (bucket starts) for a set of models at a resolution.
+function compareColumns(models, res) {
+  const keySet = new Set();
+  for (const m of models || []) {
+    if (!m.series) continue;
+    for (const s of m.series) if (s.value != null) keySet.add(bucketStart(new Date(s.valid_time), res));
+  }
+  return [...keySet].sort((a, b) => a - b);
+}
+
+// Bucket a downloaded station series into `columns` and return [colEpoch, displayValue]
+// pairs, converting the source-unit observations to the card's display unit.
+function stationColValues(series, unit, res, columns, config) {
+  const conv = conversionFor(config, unit);
+  const factor = conv ? conv.factor : 1;
+  const byBucket = aggregateSeries(series || [], res, unit === "mm", columns);
+  const out = [];
+  for (const key of columns) {
+    const b = byBucket.get(key);
+    if (b && b.value != null && Number.isFinite(b.value)) out.push([key, b.value * factor]);
+  }
+  return out;
+}
+
 // Per-model bias / MAE / RMSE summary lines shown below the table.
 function compareSummaryHtml(models, columns, measureMap, config, res) {
   if (!measureMap || !measurePtsFromMap(measureMap).length) {
@@ -3779,7 +4024,7 @@ function compareSummaryHtml(models, columns, measureMap, config, res) {
   }
   const { perModel } = computeCompareDeltas(models, columns, measureMap, config, res);
   return perModel
-    .map(({ m, deltas }) => {
+    .map(({ m, deltas, rels }) => {
       const dot = `<span class="dot" style="background:${m.color}"></span>`;
       const nm = `<span title="${escapeXml(m.name)}">${escapeXml(m.short || m.name)}</span>`;
       const present = deltas.filter((d) => d != null);
@@ -3788,7 +4033,11 @@ function compareSummaryHtml(models, columns, measureMap, config, res) {
       const bias = present.reduce((a, b) => a + b, 0) / n;
       const mae = present.reduce((a, b) => a + Math.abs(b), 0) / n;
       const rmse = Math.sqrt(present.reduce((a, b) => a + b * b, 0) / n);
-      return `<div class="sumline">${dot}${nm}: bias ${fmtDelta(bias)} · MAE ${mae.toFixed(1)} · RMSE ${rmse.toFixed(1)} (n=${n})</div>`;
+      const relPresent = (rels || []).filter((r) => r != null);
+      const relBias = relPresent.length
+        ? ` <span class="ru">(${fmtRelDelta(relPresent.reduce((a, b) => a + b, 0) / relPresent.length)})</span>`
+        : "";
+      return `<div class="sumline">${dot}${nm}: bias ${fmtDelta(bias)}${relBias} · MAE ${mae.toFixed(1)} · RMSE ${rmse.toFixed(1)} (n=${n})</div>`;
     })
     .join("");
 }
@@ -3849,16 +4098,41 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
     rows.push(`<tr class="valrow">${cells}</tr>`);
   });
 
+  let corrections = [];
   if (showMeasure) {
-    rows.push(compareMeasureRow(columns, cls, measureMap, unitLabel));
+    rows.push(compareMeasureRow(columns, cls, measureMap, unitLabel, opts.station));
+    // Δ rows: absolute delta (main) + relative delta (% below), both per column.
     const { perModel, scale } = computeCompareDeltas(active, columns, measureMap, config, res);
-    perModel.forEach(({ m, deltas }, mi) => {
-      let cells = `<td class="rowlabel" title="${escapeXml(m.name)}"><span class="dot" style="background:${m.color}"></span>Δ ${escapeXml(m.short || m.name)}<span class="ru">− meting</span></td>`;
+    perModel.forEach(({ m, deltas, rels }, mi) => {
+      let cells = `<td class="rowlabel" title="${escapeXml(m.name)}"><span class="dot" style="background:${m.color}"></span>Δ ${escapeXml(m.short || m.name)}<span class="ru">abs · %</span></td>`;
       deltas.forEach((d, ci) => {
         const style = d == null ? "" : ` style="background:${deltaColor(d, scale)}"`;
-        cells += `<td class="${cls(ci)} grib-cmp-delta-cell" data-mi="${mi}" data-ci="${ci}"${style}>${d == null ? "–" : fmtDelta(d)}</td>`;
+        const inner = d == null ? "–" : `<span class="da">${fmtDelta(d)}</span><span class="dr">${fmtRelDelta(rels[ci])}</span>`;
+        cells += `<td class="${cls(ci)} grib-cmp-delta-cell" data-mi="${mi}" data-ci="${ci}"${style}>${inner}</td>`;
       });
       rows.push(`<tr class="valrow deltarow">${cells}</tr>`);
+    });
+    // Corrected ("gecorreleerde") rows: each selected source shifted/scaled by its
+    // own bias vs the measurement, applied to every column.
+    corrections = computeCorrections(active, columns, measureMap, config, res, opts.corrMode, opts.corrSources);
+    corrections.forEach((corr, si) => {
+      const src = active.find((m) => m.entryId === corr.entryId);
+      const byBucket = aggregateSeries(src.series, res, src.unit === "mm", columns);
+      const modeLbl = corr.mode === "rel" ? `×${corr.ratio.toFixed(2)}` : `${fmtDelta(-corr.bias)}`;
+      let cells = `<td class="rowlabel" title="${escapeXml(corr.name)} — gecorrigeerd (${corr.mode === "rel" ? "relatief" : "absoluut"}, n=${corr.n})"><span class="dot" style="background:${corr.color}"></span>${escapeXml(corr.short)} ✓<span class="ru">corr ${modeLbl}</span></td>`;
+      columns.forEach((key, ci) => {
+        const b = byBucket.get(key);
+        const cv = b && b.value != null ? applyCorrection(b.value * corr.factor, corr) : null;
+        if (cv == null) {
+          cells += `<td class="${cls(ci)} grib-cmp-corr-cell" data-si="${si}" data-ci="${ci}">–</td>`;
+        } else {
+          const src2 = corr.factor ? cv / corr.factor : cv; // back to source unit for the legend
+          const bg = corr.legend ? lerpLegendColor(corr.legend, src2) : null;
+          const style = bg ? ` style="background:${bg};color:${readableText(bg)}"` : "";
+          cells += `<td class="${cls(ci)} grib-cmp-corr-cell" data-si="${si}" data-ci="${ci}"${style}>${fmtCell(corr.unit, cv)}</td>`;
+        }
+      });
+      rows.push(`<tr class="valrow corrrow">${cells}</tr>`);
     });
   }
 
@@ -3866,12 +4140,14 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
     active.length || showMeasure
       ? `<table class="grib-detail-table grib-cmp-table"><thead><tr>${groupRow}</tr><tr>${colRow}</tr></thead><tbody>${rows.join("")}</tbody></table>`
       : "";
-  const chart = compareChartSvg(active, config, unitLabel, showMeasure ? measurePtsFromMap(measureMap) : []);
+  const chart = compareChartSvg(active, config, unitLabel, showMeasure ? measurePtsFromMap(measureMap) : [], corrections);
   const summary = showMeasure ? compareSummaryHtml(active, columns, measureMap, config, res) : "";
   const controls = showMeasure
     ? `<div class="grib-cmp-meas-controls">` +
       `<button class="grib-cmp-clear" type="button">Wis meting</button>` +
+      `<button class="grib-cmp-dl-station" type="button" title="Download het dichtstbijzijnde meetstation voor deze parameter">Meetstation downloaden</button>` +
       `</div>` +
+      compareCorrectionHtml(active, opts.corrMode, opts.corrSources) +
       compareStationsHtml(opts.stations, opts.radiusKm)
     : "";
   return (
@@ -3880,6 +4156,35 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
     `<div class="grib-cmp-summary">${summary}</div>` +
     controls
   );
+}
+
+// The correction controls: pick absolute/relative, then tick which sources to
+// apply it to (a corrected line/row appears per ticked source).
+function compareCorrectionHtml(models, corrMode, corrSet) {
+  const mode = corrMode || "none";
+  const opt = (v, lbl) => `<option value="${v}"${v === mode ? " selected" : ""}>${lbl}</option>`;
+  const sel =
+    `<label class="corrmode">Correctie <select class="grib-cmp-corrmode">` +
+    opt("none", "geen") +
+    opt("abs", "absoluut (verschuiven)") +
+    opt("rel", "relatief (schalen)") +
+    `</select></label>`;
+  let srcs = "";
+  if (mode !== "none") {
+    srcs =
+      `<span class="corrsrcs"><span class="lbl">toepassen op:</span> ` +
+      models
+        .filter((m) => m.unit !== "°")
+        .map(
+          (m) =>
+            `<label class="grib-cmp-corrsrc" title="${escapeXml(m.name)}">` +
+            `<input type="checkbox" data-eid="${m.entryId}" ${!corrSet || corrSet.has(m.entryId) ? "checked" : ""}>` +
+            `<span class="sw" style="background:${m.color}"></span>${escapeXml(m.short || m.name)}</label>`
+        )
+        .join("") +
+      `</span>`;
+  }
+  return `<div class="grib-cmp-corr">${sel}${srcs}</div>`;
 }
 
 // The nearby-measurement-station block shown under the meting controls: each
@@ -3892,8 +4197,8 @@ function compareStationsHtml(stations, radiusKm) {
   const items = stations
     .map(
       (s) =>
-        `<button class="grib-cmp-station" type="button" data-lat="${s.lat}" data-lng="${s.lon}" ` +
-        `title="Ga naar ${s.name}">${s.name} · ${s.distKm.toFixed(1)} km</button>`
+        `<button class="grib-cmp-station" type="button" data-lat="${s.lat}" data-lng="${s.lon}" data-name="${escapeXml(s.name)}" ` +
+        `title="Download ${escapeXml(s.name)} en toon als meting">${escapeXml(s.name)} · ${s.distKm.toFixed(1)} km</button>`
     )
     .join("");
   return `<div class="grib-cmp-stations"><span class="lbl">Meetstations binnen ${r} km:</span> ${items}</div>`;
@@ -3909,20 +4214,48 @@ function refreshCompareMeasure(root, spec) {
     for (const s of m.series) if (s.value != null) keySet.add(bucketStart(new Date(s.valid_time), spec.res));
   }
   const columns = [...keySet].sort((a, b) => a - b);
+  const corrections = computeCorrections(active, columns, spec.measureMap, spec.config, spec.res, spec.corrMode, spec.corrSources);
+  // If a new value made a source (un)correctable the row structure changed -> full
+  // re-render (adding/removing rows can't be done cell-by-cell).
+  const domCorrRows = root.querySelectorAll(".corrrow").length;
+  if (domCorrRows !== corrections.length && typeof spec.rerender === "function") {
+    spec.rerender();
+    return;
+  }
   const { perModel, scale } = computeCompareDeltas(active, columns, spec.measureMap, spec.config, spec.res);
-  perModel.forEach(({ deltas }, mi) => {
+  perModel.forEach(({ deltas, rels }, mi) => {
     deltas.forEach((d, ci) => {
       const cell = root.querySelector(`.grib-cmp-delta-cell[data-mi="${mi}"][data-ci="${ci}"]`);
       if (!cell) return;
-      cell.textContent = d == null ? "–" : fmtDelta(d);
+      cell.innerHTML = d == null ? "–" : `<span class="da">${fmtDelta(d)}</span><span class="dr">${fmtRelDelta(rels[ci])}</span>`;
       cell.style.background = d == null ? "" : deltaColor(d, scale);
+    });
+  });
+  corrections.forEach((corr, si) => {
+    const byBucket = aggregateSeries(active.find((m) => m.entryId === corr.entryId).series, spec.res, corr.unit === "mm", columns);
+    columns.forEach((key, ci) => {
+      const cell = root.querySelector(`.grib-cmp-corr-cell[data-si="${si}"][data-ci="${ci}"]`);
+      if (!cell) return;
+      const b = byBucket.get(key);
+      const cv = b && b.value != null ? applyCorrection(b.value * corr.factor, corr) : null;
+      if (cv == null) {
+        cell.textContent = "–";
+        cell.style.background = "";
+        cell.style.color = "";
+      } else {
+        const src2 = corr.factor ? cv / corr.factor : cv;
+        const bg = corr.legend ? lerpLegendColor(corr.legend, src2) : null;
+        cell.textContent = fmtCell(corr.unit, cv);
+        cell.style.background = bg || "";
+        cell.style.color = bg ? readableText(bg) : "";
+      }
     });
   });
   const sum = root.querySelector(".grib-cmp-summary");
   if (sum) sum.innerHTML = compareSummaryHtml(active, columns, spec.measureMap, spec.config, spec.res);
   const chartBox = root.querySelector(".grib-cmp-chart-box");
   if (chartBox) {
-    chartBox.innerHTML = compareChartSvg(active, spec.config, spec.unitLabel, measurePtsFromMap(spec.measureMap));
+    chartBox.innerHTML = compareChartSvg(active, spec.config, spec.unitLabel, measurePtsFromMap(spec.measureMap), corrections);
   }
 }
 
@@ -3975,7 +4308,22 @@ const COMPARE_EXTRA_CSS = `
      so the block reads as "models · your measurement · differences". */
   .grib-detail-table .measrow td { border-top: 2px solid var(--divider-color, #c7ccd1); }
   .grib-detail-table .measrow .rowlabel { font-weight: 600; }
-  .grib-detail-table .deltarow td.cell { font-variant-numeric: tabular-nums; }
+  .grib-detail-table .deltarow td.cell { font-variant-numeric: tabular-nums; padding: 1px 0; line-height: 1.15; }
+  .grib-detail-table .deltarow .da { display: block; }
+  .grib-detail-table .deltarow .dr { display: block; font-size: 10px; opacity: 0.7; }
+  .grib-detail-table .corrrow td { border-top: 1px dashed var(--divider-color, #c7ccd1); }
+  .grib-detail-table .corrrow .rowlabel { font-style: italic; }
+  .grib-cmp-legend .sw.dash { background: none !important; border-top: 3px dashed currentColor; height: 0; }
+  .grib-cmp-corr { padding: 6px 12px 0; font: 12px/1.7 sans-serif; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+  .grib-cmp-corr .corrmode { display: inline-flex; align-items: center; gap: 5px; }
+  .grib-cmp-corr .grib-cmp-corrmode {
+    font: inherit; padding: 1px 4px; border-radius: 6px; color: inherit;
+    border: 1px solid var(--divider-color, #c7ccd1); background: var(--card-background-color, #fff);
+  }
+  .grib-cmp-corr .corrsrcs { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
+  .grib-cmp-corr .corrsrcs .lbl { opacity: 0.7; }
+  .grib-cmp-corrsrc { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  .grib-cmp-corrsrc .sw { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
   .grib-cmp-summary { padding: 6px 12px 2px; font: 12px/1.5 sans-serif; }
   .grib-cmp-summary .sumline { display: flex; align-items: center; gap: 6px; }
   .grib-cmp-summary .sumline .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
@@ -3988,6 +4336,13 @@ const COMPARE_EXTRA_CSS = `
     background: var(--card-background-color, #fff);
   }
   .grib-cmp-clear:hover { border-color: #d64040; color: #d64040; }
+  .grib-cmp-dl-station {
+    font: 12px sans-serif; cursor: pointer; color: inherit; margin-left: 8px;
+    border: 1px solid var(--divider-color, #c7ccd1); border-radius: 6px; padding: 2px 10px;
+    background: var(--card-background-color, #fff);
+  }
+  .grib-cmp-dl-station:hover { border-color: var(--primary-color, #0288d1); color: var(--primary-color, #0288d1); }
+  .grib-cmp-dl-station[disabled] { opacity: 0.6; cursor: default; }
   .grib-cmp-stations { padding: 6px 12px 2px; font: 12px/1.7 sans-serif; }
   .grib-cmp-stations .lbl { opacity: 0.7; margin-right: 4px; }
   .grib-cmp-stations .none { opacity: 0.6; }
@@ -4013,6 +4368,8 @@ class GribCompareCard extends HTMLElement {
     this._resolution = normalizeResolution(this._config.meteogram_resolution);
     const r = Number(this._config.measurement_radius_km);
     this._radius = r > 0 ? r : 10;
+    this._corrMode = "none"; // forecast correction: none | abs | rel
+    this._corrSources = null; // null = all shown sources
     this._render();
     if (this._entries) this._refresh();
   }
@@ -4292,9 +4649,26 @@ class GribCompareCard extends HTMLElement {
         res: this._resolution,
         unitLabel: this._shownUnit || "",
         measureMap: this._measure,
+        corrMode: this._corrMode,
+        corrSources: this._corrSources,
+        rerender: () => this._renderComparison(),
       });
     });
-    // Clear the measurement for this point/param, or jump to a nearby station.
+    // Correction mode / per-source toggles (delegated on the view).
+    this._els.cmpview.addEventListener("change", (ev) => {
+      if (ev.target.classList.contains("grib-cmp-corrmode")) {
+        this._corrMode = ev.target.value;
+        this._corrSources = null; // reset to "all" on a mode switch
+        this._renderComparison();
+      } else if (ev.target.closest(".grib-cmp-corrsrc")) {
+        const eid = ev.target.getAttribute("data-eid");
+        if (!this._corrSources) this._corrSources = new Set((this._shownModels || []).map((m) => m.entryId));
+        if (ev.target.checked) this._corrSources.add(eid);
+        else this._corrSources.delete(eid);
+        this._renderComparison();
+      }
+    });
+    // Clear the measurement, download a station, or jump to / download a nearby station.
     this._els.cmpview.addEventListener("click", (ev) => {
       if (ev.target.closest(".grib-cmp-clear")) {
         if (this._point) gribClearMeasurements(this._point.lat, this._point.lng, this._els.paramSelect.value);
@@ -4302,9 +4676,76 @@ class GribCompareCard extends HTMLElement {
         this._renderComparison();
         return;
       }
+      if (ev.target.closest(".grib-cmp-dl-station")) {
+        if (this._point) this._downloadStation(this._point.lat, this._point.lng, null);
+        return;
+      }
       const st = ev.target.closest(".grib-cmp-station");
-      if (st) this._openSavedPoint(Number(st.getAttribute("data-lat")), Number(st.getAttribute("data-lng")));
+      if (st) this._downloadStation(Number(st.getAttribute("data-lat")), Number(st.getAttribute("data-lng")), st.getAttribute("data-name"));
     });
+  }
+
+  // Download a measurement station's observations, store them as this point's
+  // measurement (moving the point to the station) and show them in the compare view.
+  async _downloadStation(lat, lng, name) {
+    const param = this._els.paramSelect.value;
+    const btn = this._els.cmpview.querySelector(".grib-cmp-dl-station");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Bezig…";
+    }
+    // Move the point to the station and (re)load the models there so the columns
+    // line up with the observations (await the fetch before reading the models).
+    this._point = window.L.latLng(lat, lng);
+    if (this._marker) this._marker.setLatLng(this._point);
+    broadcastGribPoint(lat, lng, this);
+    this._renderStationMarkers();
+    await this._refresh();
+    const models = this._shownModels || [];
+    const q = new URLSearchParams({
+      param,
+      lat: lat.toFixed(4),
+      lon: lng.toFixed(4),
+      start: this._obsStart(models),
+      end: new Date().toISOString(),
+    });
+    let data = null;
+    try {
+      data = await this._hass.callApi("GET", `grib_overlay/station_obs?${q}`);
+    } catch (err) {
+      data = { error: String((err && err.message) || err) };
+    }
+    if (!data || data.error || !data.series || !data.series.length) {
+      this._els.note.innerHTML = `<div class="grib-cmp-note">Kon meetstation niet laden${data && data.error ? ": " + escapeXml(String(data.error)) : ""}.</div>`;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Meetstation downloaden";
+      }
+      return;
+    }
+    const unit = (models[0] && models[0].unit) || "";
+    const columns = compareColumns(models, this._resolution);
+    const colValues = stationColValues(data.series, unit, this._resolution, columns, this._config);
+    const st = data.station || {};
+    gribSetMeasurementsBulk(lat, lng, param, colValues, {
+      name: name || st.name || "meetstation",
+      provider: st.provider || data.provider || "",
+    });
+    this._showMeasure = true;
+    this._els.measToggle.checked = true;
+    this._els.radctl.classList.remove("hidden");
+    this._measure = gribGetMeasurements(lat, lng, param);
+    this._renderComparison();
+    this._renderStationMarkers();
+  }
+
+  // Earliest model time (ISO) as the observation-window start; obs can't be future.
+  _obsStart(models) {
+    let tMin = Infinity;
+    for (const m of models || [])
+      for (const s of m.series || [])
+        if (s.value != null) tMin = Math.min(tMin, new Date(s.valid_time).getTime());
+    return new Date(Number.isFinite(tMin) ? tMin : Date.now() - 48 * 3600e3).toISOString();
   }
 
   async _initialize() {
@@ -4470,9 +4911,12 @@ class GribCompareCard extends HTMLElement {
       const stations = this._showMeasure && this._point
         ? stationsWithin(this._point.lat, this._point.lng, this._radius)
         : [];
+      const station = this._point
+        ? gribGetStation(this._point.lat, this._point.lng, this._els.paramSelect.value)
+        : null;
       this._els.cmpview.innerHTML = compareViewHtml(
         shown, this._config, this._resolution, unit, this._measure, this._showMeasure,
-        { stations, radiusKm: this._radius }
+        { stations, radiusKm: this._radius, station, corrMode: this._corrMode, corrSources: this._corrSources }
       );
     }
     this._els.note.innerHTML = dropped.length
