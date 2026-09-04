@@ -54,7 +54,11 @@ async def test_extract_decode_and_render_produces_frames(hass, tmp_path: Path) -
     parameters = [p for p in dataset.parameters if p.key in entry.data[CONF_PARAMETERS]]
 
     run_dir = coordinator.storage_dir / tar_path.stem
-    frames = coordinator._extract_decode_and_render(tar_path, run_dir, parameters, horizon_hours=24)
+    raw_dir = coordinator._raw_dir / tar_path.stem
+    member_paths = coordinator._extract_archive(tar_path, raw_dir)
+    frames = coordinator._decode_members(
+        member_paths, run_dir, tar_path.name, parameters, horizon_hours=24
+    )
 
     assert set(frames.keys()) == {"wind_10m", "temperature_2m", "pressure_msl"}
     for key, frame_list in frames.items():
@@ -71,8 +75,10 @@ async def test_extract_decode_and_render_produces_frames(hass, tmp_path: Path) -
         else:
             assert frame.wind_path is None
 
-    # the extracted member file should have been cleaned up after processing
+    # Raw members are extracted to the scratch dir, never into the run dir, and
+    # are deleted as they are decoded.
     assert not any(p.name.startswith("HA43_") for p in run_dir.iterdir())
+    assert not any(p.name.startswith("HA43_") for p in raw_dir.iterdir())
 
     # A fresh coordinator (as after a restart) must rebuild the same frames from
     # the on-disk manifest without re-downloading/re-rendering.

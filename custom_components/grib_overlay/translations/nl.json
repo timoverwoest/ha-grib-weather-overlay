@@ -47,12 +47,14 @@
           "notification_api_key": "Notification Service API-sleutel (optioneel)",
           "observations_api_key": "Observaties API-sleutel (optioneel)",
           "alias": "Korte alias (optioneel)",
+          "storage_path": "Map voor werkbestanden (optioneel)",
           "color_scales": "Eigen kleurschalen (optioneel)"
         },
         "data_description": {
           "notification_api_key": "Optioneel: een aparte KNMI Notification Service-sleutel voor directe push-updates. Laat leeg om op periodiek pollen te vertrouwen.",
           "observations_api_key": "Optioneel: een KNMI Open Data-sleutel mét toegang tot de dataset '10-minute-in-situ-meteorological-observations', gebruikt om stationswaarnemingen te downloaden. Je HARMONIE-sleutel heeft daar vaak géén toegang toe (KNMI geeft 403). Leeg laten = de HARMONIE-sleutel hergebruiken.",
           "alias": "Optionele korte naam die als compact label van deze bron wordt getoond in de vergelijking en het meteogram, bv. `KNMI NL`. Leeg laten = automatisch afgeleid uit de bron (bronnen van dezelfde soort worden automatisch onderscheiden).",
+          "storage_path": "Waar de GRIB-werkbestanden komen te staan (run-archieven, gedecodeerde leden en de gerenderde cache). Leeg laten = de standaard buiten de configuratiemap: `/share/grib_overlay` op Home Assistant OS/Supervised, anders de tijdelijke systeemmap. Zet dit nooit binnen `/config`: Home Assistant tart die map bij elke back-up, wat back-ups groot maakt en ze kan laten mislukken als een werkbestand tijdens de back-up verdwijnt.",
           "color_scales": "Eén parameter per regel, bv. `wind_10m: 0:#2c7fb8, 8:#7fcdbb, 12:#ffffb2, 16:#fd8d3c, 24:#bd0026`. Waarden staan in de eigen eenheid van de parameter (m/s, °C, hPa, mm, m). Jouw parameters: {parameters}. Leeg laten = de ingebouwde kleuren. Wijzigen rendert de huidige run opnieuw."
         }
       }

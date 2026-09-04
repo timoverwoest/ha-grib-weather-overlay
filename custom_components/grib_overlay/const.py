@@ -16,6 +16,13 @@ CONF_PARAMETERS = "parameters"
 # source (and disambiguates same-source entries automatically).
 CONF_ALIAS = "alias"
 
+# Optional override for where the GRIB working files (run archives, decoded
+# members, rendered PNG/JSON cache) are kept. Empty -> /share/grib_overlay when
+# that exists (Home Assistant OS/Supervised), else the system temp dir. Never
+# put this inside /config: Home Assistant tars that folder for every backup, and
+# this integration's file churn both bloats and breaks that tar.
+CONF_STORAGE_PATH = "storage_path"
+
 CONF_RETAIN_RUNS = "retain_runs"
 CONF_FORECAST_HORIZON_HOURS = "forecast_horizon_hours"
 CONF_UPDATE_INTERVAL_MINUTES = "update_interval_minutes"

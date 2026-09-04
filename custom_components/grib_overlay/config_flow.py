@@ -25,6 +25,7 @@ from .const import (
     CONF_PARAMETERS,
     CONF_RETAIN_RUNS,
     CONF_SOURCE,
+    CONF_STORAGE_PATH,
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_FORECAST_HORIZON_HOURS,
     DEFAULT_RETAIN_RUNS,
@@ -172,6 +173,13 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 options[CONF_OBSERVATIONS_API_KEY] = obs_key
             else:
                 options.pop(CONF_OBSERVATIONS_API_KEY, None)
+            # Working-file location: strip, drop when blank so it falls back to
+            # the default root outside /config.
+            storage_path = (options.get(CONF_STORAGE_PATH) or "").strip()
+            if storage_path:
+                options[CONF_STORAGE_PATH] = storage_path
+            else:
+                options.pop(CONF_STORAGE_PATH, None)
             return self.async_create_entry(title="", data=options)
 
         options = self._config_entry.options
@@ -213,6 +221,17 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                     CONF_ALIAS,
                     description={
                         "suggested_value": options.get(CONF_ALIAS, data.get(CONF_ALIAS, ""))
+                    },
+                ): str,
+                # Where the GRIB working files go. Blank -> the default root
+                # outside /config (/share/grib_overlay, else the temp dir), which
+                # is what keeps Home Assistant backups small and reliable.
+                vol.Optional(
+                    CONF_STORAGE_PATH,
+                    description={
+                        "suggested_value": options.get(
+                            CONF_STORAGE_PATH, data.get(CONF_STORAGE_PATH, "")
+                        )
                     },
                 ): str,
                 # Optional per-parameter colour scales. One parameter per line:

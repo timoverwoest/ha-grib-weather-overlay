@@ -1,10 +1,13 @@
-"""Backup-safety: file churn is paused while Home Assistant makes a backup.
+"""Backup safety.
 
-The integration downloads and deletes GRIB working files under /config; if a
-file vanishes between the backup's file listing and the tar write the whole
-backup aborts with FileNotFoundError. These tests verify the coordinator defers
-run processing while a backup is in progress and that the backup platform hooks
-toggle that state (draining any in-flight run first) without ever raising.
+Two layers, both covered here:
+
+* nothing the integration writes lives under /config, so a backup's tar of that
+  folder can no longer trip over a working file we removed mid-backup (this is
+  what actually fixed it -- pausing could not help once a long decode outlasted
+  the drain timeout);
+* the churn pause is still honoured, for the one-time cleanup of the pre-0.26
+  /config cache and for anyone pointing storage_path back into the config folder.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from custom_components.grib_overlay.const import (
     CONF_DATASET,
     CONF_PARAMETERS,
     CONF_SOURCE,
+    CONF_STORAGE_PATH,
     DOMAIN,
 )
 from custom_components.grib_overlay.coordinator import GribOverlayCoordinator
@@ -124,3 +128,141 @@ async def test_pre_backup_does_not_block_on_in_flight_run(hass, monkeypatch) -> 
         assert GribOverlayCoordinator.backup_in_progress() is True
     finally:
         coordinator._process_lock.release()
+
+
+async def test_working_files_stay_out_of_the_config_folder(hass) -> None:
+    """The real fix: no path the coordinator writes to is inside /config."""
+    entry = _make_entry(hass)
+    coordinator = GribOverlayCoordinator(hass, entry)
+
+    config_dir = hass.config.path()
+    assert not str(coordinator.storage_dir).startswith(config_dir)
+    assert not str(coordinator._raw_dir).startswith(config_dir)
+    # Scratch space must also sit beside -- not inside -- the entry directory,
+    # or the run-retention cleanup could delete an in-flight download.
+    assert coordinator.storage_dir not in coordinator._raw_dir.parents
+
+
+async def test_run_archive_is_downloaded_into_the_scratch_dir(hass, tmp_path) -> None:
+    """The ~850MB archive must land in scratch, never in /config or a run dir."""
+    entry = _make_entry(hass)
+    hass.config_entries.async_update_entry(entry, options={CONF_STORAGE_PATH: str(tmp_path)})
+    coordinator = GribOverlayCoordinator(hass, entry)
+
+    destinations = []
+
+    async def _capture(dataset, filename, destination):
+        destinations.append(destination)
+        return destination
+
+    coordinator.source.async_download_file = _capture
+    coordinator._extract_archive = MagicMock(return_value=[])
+    coordinator._decode_members = MagicMock(return_value={"wind_10m": []})
+
+    dataset = SimpleNamespace(
+        key=entry.data[CONF_DATASET],
+        parameters=[SimpleNamespace(key="wind_10m")],
+    )
+    await coordinator._process_new_run(dataset, "HARM43_V1_P1_2026090219.tar")
+
+    (tar_path,) = destinations
+    assert coordinator._raw_dir in tar_path.parents
+    assert not str(tar_path).startswith(hass.config.path())
+    # And the members are extracted into scratch, not into the run directory.
+    _, extract_target = coordinator._extract_archive.call_args[0]
+    assert coordinator._raw_dir in extract_target.parents
+
+
+async def test_scratch_dir_is_cleaned_up_even_when_decoding_fails(hass, tmp_path) -> None:
+    """A leaked archive would cost ~850MB on real disk until the next restart."""
+    entry = _make_entry(hass)
+    hass.config_entries.async_update_entry(entry, options={CONF_STORAGE_PATH: str(tmp_path)})
+    coordinator = GribOverlayCoordinator(hass, entry)
+
+    raw_dir = coordinator._raw_dir / "run-A"
+
+    async def _download(dataset, filename, destination):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"archive")
+        return destination
+
+    coordinator.source.async_download_file = _download
+    coordinator._extract_archive = MagicMock(return_value=[])
+    coordinator._decode_members = MagicMock(side_effect=OSError("corrupt member"))
+
+    dataset = SimpleNamespace(
+        key=entry.data[CONF_DATASET],
+        parameters=[SimpleNamespace(key="wind_10m")],
+    )
+    with pytest.raises(OSError):
+        await coordinator._process_new_run(dataset, "run-A.tar")
+
+    assert not raw_dir.exists()
+
+
+async def test_storage_path_option_overrides_the_default(hass, tmp_path) -> None:
+    entry = _make_entry(hass)
+    hass.config_entries.async_update_entry(entry, options={CONF_STORAGE_PATH: str(tmp_path)})
+    coordinator = GribOverlayCoordinator(hass, entry)
+    assert coordinator.storage_dir == tmp_path / entry.entry_id
+
+
+async def test_legacy_config_cache_is_cleared_on_setup(hass, tmp_path) -> None:
+    """Upgrading must actually shrink the backup, not just stop growing it."""
+    entry = _make_entry(hass)
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_STORAGE_PATH: str(tmp_path / "new")}
+    )
+    coordinator = GribOverlayCoordinator(hass, entry)
+
+    legacy = coordinator._legacy_storage_dir
+    legacy.mkdir(parents=True)
+    (legacy / "old_run").mkdir()
+    (legacy / "old_run" / "wind_10m_20260904T0000.png").write_bytes(b"cached")
+
+    await coordinator._async_migrate_legacy_storage()
+
+    assert not legacy.exists()
+    assert coordinator._legacy_migrated is True
+
+
+async def test_legacy_cache_is_dropped_when_it_cannot_be_moved(hass, tmp_path) -> None:
+    """A move isn't always possible (/config and /share are separate mounts).
+
+    Then the old copy is simply discarded -- it is a cache, rebuilt on the next
+    run -- rather than left behind to keep bloating every backup.
+    """
+    entry = _make_entry(hass)
+    new_root = tmp_path / "new"
+    hass.config_entries.async_update_entry(entry, options={CONF_STORAGE_PATH: str(new_root)})
+    coordinator = GribOverlayCoordinator(hass, entry)
+    # Destination already populated -> the rename is skipped.
+    coordinator.storage_dir.mkdir(parents=True)
+    (coordinator.storage_dir / "keep_me").write_text("current cache")
+
+    legacy = coordinator._legacy_storage_dir
+    legacy.mkdir(parents=True)
+    (legacy / "old_run").mkdir()
+
+    await coordinator._async_migrate_legacy_storage()
+
+    assert not legacy.exists()
+    assert (coordinator.storage_dir / "keep_me").read_text() == "current cache"
+
+
+async def test_legacy_cache_is_left_alone_during_a_backup(hass, tmp_path) -> None:
+    entry = _make_entry(hass)
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_STORAGE_PATH: str(tmp_path / "new")}
+    )
+    coordinator = GribOverlayCoordinator(hass, entry)
+    legacy = coordinator._legacy_storage_dir
+    legacy.mkdir(parents=True)
+
+    GribOverlayCoordinator.set_backup_active(True)
+    await coordinator._async_migrate_legacy_storage()
+
+    # Deleting hundreds of MB while the backup walks /config is the very race
+    # we are fixing -- it has to wait for the next poll instead.
+    assert legacy.exists()
+    assert coordinator._legacy_migrated is False

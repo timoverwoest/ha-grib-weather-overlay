@@ -8,6 +8,10 @@ cache the resulting PNGs on disk, and drop everything else (the archive
 itself, members outside the horizon, and older runs beyond the retention
 count) to keep bandwidth/disk bounded -- a HARMONIE run archive is roughly
 850MB for ~49 lead times, far more than a home server should keep around.
+
+None of that lives in /config: Home Assistant tars the config folder for every
+backup, and this file churn both bloated and broke those backups. See
+storage_paths for where the working files go instead.
 """
 
 from __future__ import annotations
@@ -17,7 +21,6 @@ import json
 import logging
 import shutil
 import tarfile
-import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -31,7 +34,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from . import field_grid, grib_decode, render, velocity
+from . import field_grid, grib_decode, render, storage_paths, velocity
 from .const import (
     CONF_API_KEY,
     CONF_COLOR_SCALES,
@@ -41,6 +44,7 @@ from .const import (
     CONF_PARAMETERS,
     CONF_RETAIN_RUNS,
     CONF_SOURCE,
+    CONF_STORAGE_PATH,
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_FORECAST_HORIZON_HOURS,
     DEFAULT_RETAIN_RUNS,
@@ -71,12 +75,12 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
     """One coordinator per config entry; owns one source + one dataset."""
 
     # Shared across all entries, toggled by the backup platform (backup.py).
-    # Home Assistant archives the whole /config folder for a backup; because this
-    # integration constantly downloads and deletes GRIB working files under
-    # /config, a file removed between the backup's file listing and the tar write
-    # aborts the whole backup with FileNotFoundError. While a backup runs we skip
-    # processing a new run (and thus any deletion) entirely; the next poll after
-    # the backup picks the run up. See backup.py.
+    # Since 0.26 no working file lives under /config (see storage_paths), so a
+    # backup can no longer trip over our churn. This pause is kept as a second
+    # line of defence -- for the one-time /config cleanup on upgrade, and for
+    # anyone who points storage_path back inside the config folder. While a
+    # backup runs we skip processing a new run (and thus any deletion); the next
+    # poll after the backup picks the run up.
     _backup_active: bool = False
     _backup_since: float = 0.0
     # Safety net: if async_post_backup never fires (e.g. a crashed/aborted
@@ -123,26 +127,89 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             notification_api_key=notification_key,
             instance_id=entry.entry_id,  # stable MQTT client id across reloads
         )
-        self.storage_dir = Path(hass.config.path(DOMAIN, entry.entry_id))
+        # Everything this integration writes lives OUTSIDE /config: Home Assistant
+        # tars that folder for every backup, and our file churn used to abort the
+        # backup outright (FileNotFoundError on a member deleted mid-tar) while
+        # the rendered cache needlessly bloated it. See storage_paths.
+        self.storage_dir = storage_paths.entry_dir(
+            entry.options.get(CONF_STORAGE_PATH) or entry.data.get(CONF_STORAGE_PATH),
+            entry.entry_id,
+        )
+        # Pre-0.26 location, inside /config. Cleared once on setup (see
+        # _migrate_legacy_storage) so an upgrade actually shrinks the backup.
+        self._legacy_storage_dir = Path(hass.config.path(DOMAIN, entry.entry_id))
+        self._legacy_migrated = False
         # Optional per-parameter custom colour scales (baked into the PNG at
         # render time). Parsed once; the coordinator is recreated on an options
         # change, and a change invalidates cached runs so they re-render.
         self._color_scales = render.parse_color_scales(
             entry.options.get(CONF_COLOR_SCALES, "")
         )
-        # Raw per-file downloads (non-archive sources such as BSH/DWD) go to a
-        # transient scratch dir OUTSIDE /config, so their churn never lands in a
-        # backup even on cores that don't invoke the backup hooks. They are small
-        # (individual GRIB files), so a possibly tmpfs /tmp is safe. KNMI's large
-        # (~850 MB) tar archive stays under storage_dir on disk and is protected
-        # instead by pausing processing during a backup (see backup.py).
-        self._raw_dir = Path(tempfile.gettempdir()) / DOMAIN / entry.entry_id
         # Serialises run processing so the backup platform can wait for an
         # in-flight run to finish its file churn before the archive is walked.
         self._process_lock = asyncio.Lock()
         self._current_run_filename: str | None = None
         # frames[parameter_key] = list[Frame] sorted by valid_time
         self.frames: dict[str, list[Frame]] = {}
+
+    @property
+    def _raw_dir(self) -> Path:
+        """Scratch space for in-flight downloads (run archive, raw members).
+
+        A property rather than a stored path so that relocating ``storage_dir``
+        (the tests do) moves the scratch space along with it.
+        """
+        return storage_paths.raw_dir_for(self.storage_dir)
+
+    def _migrate_legacy_storage(self) -> None:
+        """Blocking: get the pre-0.26 cache out of /config, once.
+
+        Up to 0.25 the run cache lived in ``/config/grib_overlay/<entry_id>``.
+        Leaving it there would keep every backup hundreds of MB heavier, so move
+        it to the new root -- or, when that crosses a filesystem boundary (it
+        does on Home Assistant OS, where /config and /share are separate mounts),
+        simply drop it: it is a cache and the next poll rebuilds it.
+        """
+        if self._legacy_migrated:
+            return
+        legacy = self._legacy_storage_dir
+        if not legacy.is_dir():
+            self._legacy_migrated = True
+            return
+        self.storage_dir.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if not self.storage_dir.exists():
+                legacy.rename(self.storage_dir)
+                _LOGGER.warning(
+                    "Moved the GRIB cache out of the config folder: %s -> %s "
+                    "(config is tarred for every Home Assistant backup)",
+                    legacy,
+                    self.storage_dir,
+                )
+                self._legacy_migrated = True
+                return
+        except OSError as err:
+            _LOGGER.debug("Could not move %s to %s: %s", legacy, self.storage_dir, err)
+        shutil.rmtree(legacy, ignore_errors=True)
+        _LOGGER.warning(
+            "Removed the old GRIB cache from the config folder (%s); it is "
+            "rebuilt at %s on the next run so backups stay small and can no "
+            "longer fail on a file that vanished mid-backup",
+            legacy,
+            self.storage_dir,
+        )
+        self._legacy_migrated = True
+        # Drops /config/grib_overlay itself once the last entry has migrated.
+        try:
+            legacy.parent.rmdir()
+        except OSError:
+            pass
+
+    async def _async_migrate_legacy_storage(self) -> None:
+        """Run the one-time /config cleanup, unless a backup is walking it."""
+        if self._legacy_migrated or self.backup_in_progress():
+            return
+        await self.hass.async_add_executor_job(self._migrate_legacy_storage)
 
     async def async_setup(self) -> None:
         """Fast setup (does not download): restore cached frames, start push, poll timer.
@@ -152,6 +219,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         immediately. On a restart the cached frames from a previous run are
         loaded from disk so the card has data straight away.
         """
+        await self._async_migrate_legacy_storage()
         run_filename, frames = await self.hass.async_add_executor_job(self._load_cached_frames)
         if run_filename:
             self._current_run_filename = run_filename
@@ -235,6 +303,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                     _LOGGER.debug(
                         "New run detected for %s: %s", dataset.key, latest.filename
                     )
+                    await self._async_migrate_legacy_storage()
                     try:
                         await self._process_new_run(dataset, latest.filename)
                     except GribSourceError as err:
@@ -260,63 +329,62 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             CONF_FORECAST_HORIZON_HOURS, DEFAULT_FORECAST_HORIZON_HOURS
         )
         run_dir = self.storage_dir / Path(filename).stem
-        raw_dir: Path | None = None
+        # Every raw byte -- the run archive and the GRIB members extracted from
+        # it -- is created and deleted inside this scratch dir, kept apart from
+        # the run directories (and well away from /config) so no backup can ever
+        # trip over a file we are in the middle of removing.
+        raw_dir = self._raw_dir / Path(filename).stem
 
         if getattr(self.source, "provides_archive", True):
-            # KNMI: one .tar archive holds every lead-time member. It is large
-            # (~850 MB), so it stays on disk under storage_dir rather than in a
-            # possibly RAM-backed /tmp; the backup pause guards its churn.
-            tar_path = self.storage_dir / filename
+            # KNMI: one .tar archive (~850 MB) holds every lead-time member.
+            tar_path = raw_dir / filename
             await self.source.async_download_file(dataset, filename, tar_path)
             try:
                 member_paths = await self.hass.async_add_executor_job(
-                    self._extract_archive, tar_path, run_dir
+                    self._extract_archive, tar_path, raw_dir
                 )
             finally:
                 await self.hass.async_add_executor_job(tar_path.unlink, True)
         else:
-            # DWD/BSH: individual per-parameter/per-lead-time GRIB files. These
-            # are small, so download them to a transient dir outside /config
-            # (kept out of backups entirely); the rendered PNGs/JSON below still
-            # land in run_dir under /config for the fast-restart cache.
-            raw_dir = self._raw_dir / Path(filename).stem
+            # DWD/BSH: individual per-parameter/per-lead-time GRIB files.
             member_paths = await self.source.async_download_run(
                 dataset, filename, raw_dir, [p.key for p in parameters], horizon_hours
             )
 
-        new_frames = await self.hass.async_add_executor_job(
-            self._decode_members, member_paths, run_dir, filename, parameters, horizon_hours
-        )
-        if any(new_frames.values()):
-            self.frames = new_frames
-        else:
-            # A run that decoded to nothing (e.g. a provider briefly missing its
-            # near-term files) must not blank a working source: keep the previous
-            # run's frames and drop the empty run dir so it can't shadow the good
-            # run on restore (_load_cached_frames requires non-empty frames) or
-            # get retained in its place.
-            _LOGGER.warning(
-                "Run %s for %s produced no frames; keeping the previous run",
-                filename,
-                dataset.key,
+        try:
+            new_frames = await self.hass.async_add_executor_job(
+                self._decode_members, member_paths, run_dir, filename, parameters, horizon_hours
             )
-            await self.hass.async_add_executor_job(shutil.rmtree, run_dir, True)
-        if raw_dir is not None:
-            # The raw GRIB members have been decoded into run_dir; drop the /tmp
-            # scratch copy. ignore_errors: a member may already be gone.
-            await self.hass.async_add_executor_job(
-                shutil.rmtree, raw_dir, True
-            )
+            if any(new_frames.values()):
+                self.frames = new_frames
+            else:
+                # A run that decoded to nothing (e.g. a provider briefly missing
+                # its near-term files) must not blank a working source: keep the
+                # previous run's frames and drop the empty run dir so it can't
+                # shadow the good run on restore (_load_cached_frames requires
+                # non-empty frames) or get retained in its place.
+                _LOGGER.warning(
+                    "Run %s for %s produced no frames; keeping the previous run",
+                    filename,
+                    dataset.key,
+                )
+                await self.hass.async_add_executor_job(shutil.rmtree, run_dir, True)
+        finally:
+            # Always drop the scratch copy, including when decoding blew up: it
+            # now sits on real disk (not a tmpfs that a reboot clears), so a
+            # leaked run archive would cost ~850MB until the next restart.
+            # ignore_errors: a member may already be gone.
+            await self.hass.async_add_executor_job(shutil.rmtree, raw_dir, True)
 
-    def _extract_archive(self, tar_path: Path, run_dir: Path) -> list[Path]:
-        """Blocking: extract every regular member of a run archive into run_dir."""
-        run_dir.mkdir(parents=True, exist_ok=True)
+    def _extract_archive(self, tar_path: Path, raw_dir: Path) -> list[Path]:
+        """Blocking: extract every regular member of a run archive into raw_dir."""
+        raw_dir.mkdir(parents=True, exist_ok=True)
         member_paths: list[Path] = []
         with tarfile.open(tar_path, "r") as tar:
             for member in tar.getmembers():
                 if not member.isfile():
                     continue
-                extracted_path = run_dir / Path(member.name).name
+                extracted_path = raw_dir / Path(member.name).name
                 with tar.extractfile(member) as src, extracted_path.open("wb") as dst:
                     shutil.copyfileobj(src, dst)
                 member_paths.append(extracted_path)
