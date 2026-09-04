@@ -574,6 +574,25 @@ function gribClearMeasurements(lat, lng, param) {
   gribWriteAllMeasurements(store);
   window.dispatchEvent(new Event(GRIB_MEAS_EVENT));
 }
+// How many saved points hold measurements right now (for the "wis alles" label).
+function gribMeasurementPointCount() {
+  return gribSavedPoints().length;
+}
+// Wipe every saved measurement of every point in one go. Clearing points one by
+// one is fiddly on a phone -- the Home Assistant companion app leaves the last
+// point stuck, because dropping a point relies on switching to another one.
+function gribClearAllMeasurements() {
+  gribWriteAllMeasurements({});
+  window.dispatchEvent(new Event(GRIB_MEAS_EVENT));
+}
+// Wiping every point is not undoable, so ask first (skipped when nothing is saved).
+function confirmClearAllMeasurements() {
+  const n = gribMeasurementPointCount();
+  if (!n) return false;
+  return window.confirm(
+    `Alle opgeslagen meetdata verwijderen van ${n} ${n === 1 ? "punt" : "punten"}?`
+  );
+}
 
 // Built-in KNMI automatic-weather-station list (name, lat, lon) used to present
 // nearby measurement stations around the selected point. Coordinates are the
@@ -2768,6 +2787,14 @@ class GribOverlayCard extends HTMLElement {
     // Click a row label to hide that parameter; click a chip to bring it back;
     // "Wis meting" clears this point's measurement for the compare parameter.
     backdrop.querySelector(".grib-detail-scroll").addEventListener("click", (ev) => {
+      if (ev.target.closest(".grib-cmp-clear-all")) {
+        if (confirmClearAllMeasurements()) {
+          gribClearAllMeasurements();
+          this._detailMeasure = new Map();
+          this._rerenderDetail();
+        }
+        return;
+      }
       if (ev.target.closest(".grib-cmp-clear")) {
         if (this._detailLatlng) {
           gribClearMeasurements(this._detailLatlng.lat, this._detailLatlng.lng, this._detailCmpParam);
@@ -4195,10 +4222,17 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
       : "";
   const chart = compareChartSvg(active, config, unitLabel, showMeasure ? measurePtsFromMap(measureMap) : [], corrections);
   const summary = showMeasure ? compareSummaryHtml(active, columns, measureMap, config, res) : "";
+  // "Wis alle meetdata" wipes every saved point at once: on a phone (Home
+  // Assistant companion app) points can only be dropped by moving to another
+  // one, which leaves the last one un-clearable.
+  const savedPoints = gribMeasurementPointCount();
   const controls = showMeasure
     ? `<div class="grib-cmp-meas-controls">` +
       `<button class="grib-cmp-clear" type="button">Wis meting</button>` +
       `<button class="grib-cmp-dl-station" type="button" title="Download het dichtstbijzijnde meetstation voor deze parameter">Meetstation downloaden</button>` +
+      `<button class="grib-cmp-clear-all" type="button"${savedPoints ? "" : " disabled"}` +
+      ` title="Verwijder alle opgeslagen metingen van alle punten">Wis alle meetdata` +
+      `${savedPoints ? ` (${savedPoints})` : ""}</button>` +
       `</div>` +
       compareCorrectionHtml(active, opts.corrMode, opts.corrSources) +
       compareStationsHtml(opts.stations, opts.radiusKm)
@@ -4382,7 +4416,14 @@ const COMPARE_EXTRA_CSS = `
   .grib-cmp-summary .sumline .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
   .grib-cmp-summary .ru { opacity: 0.6; }
   .grib-cmp-note { padding: 8px 12px; font: 12px sans-serif; opacity: 0.75; }
-  .grib-cmp-meas-controls { padding: 4px 12px 0; }
+  .grib-cmp-meas-controls { padding: 4px 12px 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .grib-cmp-clear-all {
+    font: 12px sans-serif; cursor: pointer; color: inherit;
+    border: 1px solid var(--divider-color, #c7ccd1); border-radius: 6px; padding: 2px 10px;
+    background: var(--card-background-color, #fff);
+  }
+  .grib-cmp-clear-all:hover:not([disabled]) { border-color: #d64040; color: #d64040; }
+  .grib-cmp-clear-all[disabled] { opacity: 0.45; cursor: default; }
   .grib-cmp-clear {
     font: 12px sans-serif; cursor: pointer; color: inherit;
     border: 1px solid var(--divider-color, #c7ccd1); border-radius: 6px; padding: 2px 10px;
@@ -4390,7 +4431,7 @@ const COMPARE_EXTRA_CSS = `
   }
   .grib-cmp-clear:hover { border-color: #d64040; color: #d64040; }
   .grib-cmp-dl-station {
-    font: 12px sans-serif; cursor: pointer; color: inherit; margin-left: 8px;
+    font: 12px sans-serif; cursor: pointer; color: inherit;
     border: 1px solid var(--divider-color, #c7ccd1); border-radius: 6px; padding: 2px 10px;
     background: var(--card-background-color, #fff);
   }
@@ -4769,6 +4810,14 @@ class GribCompareCard extends HTMLElement {
     });
     // Clear the measurement, download a station, or jump to / download a nearby station.
     this._els.cmpview.addEventListener("click", (ev) => {
+      if (ev.target.closest(".grib-cmp-clear-all")) {
+        if (confirmClearAllMeasurements()) {
+          gribClearAllMeasurements();
+          this._measure = new Map();
+          this._renderComparison();
+        }
+        return;
+      }
       if (ev.target.closest(".grib-cmp-clear")) {
         if (this._point) gribClearMeasurements(this._point.lat, this._point.lng, this._els.paramSelect.value);
         this._measure = new Map();
