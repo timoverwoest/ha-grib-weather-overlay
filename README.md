@@ -103,7 +103,11 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   **oranje speld** op **elke** kaart (overlay- én vergelijk-card), en klik je die
   aan dan opent het punt mét de opgeslagen waarden weer — ook in het meteogram van
   de overlay-card (Weergave → vergelijk modellen). Met **“Wis meting”** verwijder
-  je de opgeslagen meting van het punt in één klik (de speld verdwijnt overal).
+  je de opgeslagen meting van het punt in één klik (de speld verdwijnt overal), en
+  met **“Wis alle meetdata”** gooi je in één keer de metingen van **alle** punten
+  weg (met bevestiging, en met het aantal punten op de knop) — handig op de
+  telefoon, waar je een punt alleen kwijtraakt door naar een ánder punt te gaan
+  en het laatste punt dus blijft staan.
 - **Meetstations in de buurt + downloaden.** Zodra “Meting invoeren” aanstaat
   verschijnen de **meetstations binnen een instelbare straal** (standaard **10 km**,
   via `measurement_radius_km` of het straal-veld) rond het punt: als **groene stippen
@@ -301,7 +305,11 @@ in te typen (in dezelfde eenheid als de grafiek). Je krijgt dan per model een
 samenvatting **bias (abs + %) / MAE / RMSE**; de meting verschijnt als donkere lijn
 in de grafiek. Dezelfde meting/delta zit ook in het meteogram onder **Weergave →
 “vergelijk modellen” → Meting**. Met **“Wis meting”** wis je de opgeslagen meting van
-het punt in één klik.
+het punt in één klik; **“Wis alle meetdata”** wist de metingen van **alle** opgeslagen
+punten tegelijk (na bevestiging; de knop toont hoeveel punten dat zijn en is grijs
+als er niets is opgeslagen). Dat laatste lost het geval op waarin je op de telefoon
+alle punten op één na kwijt kunt: een punt verdwijnt pas als je naar een ander punt
+gaat, dus het laatste punt bleef staan.
 
 **Meetstations downloaden.** Met “Meting invoeren” aan verschijnen de meetstations
 binnen `measurement_radius_km` (standaard 10 km; ook via het straal-veld in de
@@ -496,6 +504,7 @@ en `pressure_msl` (eenheid hPa) schakelt de isobaren-laag in.
 | `notification_api_key` | tekst | (leeg) | KNMI push-sleutel |
 | `observations_api_key` | tekst | (leeg) | KNMI Open Data-sleutel mét toegang tot `10-minute-in-situ-meteorological-observations`, voor het **downloaden van stationswaarnemingen**. Je HARMONIE-sleutel heeft daar vaak géén toegang toe (KNMI geeft 403). Leeg = HARMONIE-sleutel hergebruiken |
 | `alias` | tekst | (leeg) | **korte naam** voor deze bron, getoond als compact label in de vergelijking en het meteogram (bv. `KNMI NL`). Leeg = automatisch afgeleid uit de bron (bronnen van dezelfde soort worden vanzelf onderscheiden) |
+| `storage_path` | tekst | (leeg) | **map voor de werkbestanden** (run-archief, gedecodeerde leden, gerenderde cache). Leeg = `/share/grib_overlay` op HAOS/Supervised, anders de tijdelijke systeemmap. Zet dit **nooit** binnen `/config`: die map gaat in elke back-up (zie [Back-ups](#back-ups)) |
 | `color_scales` | meerregelige tekst | (leeg) | per regel: `parameter: waarde:#hex, waarde:#hex, …` (waarden in de **eigen eenheid** van de parameter) |
 
 ### Card-instellingen (Lovelace-YAML)
@@ -562,23 +571,42 @@ kleurschaal veranderen niet; alleen de legenda-getallen en labels).
 
 ## Back-ups
 
-De integratie cachet zijn werkbestanden onder `/config/grib_overlay/…`, en Home
-Assistant neemt heel `/config` mee in een back-up. Omdat de integratie continu
-nieuwe GRIB-bestanden downloadt en oude weggooit, kan een bestand precies tussen
-"back-up inventariseert" en "back-up schrijft" verdwijnen — dan faalde vroeger de
-héle back-up met `FileNotFoundError`. Dat is nu opgelost:
+Home Assistant zet de **hele** `/config`-map in elke back-up. Tot en met v0.25
+stonden de werkbestanden van deze integratie daar ook, met twee gevolgen: de
+back-up werd honderden MB's groter dan nodig, en als een bestand precies tussen
+"back-up inventariseert" en "back-up schrijft" verdween, faalde de **héle**
+back-up met `FileNotFoundError`.
 
+**Sinds v0.26 schrijft de integratie niets meer in `/config`.** Alles — het
+run-archief, de uitgepakte GRIB-leden en de gerenderde PNG/JSON-cache — staat
+buiten de configuratiemap:
+
+| Installatie | Standaardlocatie |
+| --- | --- |
+| Home Assistant OS / Supervised | `/share/grib_overlay/…` |
+| Core / Container (of geen `/share`) | tijdelijke systeemmap (`/tmp/grib_overlay/…`) |
+
+`/share` is de standaard omdat het echte schijf is en buiten de config-tar valt;
+`/tmp` is binnen HAOS namelijk een *tmpfs* (RAM) en dus geen plek voor een
+archief van ~850MB. Met de optie **Map voor werkbestanden** kies je desgewenst
+zelf een pad. Zet dat nooit binnen `/config`.
+
+Extra's:
+
+- **Automatische opruiming bij het updaten.** De oude cache in
+  `/config/grib_overlay/…` wordt bij de eerste start na de update verplaatst of
+  (als dat een filesystem-grens kruist, wat op HAOS het geval is) weggegooid —
+  het is een cache, die binnen enkele minuten opnieuw is opgebouwd. Zie het
+  `WARNING` in het logboek. Zo wordt je back-up direct kleiner.
+- **Ruwe downloads apart.** Het archief en de uitgepakte leden leven in een
+  aparte scratch-map naast de run-mappen, zodat het opruimen van oude runs nooit
+  een lopende download kan raken.
 - **Pauze tijdens de back-up.** Via HA's back-up-platform (`async_pre_backup` /
   `async_post_backup`) pauzeert de integratie het verwerken en opruimen van runs
-  zolang een back-up loopt; een lopende verwerking wordt eerst netjes afgerond
-  vóór het archiveren begint. De eerstvolgende poll ná de back-up pakt een nieuwe
-  run alsnog op. Dit gebruikt hetzelfde mechanisme als de recorder en vereist
-  HA's back-up-systeem van **2025.1+** (zowel core- als HAOS-back-ups).
-- **Ruwe downloads buiten de back-up.** Losse per-bestand-bronnen (BSH, DWD)
-  downloaden hun ruwe GRIB-bestanden naar `/tmp` (buiten `/config`), zodat die
-  transiënte bestanden sowieso nooit in een back-up belanden. De grote
-  KNMI-tar (~850MB) blijft op schijf onder `/config` — in RAM (`/tmp` is vaak
-  tmpfs) zou die te groot zijn — en wordt door de pauze hierboven beschermd.
+  zolang een back-up loopt. Dit is nu een tweede vangnet (voor het opruimen
+  hierboven, en voor wie de map bewust tóch in `/config` zet): het was
+  onvoldoende als vaste oplossing, omdat het verwerken van een run langer kan
+  duren dan de wachttijd waarna de back-up alsnog begint.
 
 ## Bekende beperkingen
 
@@ -760,7 +788,12 @@ changing the map card or the rest of the backend):
   available in every card view): the point gets an **amber pin** on **every** map
   (overlay and compare card), and clicking it reopens the point with its saved
   values — also in the overlay card's meteogram (View → compare models).
-  **“Wis meting”** (Clear measurement) removes the saved measurement in one click.
+  **“Wis meting”** (Clear measurement) removes the saved measurement in one click,
+  and **“Wis alle meetdata”** (Clear all measurement data) discards the
+  measurements of **every** saved point at once — with a confirmation, and with
+  the number of points on the button. That last one matters on a phone, where a
+  point is only dropped by moving to another one, so the last point could never
+  be cleared.
 - **Download measurement stations.** Once “Meting invoeren” is on, the **measurement
   stations within an adjustable radius** (default **10 km**, via
   `measurement_radius_km` or the radius field) appear as **green dots on the
@@ -949,7 +982,12 @@ per model with the **absolute** (**measurement − model**; `+` = measurement hi
 and the **relative** (%) deviation, plus a **bias (abs + %) / MAE / RMSE** summary, and the measurement appears
 as a dark line in the chart. The same measurement/delta is also in the meteogram under
 **Weergave → “vergelijk modellen” → Meting** (View → compare models → Measurement).
-**“Wis meting”** (Clear measurement) clears the point's saved measurement in one click.
+**“Wis meting”** (Clear measurement) clears the point's saved measurement in one
+click; **“Wis alle meetdata”** (Clear all measurement data) clears the measurements
+of **all** saved points at once (after a confirmation; the button shows how many
+points that is and is greyed out when nothing is stored). The latter solves the
+case where a phone leaves you unable to clear the very last point, because a point
+only disappears once you move to another one.
 
 **Download measurement stations.** With “Meting invoeren” on, the measurement stations
 within `measurement_radius_km` (default 10 km; also via the radius field) appear as
@@ -1141,6 +1179,7 @@ parameter (unit °, i.e. `wave_direction`) enables `wavevectors`; and `pressure_
 | `notification_api_key` | text | (empty) | KNMI push key |
 | `observations_api_key` | text | (empty) | KNMI Open Data key with access to `10-minute-in-situ-meteorological-observations`, for **downloading station observations**. Your HARMONIE key is often not authorised for it (KNMI returns 403). Empty = reuse the HARMONIE key |
 | `alias` | text | (empty) | **short name** for this source, shown as the compact label in the comparison and meteogram (e.g. `KNMI NL`). Empty = derived automatically from the source (same-source entries are disambiguated automatically) |
+| `storage_path` | text | (empty) | **folder for the working files** (run archive, decoded members, rendered cache). Empty = `/share/grib_overlay` on HAOS/Supervised, otherwise the system temp folder. **Never** point this inside `/config`: that folder goes into every backup (see [Backups](#backups)) |
 | `color_scales` | multi-line text | (empty) | per line: `parameter: value:#hex, value:#hex, …` (values in the parameter's **own unit**) |
 
 ### Card settings (Lovelace YAML)
@@ -1207,23 +1246,41 @@ scale do not change; only the legend numbers and labels).
 
 ## Backups
 
-The integration caches its working files under `/config/grib_overlay/…`, and Home
-Assistant includes all of `/config` in a backup. Because the integration
-continuously downloads new GRIB files and discards old ones, a file can disappear
-right between "backup takes inventory" and "backup writes" — which previously failed
-the **whole** backup with `FileNotFoundError`. That is now fixed:
+Home Assistant puts the **entire** `/config` folder into every backup. Up to
+v0.25 this integration's working files lived there too, with two consequences:
+backups grew hundreds of MB larger than necessary, and if a file disappeared
+right between "backup takes inventory" and "backup writes", the **whole** backup
+failed with `FileNotFoundError`.
 
+**Since v0.26 the integration writes nothing inside `/config`.** Everything — the
+run archive, the extracted GRIB members and the rendered PNG/JSON cache — lives
+outside the config folder:
+
+| Installation | Default location |
+| --- | --- |
+| Home Assistant OS / Supervised | `/share/grib_overlay/…` |
+| Core / Container (or no `/share`) | system temp folder (`/tmp/grib_overlay/…`) |
+
+`/share` is the default because it is real disk and outside the config tar; on
+HAOS `/tmp` is a *tmpfs* (RAM), which is no place for a ~850MB archive. The
+**Working files folder** option lets you pick your own path. Never point it
+inside `/config`.
+
+Also:
+
+- **Automatic cleanup on upgrade.** The old cache in `/config/grib_overlay/…` is
+  moved on the first start after the update, or dropped when that would cross a
+  filesystem boundary (it does on HAOS) — it is a cache and is rebuilt within
+  minutes. Look for the `WARNING` in the log. Your backup shrinks straight away.
+- **Raw downloads kept apart.** The archive and the extracted members live in a
+  scratch directory *beside* the run directories, so cleaning up old runs can
+  never touch an in-flight download.
 - **Pause during the backup.** Via HA's backup platform (`async_pre_backup` /
-  `async_post_backup`) the integration pauses processing and cleaning up runs while
-  a backup runs; an in-progress processing step is finished cleanly before
-  archiving starts. The next poll after the backup still picks up a new run. This
-  uses the same mechanism as the recorder and requires HA's backup system of
-  **2025.1+** (both core and HAOS backups).
-- **Raw downloads outside the backup.** Per-file sources (BSH, DWD) download their
-  raw GRIB files to `/tmp` (outside `/config`), so those transient files never end
-  up in a backup anyway. The large KNMI tar (~850MB) stays on disk under `/config`
-  — in RAM (`/tmp` is often tmpfs) it would be too large — and is protected by the
-  pause above.
+  `async_post_backup`) the integration pauses processing and cleaning up runs
+  while a backup runs. This is now a second line of defence (for the cleanup
+  above, and for anyone who deliberately points the folder back into `/config`):
+  it was not enough on its own, because decoding a run can outlast the drain
+  timeout after which the backup proceeds anyway.
 
 ## Known limitations
 
