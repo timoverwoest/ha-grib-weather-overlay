@@ -14,6 +14,7 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import config_validation as cv, selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from . import labels
 from .const import (
     CONF_ALIAS,
     CONF_API_KEY,
@@ -76,10 +77,14 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._datasets = datasets
                 return await self.async_step_dataset()
 
+        lang = labels.language(self.hass)
         schema = vol.Schema(
             {
                 vol.Required(CONF_SOURCE, default="knmi"): vol.In(
-                    {key: cls.name for key, cls in SOURCE_REGISTRY.items()}
+                    {
+                        key: labels.source_name(lang, cls.name)
+                        for key, cls in SOURCE_REGISTRY.items()
+                    }
                 ),
                 # Optional: KNMI needs an Open Data key; DWD Open Data does not.
                 vol.Optional(CONF_API_KEY, default=""): str,
@@ -97,10 +102,13 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
             return await self.async_step_parameters()
 
+        # Dataset/parameter names come from the provider at runtime, so Home
+        # Assistant's translation files can't reach them -- translate here.
+        lang = labels.language(self.hass)
         schema = vol.Schema(
             {
                 vol.Required(CONF_DATASET, default=self._datasets[0].key): vol.In(
-                    {d.key: d.name for d in self._datasets}
+                    {d.key: labels.dataset_name(lang, d) for d in self._datasets}
                 ),
             }
         )
@@ -122,13 +130,18 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
                 if self._notification_api_key:
                     data[CONF_NOTIFICATION_API_KEY] = self._notification_api_key
-                return self.async_create_entry(title=f"{self._dataset.name}", data=data)
+                title = labels.dataset_name(labels.language(self.hass), self._dataset)
+                return self.async_create_entry(title=title, data=data)
 
         all_keys = [p.key for p in self._dataset.parameters]
+        lang = labels.language(self.hass)
         schema = vol.Schema(
             {
                 vol.Required(CONF_PARAMETERS, default=all_keys): cv.multi_select(
-                    {p.key: f"{p.name} ({p.unit})" for p in self._dataset.parameters}
+                    {
+                        p.key: f"{labels.parameter_name(lang, p)} ({p.unit})"
+                        for p in self._dataset.parameters
+                    }
                 ),
             }
         )

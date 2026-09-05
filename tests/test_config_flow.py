@@ -343,3 +343,61 @@ async def test_duplicate_dataset_aborts(hass: HomeAssistant, aioclient_mock) -> 
     )
     assert result["type"] == "abort"
     assert result["reason"] == "already_configured"
+
+
+async def _dataset_step(hass: HomeAssistant, aioclient_mock):
+    """Walk the flow to the dataset step and return that form."""
+    aioclient_mock.get(
+        FILES_URL,
+        json={
+            "files": [
+                {
+                    "filename": "HARM43_V1_P1_2026071802.tar",
+                    "size": 859852800,
+                    "lastModified": "2026-07-18T04:33:39+00:00",
+                }
+            ]
+        },
+    )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    return await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_SOURCE: "knmi", CONF_API_KEY: "test-key"}
+    )
+
+
+def _choices(result, key):
+    """The {value: label} mapping voluptuous offers for `key` in this form."""
+    for marker, validator in result["data_schema"].schema.items():
+        if marker == key:
+            return getattr(validator, "container", None) or validator.options
+    raise AssertionError(f"{key} not in the form")
+
+
+async def test_dataset_and_parameter_labels_follow_the_instance_language(
+    hass: HomeAssistant, aioclient_mock
+) -> None:
+    """These names come from the provider at runtime, so Home Assistant's own
+    translation files can't reach them -- the flow translates them itself."""
+    hass.config.language = "en"
+    result = await _dataset_step(hass, aioclient_mock)
+    assert "Netherlands" in _choices(result, CONF_DATASET)["harmonie_arome_cy43_p1"]
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_DATASET: "harmonie_arome_cy43_p1"}
+    )
+    assert _choices(result, CONF_PARAMETERS)["wind_10m"].startswith("Wind (10 m)")
+
+
+async def test_dutch_keeps_the_source_supplied_names(
+    hass: HomeAssistant, aioclient_mock
+) -> None:
+    hass.config.language = "nl"
+    result = await _dataset_step(hass, aioclient_mock)
+    assert "Nederland" in _choices(result, CONF_DATASET)["harmonie_arome_cy43_p1"]
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_DATASET: "harmonie_arome_cy43_p1"}
+    )
+    assert _choices(result, CONF_PARAMETERS)["wind_10m"].startswith("Wind (10m)")
