@@ -37,7 +37,14 @@
 </script>
 <script src="/grib_overlay_static/grib-overlay-card.js"></script>
 <script>
+  // ?lang=en / ?lang=nl mimics the Home Assistant user's profile language,
+  // which the cards read from hass.locale.language. Defaults to Dutch, like
+  // this harness page itself.
+  const devLang = new URLSearchParams(location.search).get("lang") || "nl";
+  document.documentElement.lang = devLang;
   const hass = {
+    locale: { language: devLang },
+    language: devLang,
     callApi: async (method, path) => {
       const resp = await fetch("/api/" + path, { method });
       if (!resp.ok) throw new Error(`${method} /api/${path} -> ${resp.status}`);
