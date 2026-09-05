@@ -156,3 +156,33 @@ async def test_unrecognised_key_gets_different_advice_than_unauthorised(hass, ca
     text = next(r.getMessage() for r in caplog.records if "API key was rejected" in r.getMessage())
     assert "not recognised at all" in text
     assert "expire or be revoked" in text
+
+
+async def test_refreshes_run_as_entry_background_tasks(hass) -> None:
+    """A plain hass task is only cancelled in the "final writes" shutdown stage.
+
+    Decoding a run takes minutes, so a restart mid-run then reliably logged a
+    CancelledError traceback. Tying the refresh to the config entry means it is
+    cancelled quietly at unload instead.
+    """
+    from unittest.mock import patch
+
+    entry = _make_entry(hass)
+    coordinator = GribOverlayCoordinator(hass, entry)
+    coordinator.async_request_refresh = AsyncMock()
+
+    with patch.object(
+        type(entry), "async_create_background_task", autospec=True
+    ) as background, patch.object(hass, "async_create_task") as plain:
+        coordinator._scheduled_poll(None)
+        coordinator._on_new_file_notified("HARM43_V1_P1_2026090512.tar")
+
+    assert background.call_count == 2, "both the poll and the push must use it"
+    plain.assert_not_called()
+    # The task names carry the entry id, so several entries stay tellable apart.
+    names = [c.args[3] for c in background.call_args_list]
+    assert names == [f"{DOMAIN}-poll-{entry.entry_id}", f"{DOMAIN}-push-{entry.entry_id}"]
+
+    # Close the coroutines the mock never awaited.
+    for call in background.call_args_list:
+        call.args[2].close()

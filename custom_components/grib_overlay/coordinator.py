@@ -303,7 +303,23 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
     @callback
     def _scheduled_poll(self, _now) -> None:
-        self.hass.async_create_task(self.async_request_refresh())
+        self._start_refresh("poll")
+
+    @callback
+    def _start_refresh(self, reason: str) -> None:
+        """Kick off a refresh as a config-entry BACKGROUND task.
+
+        Not hass.async_create_task: a plain task is only cancelled in Home
+        Assistant's "final writes" shutdown stage, and since decoding a run takes
+        minutes, a restart mid-run reliably left a CancelledError traceback in
+        the log. A background task is tied to the config entry, so it is
+        cancelled quietly when the entry unloads (which shutdown does first).
+        """
+        self.entry.async_create_background_task(
+            self.hass,
+            self.async_request_refresh(),
+            f"{DOMAIN}-{reason}-{self.entry.entry_id}",
+        )
 
     async def _async_start_notifications(self) -> None:
         """Start push notifications if the source supports it.
@@ -335,7 +351,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         if filename == self._current_run_filename:
             return
         _LOGGER.debug("KNMI push notification for new run: %s", filename)
-        self.hass.async_create_task(self.async_request_refresh())
+        self._start_refresh("push")
 
     async def _async_update_data(self) -> dict:
         try:
