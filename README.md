@@ -145,8 +145,10 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 - Nieuwe forecast-runs worden direct opgehaald via KNMI's MQTT Notification
   Service (in plaats van te wachten op de eerstvolgende poll), met het
   reguliere poll-interval als betrouwbare fallback als de MQTT-verbinding om
-  wat voor reden dan ook niet lukt. Je gewone Open Data API-sleutel werkt
-  hiervoor; een aparte Notification Service-sleutel is niet nodig.
+  wat voor reden dan ook niet lukt. Hiervoor is een **aparte Notification
+  Service-sleutel** nodig; die service autoriseert los van Open Data en weigert
+  een Open Data-sleutel met `Not authorized`. Zonder zo'n sleutel wordt er geen
+  MQTT-verbinding geprobeerd en pollt de integratie gewoon door.
 
 ## Vereisten
 
@@ -178,10 +180,14 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 
 1. Instellingen → Apparaten & diensten → Integratie toevoegen → "GRIB Weather
    Overlay".
-2. Kies de bron. Voor **KNMI Data Platform** vul je je Open Data API-sleutel in
-   (die wordt ook voor de push-notificaties/MQTT gebruikt; het optionele
-   **Notification Service API-sleutel**-veld kun je leeg laten). Voor **DWD Open
-   Data (golven)** laat je de sleutel-velden leeg — DWD heeft geen sleutel nodig.
+2. Kies de bron. Voor **KNMI Data Platform** vul je je Open Data API-sleutel in.
+   Het veld **Notification Service API-sleutel** is optioneel en verwacht een
+   *andere* sleutel, die je apart aanvraagt bij
+   [developer.dataplatform.knmi.nl](https://developer.dataplatform.knmi.nl) →
+   Notification Service. Laat het leeg als je die niet hebt — dan pollt de
+   integratie, en dat is de enige zichtbare consequentie. Plak er **niet** je
+   Open Data-sleutel in: die wordt geweigerd. Voor **DWD Open Data (golven)**
+   laat je de sleutel-velden leeg — DWD heeft geen sleutel nodig.
 3. Kies een dataset. KNMI: HARMONIE-AROME Cy43 **Nederland** (standaard) of
    **Europa (DINI)**. DWD: **EWAM** (Europese golven). Wil je zowel weer als
    golven, voeg dan twee integratie-instanties toe (één per bron); in de kaart
@@ -490,7 +496,7 @@ en `pressure_msl` (eenheid hPa) schakelt de isobaren-laag in.
 | --- | --- |
 | `source` | `knmi`, `dwd` of `bsh` |
 | `api_key` | KNMI Open Data-sleutel (leeg laten voor DWD/BSH) |
-| `notification_api_key` | optioneel; KNMI push-sleutel (leeg = alleen pollen) |
+| `notification_api_key` | optioneel; **aparte** KNMI Notification Service-sleutel (leeg, of je Open Data-sleutel = alleen pollen) |
 | `dataset` | een dataset-sleutel uit de tabel hierboven |
 | `parameters` | lijst van parameter-sleutels die je wilt bijhouden |
 
@@ -501,7 +507,7 @@ en `pressure_msl` (eenheid hPa) schakelt de isobaren-laag in.
 | `forecast_horizon_hours` | getal (uren) | `24` | 1–60 |
 | `retain_runs` | geheel getal | `2` | 1–10 |
 | `update_interval_minutes` | geheel getal (min) | `30` | 5–180 |
-| `notification_api_key` | tekst | (leeg) | KNMI push-sleutel |
+| `notification_api_key` | tekst | (leeg) | **aparte** KNMI Notification Service-sleutel voor push. Niet je Open Data-sleutel: die weigert de broker met `Not authorized`. Leeg = alleen pollen, geen MQTT-poging |
 | `observations_api_key` | tekst | (leeg) | KNMI Open Data-sleutel mét toegang tot `10-minute-in-situ-meteorological-observations`, voor het **downloaden van stationswaarnemingen**. Je HARMONIE-sleutel heeft daar vaak géén toegang toe (KNMI geeft 403). Leeg = HARMONIE-sleutel hergebruiken |
 | `alias` | tekst | (leeg) | **korte naam** voor deze bron, getoond als compact label in de vergelijking en het meteogram (bv. `KNMI NL`). Leeg = automatisch afgeleid uit de bron (bronnen van dezelfde soort worden vanzelf onderscheiden) |
 | `storage_path` | tekst | (leeg) | **map voor de werkbestanden** (run-archief, gedecodeerde leden, gerenderde cache). Leeg = `/share/grib_overlay` op HAOS/Supervised, anders de tijdelijke systeemmap. Zet dit **nooit** binnen `/config`: die map gaat in elke back-up (zie [Back-ups](#back-ups)) |
@@ -862,9 +868,10 @@ changing the map card or the rest of the backend):
   (configurable).
 - New forecast runs are fetched immediately via KNMI's MQTT Notification Service
   (instead of waiting for the next poll), with the regular polling interval as a
-  reliable fallback if the MQTT connection fails for any reason. Your regular
-  Open Data API key works for this; a separate Notification Service key is not
-  required.
+  reliable fallback if the MQTT connection fails for any reason. This needs a
+  **separate Notification Service key**: that service authorises independently of
+  Open Data and refuses an Open Data key with `Not authorized`. Without such a
+  key no MQTT connection is attempted and the integration simply keeps polling.
 
 ## Requirements
 
@@ -894,10 +901,14 @@ changing the map card or the rest of the backend):
 ## Configuration
 
 1. Settings → Devices & services → Add integration → "GRIB Weather Overlay".
-2. Choose the source. For **KNMI Data Platform** enter your Open Data API key (it
-   is also used for the push notifications/MQTT; the optional **Notification
-   Service API key** field can be left empty). For **DWD Open Data (waves)** leave
-   the key fields empty — DWD needs no key.
+2. Choose the source. For **KNMI Data Platform** enter your Open Data API key.
+   The **Notification Service API key** field is optional and expects a
+   *different* key, requested separately at
+   [developer.dataplatform.knmi.nl](https://developer.dataplatform.knmi.nl) →
+   Notification Service. Leave it empty if you don't have one — the integration
+   then polls, which is the only visible consequence. Do **not** paste your Open
+   Data key there: it is refused. For **DWD Open Data (waves)** leave the key
+   fields empty — DWD needs no key.
 3. Choose a dataset. KNMI: HARMONIE-AROME Cy43 **Netherlands** (default) or
    **Europe (DINI)**. DWD: **EWAM** (European waves). If you want both weather and
    waves, add two integration instances (one per source); in the card you switch
@@ -1202,7 +1213,7 @@ parameter (unit °, i.e. `wave_direction`) enables `wavevectors`; and `pressure_
 | --- | --- |
 | `source` | `knmi`, `dwd` or `bsh` |
 | `api_key` | KNMI Open Data key (leave empty for DWD/BSH) |
-| `notification_api_key` | optional; KNMI push key (empty = polling only) |
+| `notification_api_key` | optional; **separate** KNMI Notification Service key (empty, or your Open Data key = polling only) |
 | `dataset` | a dataset key from the table above |
 | `parameters` | list of parameter keys you want to keep up to date |
 
@@ -1213,7 +1224,7 @@ parameter (unit °, i.e. `wave_direction`) enables `wavevectors`; and `pressure_
 | `forecast_horizon_hours` | number (hours) | `24` | 1–60 |
 | `retain_runs` | integer | `2` | 1–10 |
 | `update_interval_minutes` | integer (min) | `30` | 5–180 |
-| `notification_api_key` | text | (empty) | KNMI push key |
+| `notification_api_key` | text | (empty) | **separate** KNMI Notification Service key for push. Not your Open Data key: the broker refuses that with `Not authorized`. Empty = polling only, no MQTT attempt |
 | `observations_api_key` | text | (empty) | KNMI Open Data key with access to `10-minute-in-situ-meteorological-observations`, for **downloading station observations**. Your HARMONIE key is often not authorised for it (KNMI returns 403). Empty = reuse the HARMONIE key |
 | `alias` | text | (empty) | **short name** for this source, shown as the compact label in the comparison and meteogram (e.g. `KNMI NL`). Empty = derived automatically from the source (same-source entries are disambiguated automatically) |
 | `storage_path` | text | (empty) | **folder for the working files** (run archive, decoded members, rendered cache). Empty = `/share/grib_overlay` on HAOS/Supervised, otherwise the system temp folder. **Never** point this inside `/config`: that folder goes into every backup (see [Backups](#backups)) |

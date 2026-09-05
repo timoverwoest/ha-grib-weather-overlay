@@ -212,7 +212,11 @@ class KnmiSource(GribSource):
 
     key = "knmi"
     name = "KNMI Data Platform"
-    supports_push_notifications = True
+
+    @property
+    def supports_push_notifications(self) -> bool:
+        """Only with a Notification Service key; without one, polling is all we have."""
+        return self._notification_api_key is not None
 
     def __init__(
         self,
@@ -223,10 +227,14 @@ class KnmiSource(GribSource):
     ) -> None:
         self._session = session
         self._api_key = api_key
-        # The KNMI Notification Service authorises separately from the Open Data
-        # API. Use a dedicated notification key for MQTT when provided; otherwise
-        # fall back to the Open Data key (best-effort -- it may be rejected).
-        self._notification_api_key = notification_api_key or api_key
+        # The KNMI Notification Service authorises SEPARATELY from Open Data: it
+        # hands out its own key, and an Open Data key presented to the broker is
+        # refused with CONNACK "Not authorized" (rc=5). So no falling back to the
+        # Open Data key -- that only ever produced a guaranteed rejection and a
+        # warning pointing at the wrong key. Pasting the Open Data key into the
+        # notification field is the same mistake, so treat that as "not set" too.
+        key = (notification_api_key or "").strip()
+        self._notification_api_key = key if key and key != api_key else None
         # KNMI requires a unique client id. Derive it from the config entry id so
         # it is STABLE across reloads/restarts: reconnecting then resumes the same
         # broker session (and the broker drops the previous connection) instead of
@@ -331,9 +339,12 @@ class KnmiSource(GribSource):
             if not self._notify_auth_logged:
                 self._notify_auth_logged = True
                 _LOGGER.warning(
-                    "KNMI notification service rejected the connection (%s); continuing "
-                    "with polling only. Check that the API key is valid; polling keeps "
-                    "working regardless.",
+                    "KNMI Notification Service rejected the connection (%s); continuing "
+                    "with polling only, which keeps working regardless. This needs a "
+                    "*Notification Service* key (developer.dataplatform.knmi.nl -> "
+                    "Notification Service), not your Open Data key: fill it in per "
+                    "config entry under the integration's options, in "
+                    "'Notification Service API key'.",
                     reason_code,
                 )
             client.disconnect()  # clean disconnect => paho won't auto-reconnect

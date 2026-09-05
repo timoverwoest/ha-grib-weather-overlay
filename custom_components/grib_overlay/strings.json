@@ -10,7 +10,7 @@
           "notification_api_key": "Notification Service API key (optional)"
         },
         "data_description": {
-          "notification_api_key": "Optional: a separate KNMI Notification Service key for instant push updates of new forecast runs. Leave empty to rely on periodic polling."
+          "notification_api_key": "Optional: a separate KNMI **Notification Service** key (developer.dataplatform.knmi.nl → Notification Service) for instant push updates of new forecast runs. This is NOT your Open Data key: the broker refuses that with 'Not authorized'. Leave empty to rely on periodic polling — nothing else changes."
         }
       },
       "dataset": {
@@ -51,7 +51,7 @@
           "color_scales": "Custom colour scales (optional)"
         },
         "data_description": {
-          "notification_api_key": "Optional: a separate KNMI Notification Service key for instant push updates. Leave empty to rely on periodic polling.",
+          "notification_api_key": "Optional: a separate KNMI **Notification Service** key (developer.dataplatform.knmi.nl → Notification Service) for instant push updates of new forecast runs. This is NOT your Open Data key: the broker refuses that with 'Not authorized'. Leave empty to rely on periodic polling — nothing else changes.",
           "observations_api_key": "Optional: a KNMI Open Data key with access to the '10-minute-in-situ-meteorological-observations' dataset, used to download station observations. Your HARMONIE key is often not authorised for it (KNMI returns 403). Leave empty to reuse the HARMONIE key.",
           "alias": "Optional short name shown as this source's compact label in the comparison and meteogram views, e.g. `KNMI NL`. Leave empty to derive it automatically from the source (same-source entries are disambiguated automatically).",
           "storage_path": "Where the GRIB working files are kept (run archives, decoded members and the rendered cache). Leave empty for the default outside the config folder: `/share/grib_overlay` on Home Assistant OS/Supervised, otherwise the system temp folder. Never point this inside `/config`: Home Assistant tars that folder for every backup, which makes backups large and can abort them when a working file is removed mid-backup.",

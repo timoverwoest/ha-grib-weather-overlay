@@ -265,15 +265,30 @@ async def test_options_flow_can_clear_observations_key(hass: HomeAssistant) -> N
 
 
 def test_source_uses_notification_key_for_mqtt() -> None:
-    """The notification key (when set) is what MQTT authenticates with."""
+    """The Notification Service authorises separately from Open Data.
+
+    An Open Data key presented to the broker is refused with CONNACK "Not
+    authorized", so anything that isn't a real notification key must disable
+    push instead of guaranteeing a rejected connection every startup.
+    """
     from custom_components.grib_overlay.sources.knmi import KnmiSource
 
     with_notify = KnmiSource(object(), "data-key", notification_api_key="notify-key")
     assert with_notify._notification_api_key == "notify-key"
+    assert with_notify.supports_push_notifications is True
 
-    # Falls back to the Open Data key when no notification key is supplied.
+    # No key at all -> no MQTT attempt.
     without_notify = KnmiSource(object(), "data-key")
-    assert without_notify._notification_api_key == "data-key"
+    assert without_notify._notification_api_key is None
+    assert without_notify.supports_push_notifications is False
+
+    # The Open Data key pasted into the notification field is the same mistake.
+    same_key = KnmiSource(object(), "data-key", notification_api_key="data-key")
+    assert same_key._notification_api_key is None
+    assert same_key.supports_push_notifications is False
+
+    # Blank/whitespace is not a key either.
+    assert KnmiSource(object(), "data-key", notification_api_key="  ").supports_push_notifications is False
 
     # A unique MQTT client id is required by the KNMI broker (a missing one is
     # rejected with CONNACK "Not authorized").

@@ -10,21 +10,30 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-from custom_components.grib_overlay.const import CONF_API_KEY, CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN
+from custom_components.grib_overlay.const import (
+    CONF_API_KEY,
+    CONF_DATASET,
+    CONF_NOTIFICATION_API_KEY,
+    CONF_PARAMETERS,
+    CONF_SOURCE,
+    DOMAIN,
+)
 from custom_components.grib_overlay.coordinator import GribOverlayCoordinator
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
-def _make_entry(hass) -> MockConfigEntry:
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={
-            CONF_SOURCE: "knmi",
-            CONF_API_KEY: "test-key",
-            CONF_DATASET: "harmonie_arome_cy43_p1",
-            CONF_PARAMETERS: ["wind_10m"],
-        },
-    )
+def _make_entry(hass, notification_key: str | None = "notify-key") -> MockConfigEntry:
+    """An entry with a Notification Service key, since without one KNMI's push
+    channel is (correctly) never attempted."""
+    data = {
+        CONF_SOURCE: "knmi",
+        CONF_API_KEY: "test-key",
+        CONF_DATASET: "harmonie_arome_cy43_p1",
+        CONF_PARAMETERS: ["wind_10m"],
+    }
+    if notification_key:
+        data[CONF_NOTIFICATION_API_KEY] = notification_key
+    entry = MockConfigEntry(domain=DOMAIN, data=data)
     entry.add_to_hass(hass)
     return entry
 
@@ -42,10 +51,15 @@ async def test_async_setup_starts_push_notifications_for_the_right_dataset(hass)
     assert callback_arg == coordinator._on_new_file_notified
 
 
-async def test_setup_skipped_when_source_does_not_support_push(hass) -> None:
-    entry = _make_entry(hass)
+async def test_setup_skipped_without_a_notification_service_key(hass) -> None:
+    """No Notification Service key -> no MQTT attempt at all.
+
+    Connecting anyway with the Open Data key is a guaranteed CONNACK "Not
+    authorized", i.e. a warning in the log on every single startup.
+    """
+    entry = _make_entry(hass, notification_key=None)
     coordinator = GribOverlayCoordinator(hass, entry)
-    coordinator.source.supports_push_notifications = False
+    assert coordinator.source.supports_push_notifications is False
     coordinator.source.async_start_notifications = AsyncMock()
 
     await coordinator._async_start_notifications()
