@@ -211,6 +211,19 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             return
         await self.hass.async_add_executor_job(self._migrate_legacy_storage)
 
+    async def _async_drop_stale_scratch(self) -> None:
+        """Remove leftovers from a run that was interrupted mid-flight.
+
+        _process_new_run cleans its scratch dir in a finally, but a shutdown
+        cancels that await too -- a restart in the middle of a download (or a
+        crash, or a power cut) therefore strands up to a full run archive on
+        disk. Nothing is in flight for this entry at setup, so the whole scratch
+        tree can go.
+        """
+        await self.hass.async_add_executor_job(
+            shutil.rmtree, self._raw_dir, True
+        )
+
     async def async_setup(self) -> None:
         """Fast setup (does not download): restore cached frames, start push, poll timer.
 
@@ -220,6 +233,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         loaded from disk so the card has data straight away.
         """
         await self._async_migrate_legacy_storage()
+        await self._async_drop_stale_scratch()
         run_filename, frames = await self.hass.async_add_executor_job(self._load_cached_frames)
         if run_filename:
             self._current_run_filename = run_filename
@@ -294,6 +308,10 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             raise UpdateFailed("Source returned no files for this dataset")
 
         latest = files[0]
+        if self.hass.is_stopping:
+            # A run takes minutes; starting one now just gets cancelled halfway
+            # and leaves a scratch dir behind for the next start to clean up.
+            return {"run_filename": self._current_run_filename, "dataset": dataset.key}
         if latest.filename != self._current_run_filename and not self.backup_in_progress():
             async with self._process_lock:
                 # A backup may have started while we waited for the lock; the

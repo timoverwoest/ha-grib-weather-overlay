@@ -200,6 +200,31 @@ async def test_scratch_dir_is_cleaned_up_even_when_decoding_fails(hass, tmp_path
     assert not raw_dir.exists()
 
 
+async def test_stale_scratch_is_dropped_on_setup(hass, tmp_path) -> None:
+    """A restart mid-download strands a run archive; setup has to clear it.
+
+    _process_new_run cleans up in a finally, but a shutdown cancels that await
+    too (the log shows exactly that: CancelledError at the rmtree during "final
+    writes shutdown stage"), so the next start is the only chance.
+    """
+    entry = _make_entry(hass)
+    hass.config_entries.async_update_entry(entry, options={CONF_STORAGE_PATH: str(tmp_path)})
+    coordinator = GribOverlayCoordinator(hass, entry)
+
+    stranded = coordinator._raw_dir / "HARM43_V1_P1_2026090500"
+    stranded.mkdir(parents=True)
+    (stranded / "HARM43_V1_P1_2026090500.tar").write_bytes(b"a stranded 850MB archive")
+    # A processed run must survive -- it is the fast-restart cache.
+    keep = coordinator.storage_dir / "HARM43_V1_P1_2026090419"
+    keep.mkdir(parents=True)
+    (keep / "frames.json").write_text("{}")
+
+    await coordinator._async_drop_stale_scratch()
+
+    assert not coordinator._raw_dir.exists()
+    assert (keep / "frames.json").exists()
+
+
 async def test_storage_path_option_overrides_the_default(hass, tmp_path) -> None:
     entry = _make_entry(hass)
     hass.config_entries.async_update_entry(entry, options={CONF_STORAGE_PATH: str(tmp_path)})
