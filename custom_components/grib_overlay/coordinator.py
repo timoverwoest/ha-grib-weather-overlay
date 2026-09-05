@@ -51,7 +51,13 @@ from .const import (
     DEFAULT_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
 )
-from .sources.base import GribDatasetInfo, GribParameter, GribSource, GribSourceError
+from .sources.base import (
+    GribDatasetInfo,
+    GribParameter,
+    GribSource,
+    GribSourceAuthError,
+    GribSourceError,
+)
 from .sources.registry import get_source_class
 
 _LOGGER = logging.getLogger(__name__)
@@ -149,6 +155,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         # in-flight run to finish its file churn before the archive is walked.
         self._process_lock = asyncio.Lock()
         self._current_run_filename: str | None = None
+        # A rejected key fails every poll, so the warning is logged once and
+        # re-armed after the next success rather than repeated every interval.
+        self._auth_warned = False
         # frames[parameter_key] = list[Frame] sorted by valid_time
         self.frames: dict[str, list[Frame]] = {}
 
@@ -210,6 +219,44 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         if self._legacy_migrated or self.backup_in_progress():
             return
         await self.hass.async_add_executor_job(self._migrate_legacy_storage)
+
+    def _auth_failure(self, err: GribSourceAuthError) -> str:
+        """Log an actionable warning for a rejected key; return the failure text.
+
+        DataUpdateCoordinator turns an UpdateFailed into a terse "Error fetching
+        ... data" line that says nothing about which of the three keys is wrong,
+        or that the entry will simply never update until it is fixed. Since a
+        bad key is silent otherwise -- the card just stops getting new runs --
+        say so explicitly, once.
+        """
+        if not self._auth_warned:
+            self._auth_warned = True
+            if err.status == 403:
+                advice = (
+                    "the key is recognised but is NOT authorised for dataset '%s'. "
+                    "Request access to that dataset, or use a key that has it."
+                    % self.entry.data[CONF_DATASET]
+                )
+            elif err.status == 401:
+                advice = (
+                    "the key is not recognised at all -- check for a typo or a "
+                    "truncated paste, and note that a key can expire or be revoked."
+                )
+            else:
+                advice = "check the key."
+            _LOGGER.warning(
+                "%s (%s): the API key was rejected (%s), so this source will not "
+                "update until it is fixed -- %s Set it under Settings > Devices & "
+                "services > GRIB Weather Overlay > Configure. Note that KNMI uses "
+                "THREE separate keys: Open Data (this one), Notification Service "
+                "(push/MQTT) and one for the observations dataset (station "
+                "downloads); they are not interchangeable.",
+                self.entry.title,
+                self.source.name,
+                err,
+                advice,
+            )
+        return str(err)
 
     async def _async_drop_stale_scratch(self) -> None:
         """Remove leftovers from a run that was interrupted mid-flight.
@@ -293,6 +340,8 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
     async def _async_update_data(self) -> dict:
         try:
             datasets = await self.source.async_list_datasets()
+        except GribSourceAuthError as err:
+            raise UpdateFailed(self._auth_failure(err)) from err
         except GribSourceError as err:
             raise UpdateFailed(str(err)) from err
 
@@ -302,8 +351,15 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
         try:
             files = await self.source.async_list_files(dataset, max_keys=1)
+        except GribSourceAuthError as err:
+            raise UpdateFailed(self._auth_failure(err)) from err
         except GribSourceError as err:
             raise UpdateFailed(str(err)) from err
+        # Got a listing, so the key works; re-arm the warning for a later failure
+        # (a revoked or rotated key should be reported again).
+        if self._auth_warned:
+            _LOGGER.warning("%s: the API key is accepted again.", self.entry.title)
+            self._auth_warned = False
         if not files:
             raise UpdateFailed("Source returned no files for this dataset")
 

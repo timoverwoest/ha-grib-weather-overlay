@@ -71,7 +71,16 @@ class GribSourceError(Exception):
 
 
 class GribSourceAuthError(GribSourceError):
-    """Raised on 401/403 so config_flow can surface 'invalid API key'."""
+    """Raised on 401/403 so config_flow can surface 'invalid API key'.
+
+    ``status`` carries the HTTP code, because the two mean different things and
+    need different advice: 401 is a key the provider does not recognise at all,
+    403 is a key it recognises but that is not authorised for this dataset.
+    """
+
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 class GribSource(ABC):

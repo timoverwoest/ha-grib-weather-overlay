@@ -102,3 +102,57 @@ async def test_unload_stops_notifications(hass) -> None:
     await async_unload_entry(hass, entry)
 
     coordinator.source.async_stop_notifications.assert_awaited_once()
+
+
+async def test_rejected_api_key_warns_once_and_re_arms(hass, caplog) -> None:
+    """A bad key fails every poll; without this the log says only "Error
+    fetching ... data" and never which of KNMI's three keys is wrong."""
+    from custom_components.grib_overlay.sources.base import GribSourceAuthError
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+    from types import SimpleNamespace
+    import pytest
+
+    entry = _make_entry(hass)
+    coordinator = GribOverlayCoordinator(hass, entry)
+    coordinator.source.async_list_datasets = AsyncMock(
+        side_effect=GribSourceAuthError("KNMI API rejected the API key (HTTP 403)", status=403)
+    )
+
+    for _ in range(3):
+        with pytest.raises(UpdateFailed):
+            await coordinator._async_update_data()
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING" and "API key was rejected" in r.message]
+    assert len(warnings) == 1, "the same rejection must not be logged every poll"
+    text = warnings[0].getMessage()
+    assert "harmonie_arome_cy43_p1" in text  # 403 -> names the dataset it lacks access to
+    assert "NOT authorised" in text
+    assert "THREE separate keys" in text  # points at the right key of the three
+
+    # A key that starts working again is reported, and re-arms the warning.
+    caplog.clear()
+    dataset = SimpleNamespace(key=entry.data[CONF_DATASET], parameters=[])
+    coordinator.source.async_list_datasets = AsyncMock(return_value=[dataset])
+    coordinator.source.async_list_files = AsyncMock(return_value=[])
+    with pytest.raises(UpdateFailed):  # no files, but auth succeeded
+        await coordinator._async_update_data()
+    assert any("accepted again" in r.getMessage() for r in caplog.records)
+    assert coordinator._auth_warned is False
+
+
+async def test_unrecognised_key_gets_different_advice_than_unauthorised(hass, caplog) -> None:
+    from custom_components.grib_overlay.sources.base import GribSourceAuthError
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+    import pytest
+
+    entry = _make_entry(hass)
+    coordinator = GribOverlayCoordinator(hass, entry)
+    coordinator.source.async_list_datasets = AsyncMock(
+        side_effect=GribSourceAuthError("KNMI API rejected the API key (HTTP 401)", status=401)
+    )
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    text = next(r.getMessage() for r in caplog.records if "API key was rejected" in r.getMessage())
+    assert "not recognised at all" in text
+    assert "expire or be revoked" in text

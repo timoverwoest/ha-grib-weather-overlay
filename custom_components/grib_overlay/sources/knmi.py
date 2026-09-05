@@ -243,6 +243,7 @@ class KnmiSource(GribSource):
         self._mqtt_client_id = f"ha-grib-overlay-{instance_id or uuid.uuid4()}"
         self._mqtt_client: mqtt.Client | None = None
         self._notify_auth_logged = False
+        self._notify_connected_logged = False
 
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
         return list(KNOWN_DATASETS)
@@ -253,7 +254,8 @@ class KnmiSource(GribSource):
             async with self._session.get(url, headers=headers, params=params) as resp:
                 if resp.status in (401, 403):
                     raise GribSourceAuthError(
-                        f"KNMI API rejected the API key (HTTP {resp.status})"
+                        f"KNMI API rejected the API key (HTTP {resp.status})",
+                        status=resp.status,
                     )
                 if resp.status >= 400:
                     body = await resp.text()
@@ -330,7 +332,17 @@ class KnmiSource(GribSource):
 
         def _on_connect(client, _userdata, _flags, reason_code, _properties) -> None:
             if reason_code == 0:
-                _LOGGER.debug("Connected to KNMI notification service, subscribing to %s", topic)
+                # Logged at INFO once: a working push channel is otherwise
+                # completely silent, so there is no way to tell "the key is
+                # right" from "nothing has happened yet" without debug logging.
+                if not self._notify_connected_logged:
+                    self._notify_connected_logged = True
+                    _LOGGER.info(
+                        "Connected to the KNMI Notification Service; new runs for %s "
+                        "arrive by push (polling stays as the fallback)",
+                        dataset.key,
+                    )
+                _LOGGER.debug("Subscribing to %s", topic)
                 client.subscribe(topic, qos=1)
                 return
             # "Not authorized" and friends are permanent for this API key, so
