@@ -575,6 +575,44 @@ chips, “Alle rijen tonen”) geldt tijdelijk, voor dat geopende venster.
 Eenheden zijn puur een weergavekeuze in de card (de onderliggende data en de
 kleurschaal veranderen niet; alleen de legenda-getallen en labels).
 
+## Sleutels & problemen oplossen
+
+KNMI gebruikt **drie losse sleutels**. Ze zijn niet uitwisselbaar; een sleutel
+op de verkeerde plek wordt geweigerd.
+
+| Optie | Waarvoor | Zonder |
+| --- | --- | --- |
+| **API-sleutel** (Open Data) | het ophalen van de forecast-runs zelf | de integratie werkt niet |
+| **Notification Service API-sleutel** | push via MQTT, direct bij een nieuwe run | alleen pollen — verder niets |
+| **Observaties API-sleutel** | stationswaarnemingen downloaden in de vergelijking | geen meetstations |
+
+Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
+
+- **`the API key was rejected`** — de **Open Data-sleutel** deugt niet en deze
+  bron werkt niet meer. De melding vertelt welk van de twee gevallen het is:
+  `401` = de sleutel wordt niet herkend (typefout, half geplakt, verlopen of
+  ingetrokken); `403` = de sleutel wordt wél herkend maar heeft **geen toegang
+  tot deze dataset**. Eén keer gelogd, niet bij elke poll; zodra hij weer werkt
+  verschijnt `the API key is accepted again`.
+- **`KNMI Notification Service rejected the connection`** — de
+  **Notification Service-sleutel** deugt niet. Pollen loopt gewoon door, dus dit
+  is niet urgent. Staat er niets in het notificatieveld (of je Open Data-sleutel,
+  wat op hetzelfde neerkomt), dan wordt er geen verbinding geprobeerd en zie je
+  ook geen melding.
+- **`Connected to the KNMI Notification Service`** — push werkt. Dit is een
+  `INFO`-regel, dus die verschijnt zonder debug-logging aan te zetten; zo kun je
+  controleren dát je notificatiesleutel goed staat in plaats van te moeten raden.
+- **`KNMI EDR /locations HTTP 401/403`** — de **observaties-sleutel**. Alleen de
+  meetstations werken dan niet; de rest van de kaart draait door.
+
+Meer detail nodig? Zet in `configuration.yaml`:
+
+```yaml
+logger:
+  logs:
+    custom_components.grib_overlay: debug
+```
+
 ## Taal
 
 De cards en de integratie spreken **de taal die de Home Assistant-gebruiker zelf
@@ -1291,6 +1329,43 @@ applies temporarily, for that opened window.
 
 Units are purely a display choice in the card (the underlying data and the colour
 scale do not change; only the legend numbers and labels).
+
+## Keys & troubleshooting
+
+KNMI uses **three separate keys**. They are not interchangeable; a key in the
+wrong field is refused.
+
+| Option | What it is for | Without it |
+| --- | --- | --- |
+| **API key** (Open Data) | fetching the forecast runs themselves | the integration does not work |
+| **Notification Service API key** | push over MQTT, the moment a run appears | polling only — nothing else |
+| **Observations API key** | downloading station observations in the comparison | no measurement stations |
+
+What you will see in the log (Settings → System → Logs):
+
+- **`the API key was rejected`** — the **Open Data key** is wrong and this source
+  will no longer update. The message says which of the two cases it is: `401` =
+  the key is not recognised at all (typo, truncated paste, expired or revoked);
+  `403` = the key is recognised but has **no access to this dataset**. Logged
+  once rather than on every poll; when it works again you get
+  `the API key is accepted again`.
+- **`KNMI Notification Service rejected the connection`** — the **Notification
+  Service key** is wrong. Polling carries on, so this is not urgent. With the
+  notification field empty (or holding your Open Data key, which amounts to the
+  same thing) no connection is attempted and nothing is logged.
+- **`Connected to the KNMI Notification Service`** — push works. This is an
+  `INFO` line, so it shows up without turning on debug logging: it lets you
+  confirm the notification key is right instead of guessing.
+- **`KNMI EDR /locations HTTP 401/403`** — the **observations key**. Only the
+  measurement stations stop working; the rest of the map carries on.
+
+Need more detail? Add to `configuration.yaml`:
+
+```yaml
+logger:
+  logs:
+    custom_components.grib_overlay: debug
+```
 
 ## Language
 
