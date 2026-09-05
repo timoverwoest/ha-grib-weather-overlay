@@ -569,6 +569,41 @@ chips, “Alle rijen tonen”) geldt tijdelijk, voor dat geopende venster.
 Eenheden zijn puur een weergavekeuze in de card (de onderliggende data en de
 kleurschaal veranderen niet; alleen de legenda-getallen en labels).
 
+## Taal
+
+De cards en de integratie spreken **de taal die de Home Assistant-gebruiker zelf
+heeft gekozen** (Profiel → Taal). Geleverd worden **Nederlands** en **Engels**;
+elke andere taal valt terug op Engels. Er is niets in te stellen — de card leest
+de taal uit `hass.locale.language`.
+
+Wat er meegaat:
+
+| | Voorbeeld NL | Voorbeeld EN |
+| --- | --- | --- |
+| Knoppen, labels, tooltips | “Wis meting”, “Meetstations binnen 10 km:” | “Clear measurement”, “Stations within 10 km:” |
+| Meldingen en foutteksten | “Geen model heeft data voor deze parameter op dit punt.” | “No model has data for this parameter at this point.” |
+| Parameternamen | Windstoten (10m), Luchtdruk (zeeniveau) | Wind gusts (10 m), Pressure (mean sea level) |
+| Datasetnamen | HARMONIE-AROME Cy43 - **Nederland** … | HARMONIE-AROME Cy43 - **Netherlands** … |
+| Windrichting (kompas) | `N/NO/O/ZO/Z/ZW/W/NW` | `N/NE/E/SE/S/SW/W/NW` |
+| Datums en tijden in grafiek en tabel | `za 05-09, 06:00` | `Sat 05/09, 06:00` |
+| Woord-eenheden | `km/u`, `zeemijl` | `km/h`, `nmi` |
+
+Twee kanttekeningen:
+
+- **De config- en optiesflow** volgt de taal van de *instantie* (Instellingen →
+  Systeem → Algemeen), niet die van de individuele gebruiker: een config flow
+  heeft de gebruikerstaal niet tot zijn beschikking. In de praktijk is dat
+  dezelfde taal. De veldnamen zelf komen uit Home Assistants eigen
+  vertaalbestanden (`translations/nl.json`, `translations/en.json`); de
+  dataset- en parameterlijsten worden pas tijdens het draaien bij de bron
+  opgehaald en worden daarom door de integratie zelf vertaald.
+- **Namen van meetstations en plaatsen** (Schiphol, Hoek van Holland, K13-A)
+  blijven zoals ze zijn — dat zijn eigennamen.
+
+Een taal toevoegen betekent: een blok bijzetten in `GRIB_TEXT`,
+`GRIB_PARAM_NAMES`, `GRIB_DATASET_NAMES` en `GRIB_COMPASS` in
+`grib-overlay-card.js`, plus `labels.py` en een `translations/<taal>.json`.
+
 ## Back-ups
 
 Home Assistant zet de **hele** `/config`-map in elke back-up. Tot en met v0.25
@@ -655,6 +690,8 @@ Twee losse dev-scripts werken zonder Home Assistant:
 - `dev/mock_server.py` + `dev/dev.html` — draait de kaart-kaart in een echte
   browser tegen een nagebootste API (hergebruikt de PNG's uit
   `dev/render_preview.py`), zonder dat er een Home Assistant-instantie nodig is.
+  Met `?lang=en` (of `?lang=nl`) bootst de harness de taalkeuze van de
+  HA-gebruiker na, zodat je beide talen kunt controleren.
 - `dev/verify_knmi_mqtt.py <api-key>` — controleert de verbinding met KNMI's
   MQTT Notification Service en toont binnenkomende "nieuw bestand"-meldingen.
   Let op: hiervoor is een **eigen geregistreerde** API-sleutel nodig, de
@@ -1244,6 +1281,41 @@ applies temporarily, for that opened window.
 Units are purely a display choice in the card (the underlying data and the colour
 scale do not change; only the legend numbers and labels).
 
+## Language
+
+The cards and the integration speak **the language the Home Assistant user chose
+for themselves** (Profile → Language). **Dutch** and **English** ship; any other
+language falls back to English. There is nothing to configure — the card reads
+`hass.locale.language`.
+
+What follows the language:
+
+| | Dutch example | English example |
+| --- | --- | --- |
+| Buttons, labels, tooltips | “Wis meting”, “Meetstations binnen 10 km:” | “Clear measurement”, “Stations within 10 km:” |
+| Messages and errors | “Geen model heeft data voor deze parameter op dit punt.” | “No model has data for this parameter at this point.” |
+| Parameter names | Windstoten (10m), Luchtdruk (zeeniveau) | Wind gusts (10 m), Pressure (mean sea level) |
+| Dataset names | HARMONIE-AROME Cy43 - **Nederland** … | HARMONIE-AROME Cy43 - **Netherlands** … |
+| Wind direction (compass) | `N/NO/O/ZO/Z/ZW/W/NW` | `N/NE/E/SE/S/SW/W/NW` |
+| Dates and times in chart and table | `za 05-09, 06:00` | `Sat 05/09, 06:00` |
+| Word-shaped units | `km/u`, `zeemijl` | `km/h`, `nmi` |
+
+Two caveats:
+
+- **The config and options flow** follows the *instance* language (Settings →
+  System → General) rather than the individual user's: a config flow has no
+  access to the user's own language. In practice that is the same language. The
+  field names themselves come from Home Assistant's own translation files
+  (`translations/nl.json`, `translations/en.json`); the dataset and parameter
+  lists are fetched from the provider at runtime and are therefore translated by
+  the integration itself.
+- **Station and place names** (Schiphol, Hoek van Holland, K13-A) are left
+  alone — they are proper nouns.
+
+Adding a language means: a block in `GRIB_TEXT`, `GRIB_PARAM_NAMES`,
+`GRIB_DATASET_NAMES` and `GRIB_COMPASS` in `grib-overlay-card.js`, plus
+`labels.py` and a `translations/<language>.json`.
+
 ## Backups
 
 Home Assistant puts the **entire** `/config` folder into every backup. Up to
@@ -1327,6 +1399,8 @@ The following standalone dev scripts work without Home Assistant:
 - `dev/mock_server.py` + `dev/dev.html` — runs the map card in a real browser
   against a mocked API (reuses the PNGs from `dev/render_preview.py`), without
   needing a Home Assistant instance.
+  `?lang=en` (or `?lang=nl`) mimics the Home Assistant user's language choice,
+  so both languages can be checked.
 - `dev/verify_knmi_mqtt.py <api-key>` — checks the connection to KNMI's MQTT
   Notification Service and shows incoming "new file" messages. Note: this needs a
   **self-registered** API key; the public anonymous demo key (which the REST API
