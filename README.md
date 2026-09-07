@@ -660,15 +660,27 @@ back-up met `FileNotFoundError`.
 run-archief, de uitgepakte GRIB-leden en de gerenderde PNG/JSON-cache — staat
 buiten de configuratiemap:
 
-| Installatie | Standaardlocatie |
+| Wat | Standaardlocatie |
 | --- | --- |
-| Home Assistant OS / Supervised | `/share/grib_overlay/…` |
-| Core / Container (of geen `/share`) | tijdelijke systeemmap (`/tmp/grib_overlay/…`) |
+| **Cache** (gerenderde PNG/JSON per run) | `/share/grib_overlay/…`, of de tijdelijke systeemmap zonder `/share` |
+| **Werkbestanden tijdens een download** (run-archief, uitgepakte GRIB-leden) | `/var/tmp/grib_overlay/…` |
 
-`/share` is de standaard omdat het echte schijf is en buiten de config-tar valt;
-`/tmp` is binnen HAOS namelijk een *tmpfs* (RAM) en dus geen plek voor een
-archief van ~850MB. Met de optie **Map voor werkbestanden** kies je desgewenst
-zelf een pad. Zet dat nooit binnen `/config`.
+Die splitsing is bewust. `/share` is echte schijf en valt buiten de config-tar,
+maar je kunt in de back-upinstellingen wél kiezen om de map **share** mee te
+nemen — en veel mensen doen dat. Een run die tijdens de back-up wordt
+gedownload zet er dan even **gigabytes** neer (gemeten: 3,4 GB over twee
+KNMI-bronnen) en die gaan mee de tar in. Supervisor kent geen manier om een map
+uit te sluiten, dus de enige knop is de locatie: de werkbestanden staan in
+`/var/tmp`, dat in geen enkele back-upmap zit. Ze mogen ook zonder pardon
+verdwijnen — het zijn puur bestanden die tijdens één download bestaan.
+
+Waarom niet `/tmp`? Dat is binnen HAOS een *tmpfs* (RAM), en een archief van
+~850 MB hoort niet in je geheugen. `/var/tmp` is in dezelfde container gewoon
+schijf.
+
+Met de optie **Map voor werkbestanden** kies je desgewenst zelf een pad; dan
+komen cache én werkbestanden daar te staan (jij koos die plek immers bewust).
+Zet dat nooit binnen `/config`.
 
 Extra's:
 
@@ -1414,15 +1426,26 @@ failed with `FileNotFoundError`.
 run archive, the extracted GRIB members and the rendered PNG/JSON cache — lives
 outside the config folder:
 
-| Installation | Default location |
+| What | Default location |
 | --- | --- |
-| Home Assistant OS / Supervised | `/share/grib_overlay/…` |
-| Core / Container (or no `/share`) | system temp folder (`/tmp/grib_overlay/…`) |
+| **Cache** (rendered PNG/JSON per run) | `/share/grib_overlay/…`, or the system temp folder without `/share` |
+| **Working files during a download** (run archive, extracted GRIB members) | `/var/tmp/grib_overlay/…` |
 
-`/share` is the default because it is real disk and outside the config tar; on
-HAOS `/tmp` is a *tmpfs* (RAM), which is no place for a ~850MB archive. The
-**Working files folder** option lets you pick your own path. Never point it
-inside `/config`.
+The split is deliberate. `/share` is real disk and outside the config tar, but
+the backup settings let you include the **share** folder — and plenty of people
+do. A run being downloaded while the backup runs then briefly puts **gigabytes**
+there (measured: 3.4GB across two KNMI sources), and they go straight into the
+tar. Supervisor has no way to exclude a directory, so the only lever is
+location: the working files live in `/var/tmp`, which is not in any backup
+folder. They are also free to vanish at any time — they only exist during one
+download.
+
+Why not `/tmp`? On HAOS that is a *tmpfs* (RAM), and a ~850MB archive does not
+belong in memory. `/var/tmp` in the same container is plain disk.
+
+The **Working files folder** option lets you pick your own path; the cache and
+the working files then both go there (you chose that place deliberately). Never
+point it inside `/config`.
 
 Also:
 

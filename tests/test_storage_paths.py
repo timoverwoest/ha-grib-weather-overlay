@@ -51,3 +51,41 @@ def test_raw_dir_sits_beside_the_entry_dir_not_inside_it(tmp_path: Path) -> None
 def test_default_root_is_never_inside_the_config_folder() -> None:
     # The whole point of the module: /config is tarred for every backup.
     assert "/config" not in str(storage_paths.default_storage_root())
+
+
+def test_scratch_default_avoids_the_folders_a_backup_can_include(tmp_path: Path) -> None:
+    """The in-flight archive must not sit where a backup will find it.
+
+    Home Assistant's automatic backup can be told to include /share and /media
+    (many people do), and Supervisor offers no way to exclude a directory, so
+    the only lever is putting transient gigabytes somewhere else entirely.
+    """
+    base = tmp_path / "var-tmp"
+    base.mkdir()
+    assert storage_paths.default_scratch_root((str(base),)) == base / DOMAIN
+
+    root = str(storage_paths.default_scratch_root())
+    for backed_up in ("/config", "/share", "/media"):
+        assert not root.startswith(backed_up), f"scratch must not live under {backed_up}"
+
+
+def test_scratch_falls_back_to_tempdir_when_no_base_is_writable(tmp_path: Path) -> None:
+    missing = tmp_path / "nope"
+    assert storage_paths.default_scratch_root((str(missing),)) == Path(tempfile.gettempdir()) / DOMAIN
+
+
+def test_scratch_is_separate_from_the_cache_by_default() -> None:
+    cache = storage_paths.entry_dir(None, "01ABC")
+    scratch = storage_paths.scratch_dir(None, "01ABC")
+    assert scratch != cache
+    assert cache not in scratch.parents
+
+
+def test_an_explicit_storage_path_keeps_both_together(tmp_path: Path) -> None:
+    """The user picked that location deliberately; don't scatter their files."""
+    cache = storage_paths.entry_dir(str(tmp_path), "01ABC")
+    scratch = storage_paths.scratch_dir(str(tmp_path), "01ABC")
+    assert scratch == tmp_path / storage_paths.RAW_DIR_NAME / "01ABC"
+    assert str(scratch).startswith(str(tmp_path))
+    # Still beside, never inside, the entry dir the retention cleanup walks.
+    assert cache not in scratch.parents

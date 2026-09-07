@@ -291,3 +291,26 @@ async def test_legacy_cache_is_left_alone_during_a_backup(hass, tmp_path) -> Non
     # we are fixing -- it has to wait for the next poll instead.
     assert legacy.exists()
     assert coordinator._legacy_migrated is False
+
+
+async def test_run_retention_does_not_delete_during_a_backup(hass, tmp_path) -> None:
+    """The cache still lives in a folder a backup can include (/share).
+
+    Deleting a whole run directory while that folder is being tarred is the
+    original FileNotFoundError all over again, and the backup may well have
+    started during the decode -- after the check that let this run through.
+    """
+    entry = _make_entry(hass)
+    hass.config_entries.async_update_entry(entry, options={CONF_STORAGE_PATH: str(tmp_path)})
+    coordinator = GribOverlayCoordinator(hass, entry)
+
+    for run in ("run-1", "run-2", "run-3"):
+        (coordinator.storage_dir / run).mkdir(parents=True)
+
+    GribOverlayCoordinator.set_backup_active(True)
+    coordinator._cleanup_old_runs()
+    assert len(list(coordinator.storage_dir.iterdir())) == 3, "nothing may be removed mid-backup"
+
+    GribOverlayCoordinator.set_backup_active(False)
+    coordinator._cleanup_old_runs()
+    assert len(list(coordinator.storage_dir.iterdir())) == 2  # retain_runs defaults to 2

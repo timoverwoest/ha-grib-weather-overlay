@@ -21,6 +21,15 @@ picked once per entry:
 Note ``/tmp`` is a *tmpfs* (RAM) inside the Home Assistant OS container, which is
 why it is the last resort rather than the default: an 850MB run archive does not
 belong in RAM.
+
+The *scratch* space is a separate question, and the reason for the split. Home
+Assistant's automatic backup can be told to include the ``share`` folder, and
+plenty of people do -- at which point the in-flight run archives and their
+extracted members (measured: 3.4GB across two KNMI entries) land in the backup
+whenever it happens to run mid-download. Supervisor offers no way to exclude a
+directory (its only folder filter is for network mounts), so the only lever is
+location: scratch goes somewhere that is not a backup folder at all, and is
+free to be wiped whenever, because every byte of it is transient.
 """
 
 from __future__ import annotations
@@ -39,6 +48,13 @@ PREFERRED_BASES: tuple[str, ...] = ("/share",)
 # per-entry directories rather than inside one, so the run-retention cleanup --
 # which walks the entry directory -- can never touch an in-flight download.
 RAW_DIR_NAME = ".raw"
+
+# Scratch bases, first writable wins. /var/tmp is real disk inside the Home
+# Assistant container (only /tmp is a tmpfs there) and is not one of the folders
+# a backup can include, unlike /config, /share and /media. It is wiped when the
+# container is recreated -- on a core update, say -- which is exactly right for
+# files that only exist during one download.
+SCRATCH_BASES: tuple[str, ...] = ("/var/tmp",)
 
 
 def _is_writable_dir(path: Path) -> bool:
@@ -68,6 +84,28 @@ def storage_root(configured: str | None = None) -> Path:
 def entry_dir(configured: str | None, entry_id: str) -> Path:
     """Working directory for one config entry (holds its run directories)."""
     return storage_root(configured) / entry_id
+
+
+def default_scratch_root(bases: tuple[str, ...] = SCRATCH_BASES) -> Path:
+    """Root for in-flight downloads when the user configured no explicit path."""
+    for base in bases:
+        candidate = Path(base)
+        if _is_writable_dir(candidate):
+            return candidate / DOMAIN
+    return Path(tempfile.gettempdir()) / DOMAIN
+
+
+def scratch_dir(configured: str | None, entry_id: str) -> Path:
+    """Scratch directory for one config entry's in-flight downloads.
+
+    An explicit ``storage_path`` is honoured as-is -- the user picked that
+    location deliberately, so both the cache and the scratch go there (and the
+    tests rely on it to keep their writes inside tmp_path). Only the default
+    splits the two, to keep gigabytes of transient data out of backups.
+    """
+    if configured and configured.strip():
+        return raw_dir_for(entry_dir(configured, entry_id))
+    return default_scratch_root() / entry_id
 
 
 def raw_dir_for(entry_directory: Path) -> Path:

@@ -141,6 +141,14 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             entry.options.get(CONF_STORAGE_PATH) or entry.data.get(CONF_STORAGE_PATH),
             entry.entry_id,
         )
+        # In-flight downloads go somewhere a backup never looks. By default that
+        # is NOT the cache location: /share can be (and often is) included in the
+        # automatic backup, and a run caught mid-download adds gigabytes to it.
+        # An explicit storage_path is honoured for both -- the user picked it.
+        self._scratch_root = storage_paths.scratch_dir(
+            entry.options.get(CONF_STORAGE_PATH) or entry.data.get(CONF_STORAGE_PATH),
+            entry.entry_id,
+        )
         # Pre-0.26 location, inside /config. Cleared once on setup (see
         # _migrate_legacy_storage) so an upgrade actually shrinks the backup.
         self._legacy_storage_dir = Path(hass.config.path(DOMAIN, entry.entry_id))
@@ -165,10 +173,11 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
     def _raw_dir(self) -> Path:
         """Scratch space for in-flight downloads (run archive, raw members).
 
-        A property rather than a stored path so that relocating ``storage_dir``
-        (the tests do) moves the scratch space along with it.
+        Kept out of the cache tree on purpose: /share can be included in the
+        automatic backup, and a run caught mid-download would then add gigabytes
+        to it. See storage_paths.
         """
-        return storage_paths.raw_dir_for(self.storage_dir)
+        return self._scratch_root
 
     def _migrate_legacy_storage(self) -> None:
         """Blocking: get the pre-0.26 cache out of /config, once.
@@ -689,7 +698,12 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
     def _cleanup_old_runs(self) -> None:
         retain = self.entry.options.get(CONF_RETAIN_RUNS, DEFAULT_RETAIN_RUNS)
-        if not self.storage_dir.exists():
+        # The cache does live in a folder a backup can include (/share by
+        # default), and this is the one place that deletes from it in bulk. A
+        # backup may have started during the decode, after the check that let
+        # this run through -- so re-check right before removing anything. The
+        # stale run is simply dropped after the next run instead.
+        if self.backup_in_progress() or not self.storage_dir.exists():
             return
         run_dirs = sorted((p for p in self.storage_dir.iterdir() if p.is_dir()), reverse=True)
         for stale_dir in run_dirs[retain:]:
