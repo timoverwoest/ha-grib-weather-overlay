@@ -86,7 +86,12 @@ def _message_times(message) -> tuple[datetime, datetime]:
     # Interval products (2=valid-over, 3=average, 4=accumulation, 5=difference)
     # span reference+P1..reference+P2 and are labelled at the end, i.e. P2 --
     # matching how ecCodes fills validityDate/validityTime.
-    step = message.p2 if message.time_range_indicator in (2, 3, 4, 5) else message.p1
+    # 10 = instantaneous, with P1 spanning both octets (leads past 255 units;
+    # DMI uses it throughout).
+    if message.time_range_indicator == 10:
+        step = message.p1 * 256 + message.p2
+    else:
+        step = message.p2 if message.time_range_indicator in (2, 3, 4, 5) else message.p1
     valid_time = run_time + timedelta(hours=step * unit_hours)
     return valid_time, run_time
 

@@ -107,6 +107,14 @@ COLORMAPS: dict[str, tuple[ColorStop, ...]] = {
         ColorStop(0.8, (200, 30, 60)),
         ColorStop(1.0, (130, 20, 120)),
     ),
+    # Water level (m, around 0): low water blue, high water red, mean pale.
+    "water_level": (
+        ColorStop(0.0, (33, 70, 150)),
+        ColorStop(0.3, (90, 160, 210)),
+        ColorStop(0.5, (240, 240, 235)),
+        ColorStop(0.7, (245, 170, 90)),
+        ColorStop(1.0, (180, 30, 40)),
+    ),
     # Direction (0-360 deg): cyclic, so 0 and 360 share a colour.
     "direction": (
         ColorStop(0.0, (215, 48, 39)),

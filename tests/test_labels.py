@@ -61,9 +61,15 @@ def test_source_names_translate_and_fall_back() -> None:
 
 def test_every_english_name_covers_a_real_key() -> None:
     """A typo'd key would silently never be used -- catch it here."""
-    from custom_components.grib_overlay.sources import bsh, dwd, knmi
+    import importlib
 
-    datasets = [*knmi.KNOWN_DATASETS, *dwd.KNOWN_DATASETS, *bsh.KNOWN_DATASETS]
+    from custom_components.grib_overlay.sources.registry import SOURCE_REGISTRY
+
+    datasets = [
+        d
+        for cls in SOURCE_REGISTRY.values()
+        for d in importlib.import_module(cls.__module__).KNOWN_DATASETS
+    ]
     assert set(labels.DATASET_NAMES_EN) == {d.key for d in datasets}
     assert set(labels.PARAMETER_NAMES_EN) == {p.key for d in datasets for p in d.parameters}
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from .base import GribSource
 from .bsh import BshSource
+from .dmi import DmiSource
 from .dwd import DwdSource
 from .knmi import KnmiSource
 
@@ -16,6 +17,7 @@ SOURCE_REGISTRY: dict[str, type[GribSource]] = {
     KnmiSource.key: KnmiSource,
     DwdSource.key: DwdSource,
     BshSource.key: BshSource,
+    DmiSource.key: DmiSource,
 }
 
 

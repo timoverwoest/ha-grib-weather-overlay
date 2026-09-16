@@ -19,6 +19,10 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 - [BSH](https://www.bsh.de/) — **zeestroming** (oppervlakte-u/v) voor de hele
   Noordzee incl. de Nederlandse, Belgische en noord-Franse kust, 15-minuten-
   stappen, GRIB1, **zonder sleutel** (open FTP).
+- [DMI](https://www.dmi.dk/friedata) — het Deense golfmodel **WAM**
+  (Noordzee/Oostzee op ~5 km en de Noord-Atlantische Oceaan op 0,25°) en het
+  stormvloedmodel **DKSS** (stroming, waterstand en watertemperatuur van
+  Skagerrak tot het Kanaal), tot 5 dagen vooruit, GRIB1, **zonder sleutel**.
 
 ## Features
 
@@ -38,6 +42,9 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 - **Zeestroming** (BSH): oppervlakte-stroming (snelheid + richting) voor de
   Noordzee als kleurlaag met deeltjes/pijlen — zoals wind, maar dan het water.
   15-minuten-resolutie, dus fijne getijdetails.
+- **Golven, stroming en waterstand tot 5 dagen vooruit** (DMI): WAM-golven van
+  de Oslofjord tot Noord-Spanje, en stroming, waterstand en watertemperatuur
+  van Skagerrak tot het Kanaal.
 - **Zeekaartlagen** zoals op map.openseamap.org: zeetekens, sport, dieptelijnen,
   dieptemetingen, GEBCO-diepte en een EMODnet-dieptekaart als ondergrond, via een
   lagenknop op de kaart.
@@ -197,17 +204,19 @@ worden zonder de kaart of de rest van de backend te wijzigen):
    [developer.dataplatform.knmi.nl](https://developer.dataplatform.knmi.nl) →
    Notification Service. Laat het leeg als je die niet hebt — dan pollt de
    integratie, en dat is de enige zichtbare consequentie. Plak er **niet** je
-   Open Data-sleutel in: die wordt geweigerd. Voor **DWD Open Data** laat je de
-   sleutel-velden leeg — DWD heeft geen sleutel nodig.
+   Open Data-sleutel in: die wordt geweigerd. Voor **DWD Open Data**, **BSH** en
+   **DMI Open Data** laat je de sleutel-velden leeg — die hebben geen sleutel nodig.
 3. Kies een dataset. KNMI: HARMONIE-AROME Cy43 **Nederland** (standaard) of
    **Europa (DINI)**. DWD: **EWAM** (Europese golven) of **ICON-D2** (weermodel).
+   DMI: **WAM Noordzee/Oostzee**, **WAM Noord-Atlantisch** (golven) of **DKSS**
+   (stroming en waterstand).
    Wil je zowel weer als golven, voeg dan een integratie-instantie per dataset
    toe; in de kaart wissel je tussen instanties.
 4. Kies welke parameters bijgehouden moeten worden. Dat kan later nog via
    **Configureren** (zie stap 5): zo zet je bijvoorbeeld deining aan op een
    bestaande EWAM-instantie, zonder die te verwijderen.
 5. Optioneel: pas via de integratie-opties de **parameters**, de voorspellingshorizon (default
-   24 uur, max 60 uur — zo ver reikt de KNMI HARMONIE-voorspelling), het aantal
+   24 uur, max 168 uur; KNMI HARMONIE reikt tot 60 uur, de DMI-modellen tot 120–132 uur), het aantal
    bewaarde forecast-runs (default 2), het poll-interval (default 30 minuten) en
    **eigen kleurschalen per parameter** (zie hieronder) aan.
 
@@ -459,6 +468,7 @@ hoofdlettergevoelig; gebruik ze exact zoals hieronder.
 | `knmi` | KNMI Data Platform | ja (Open Data-sleutel) |
 | `dwd` | DWD Open Data | nee |
 | `bsh` | BSH (zeestroming Noordzee) | nee |
+| `dmi` | DMI Open Data | nee |
 
 ### Datasets (`dataset`)
 
@@ -469,6 +479,9 @@ hoofdlettergevoelig; gebruik ze exact zoals hieronder.
 | `dwd` | `ewam` | DWD EWAM — Europese golven | regulier lat/lon | 78 u | 1 u |
 | `dwd` | `icon_d2` | DWD ICON-D2 — weermodel 2,2 km | regulier lat/lon | 48 u | 1 u |
 | `bsh` | `bsh_current_northsea` | BSH — Zeestroming Noordzee | regulier lat/lon | 48 u | 15 min |
+| `dmi` | `dmi_wam_nsb` | DMI WAM — golven Noordzee en Oostzee (47–66°N, 13°W–30°O, ~5 km) | regulier lat/lon | 132 u | 1 u |
+| `dmi` | `dmi_wam_natlant` | DMI WAM — golven Noord-Atlantisch (30–78°N, 69°W–30°O, 0,25°) | regulier lat/lon | 132 u | 1 u |
+| `dmi` | `dmi_dkss_nsbs` | DMI DKSS — stroming en waterstand (48,5–65,9°N, vanaf 4,1°W, ~5 km) | regulier lat/lon | 120 u | 1 u |
 
 ### Parameters (`parameter` / `parameters`)
 
@@ -523,6 +536,25 @@ rekent dat om naar de hoeveelheid per uur, net als bij KNMI. Windstoten zijn bij
 ICON het maximum van het afgelopen uur, zonder eigen richting. Op het starttijdstip
 van een run (+0 u) bestaan die twee nog niet, dus die beelden ontbreken daar.
 
+**DMI** (`dmi_wam_nsb` en `dmi_wam_natlant`) — dezelfde sleutels als EWAM:
+
+| `parameter` | Naam | Eenheid | Type |
+| --- | --- | --- | --- |
+| `wave_height` | Golfhoogte (significant) | m | scalar |
+| `wave_period` | Golfperiode (gemiddeld) | s | scalar |
+| `wave_peak_period` | Golf: piekperiode | s | scalar |
+| `wave_direction` | Golfrichting (gemiddeld) | ° | scalar |
+| `swell_height`, `swell_period`, `swell_direction` | Deining: hoogte, periode, richting | m, s, ° | scalar |
+| `wind_wave_height`, `wind_wave_period`, `wind_wave_direction` | Windgolven: hoogte, periode, richting | m, s, ° | scalar |
+
+**DMI** (`dmi_dkss_nsbs`):
+
+| `parameter` | Naam | Eenheid | Type |
+| --- | --- | --- | --- |
+| `current` | Zeestroming (oppervlak) | m/s | vector |
+| `water_level` | Waterstand | m | scalar |
+| `water_temperature` | Watertemperatuur | °C | scalar |
+
 **BSH** (`bsh_current_northsea`):
 
 | `parameter` | Naam | Eenheid | Type |
@@ -541,7 +573,7 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 
 | Sleutel | Waarden |
 | --- | --- |
-| `source` | `knmi`, `dwd` of `bsh` |
+| `source` | `knmi`, `dwd`, `bsh` of `dmi` |
 | `api_key` | KNMI Open Data-sleutel (leeg laten voor DWD/BSH) |
 | `notification_api_key` | optioneel; **aparte** KNMI Notification Service-sleutel (leeg, of je Open Data-sleutel = alleen pollen) |
 | `dataset` | een dataset-sleutel uit de tabel hierboven |
@@ -552,7 +584,7 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 | Sleutel | Type | Default | Bereik / vorm |
 | --- | --- | --- | --- |
 | `parameters` | lijst | de keuze bij het toevoegen | welke parameters van de dataset gedownload en getoond worden. Een parameter die je aanzet verschijnt zodra de huidige run opnieuw is verwerkt; dat begint direct na opslaan |
-| `forecast_horizon_hours` | getal (uren) | `24` | 1–60 |
+| `forecast_horizon_hours` | getal (uren) | `24` | 1–168 |
 | `retain_runs` | geheel getal | `2` | 1–10 |
 | `update_interval_minutes` | geheel getal (min) | `30` | 5–180 |
 | `notification_api_key` | tekst | (leeg) | **aparte** KNMI Notification Service-sleutel voor push. Niet je Open Data-sleutel: die weigert de broker met `Not authorized`. Leeg = alleen pollen, geen MQTT-poging |
@@ -833,6 +865,15 @@ Extra's:
   maar houd er rekening mee dat een langere voorspellingshorizon veel frames
   oplevert (24 u = 96 frames). Alleen het BSH-Noordzee-gebied wordt ondersteund
   (dat dekt de NL/BE/FR-kust); de fijnere deelgebieden en de Oostzee nog niet.
+- **DMI** publiceert per run één bestand per uur. Bij WAM is dat 1–2 MB per uur;
+  van DKSS (9 MB per uur, vooral stroming op tientallen diepten) leest de
+  integratie alleen het begin met de oppervlaktevelden, ~0,3 MB per uur. Er komt
+  elke 6 uur een nieuwe run, ~2,5 uur na de runtijd; een run wordt pas opgepakt
+  als alle uren online staan. Zet de voorspellingshorizon op wat je nodig hebt
+  (bijv. 120) — de standaard 24 uur gebruikt maar een deel van de 5 dagen.
+- **Waterstand** is bij DMI DKSS de hoogte ten opzichte van het gemiddelde
+  zeeniveau van dat model, niet ten opzichte van NAP; vergelijk hem niet
+  één-op-één met Nederlandse peilen.
 
 ## Ontwikkelen & testen
 
@@ -902,6 +943,10 @@ changing the map card or the rest of the backend):
 - [BSH](https://www.bsh.de/) — **sea current** (surface u/v) for the whole North
   Sea including the Dutch, Belgian and northern French coast, 15-minute steps,
   GRIB1, **no key** (open FTP).
+- [DMI](https://www.dmi.dk/friedata) — the Danish **WAM** wave model
+  (North Sea/Baltic at ~5 km and the North Atlantic at 0.25°) and the **DKSS**
+  storm-surge model (currents, water level and water temperature from the
+  Skagerrak to the Channel), up to 5 days ahead, GRIB1, **no key**.
 
 ## Features
 
@@ -921,6 +966,9 @@ changing the map card or the rest of the backend):
 - **Sea current** (BSH): surface current (speed + direction) for the North Sea
   as a colour layer with particles/arrows — like wind, but for the water. At
   15-minute resolution, so fine tidal detail.
+- **Waves, currents and water level up to 5 days ahead** (DMI): WAM waves from
+  the Oslofjord to northern Spain, and currents, water level and water
+  temperature from the Skagerrak to the Channel.
 - **Nautical chart layers** as on map.openseamap.org: seamarks, sport, depth
   contours, depth soundings, GEBCO depth and an EMODnet bathymetry base map, via a
   layer button on the map.
@@ -1073,17 +1121,18 @@ changing the map card or the rest of the backend):
    [developer.dataplatform.knmi.nl](https://developer.dataplatform.knmi.nl) →
    Notification Service. Leave it empty if you don't have one — the integration
    then polls, which is the only visible consequence. Do **not** paste your Open
-   Data key there: it is refused. For **DWD Open Data** leave the key fields
-   empty — DWD needs no key.
+   Data key there: it is refused. For **DWD Open Data**, **BSH** and **DMI Open
+   Data** leave the key fields empty — they need no key.
 3. Choose a dataset. KNMI: HARMONIE-AROME Cy43 **Netherlands** (default) or
    **Europe (DINI)**. DWD: **EWAM** (European waves) or **ICON-D2** (weather
-   model). If you want both weather and waves, add one integration instance per
+   model). DMI: **WAM North Sea/Baltic**, **WAM North Atlantic** (waves) or
+   **DKSS** (currents and water level). If you want both weather and waves, add one integration instance per
    dataset; in the card you switch between instances.
 4. Choose which parameters should be kept up to date. You can change that later
    under **Configure** (see step 5) — for instance to switch swell on for an
    existing EWAM instance without removing it.
 5. Optional: via the integration options, adjust the **parameters**, the forecast horizon (default
-   24 hours, max 60 hours — that is as far as the KNMI HARMONIE forecast reaches),
+   24 hours, max 168 hours; KNMI HARMONIE reaches 60 hours, the DMI models 120–132 hours),
    the number of forecast runs to keep (default 2), the polling interval (default
    30 minutes) and **custom colour scales per parameter** (see below).
 
@@ -1331,6 +1380,7 @@ exactly as below.
 | `knmi` | KNMI Data Platform | yes (Open Data key) |
 | `dwd` | DWD Open Data | no |
 | `bsh` | BSH (North Sea current) | no |
+| `dmi` | DMI Open Data | no |
 
 ### Datasets (`dataset`)
 
@@ -1341,6 +1391,9 @@ exactly as below.
 | `dwd` | `ewam` | DWD EWAM — European waves | regular lat/lon | 78 h | 1 h |
 | `dwd` | `icon_d2` | DWD ICON-D2 — weather model 2.2 km | regular lat/lon | 48 h | 1 h |
 | `bsh` | `bsh_current_northsea` | BSH — North Sea current | regular lat/lon | 48 h | 15 min |
+| `dmi` | `dmi_wam_nsb` | DMI WAM — waves North Sea and Baltic (47–66°N, 13°W–30°E, ~5 km) | regular lat/lon | 132 h | 1 h |
+| `dmi` | `dmi_wam_natlant` | DMI WAM — waves North Atlantic (30–78°N, 69°W–30°E, 0.25°) | regular lat/lon | 132 h | 1 h |
+| `dmi` | `dmi_dkss_nsbs` | DMI DKSS — currents and water level (48.5–65.9°N, from 4.1°W, ~5 km) | regular lat/lon | 120 h | 1 h |
 
 ### Parameters (`parameter` / `parameters`)
 
@@ -1395,6 +1448,25 @@ integration converts it to the amount per hour, as with KNMI. ICON's gusts are t
 maximum of the past hour, without a direction of their own. At a run's start time
 (+0 h) neither exists yet, so those two have no image there.
 
+**DMI** (`dmi_wam_nsb` and `dmi_wam_natlant`) — the same keys as EWAM:
+
+| `parameter` | Name | Unit | Type |
+| --- | --- | --- | --- |
+| `wave_height` | Wave height (significant) | m | scalar |
+| `wave_period` | Wave period (mean) | s | scalar |
+| `wave_peak_period` | Waves: peak period | s | scalar |
+| `wave_direction` | Wave direction (mean) | ° | scalar |
+| `swell_height`, `swell_period`, `swell_direction` | Swell: height, period, direction | m, s, ° | scalar |
+| `wind_wave_height`, `wind_wave_period`, `wind_wave_direction` | Wind waves: height, period, direction | m, s, ° | scalar |
+
+**DMI** (`dmi_dkss_nsbs`):
+
+| `parameter` | Name | Unit | Type |
+| --- | --- | --- | --- |
+| `current` | Sea current (surface) | m/s | vector |
+| `water_level` | Water level | m | scalar |
+| `water_temperature` | Water temperature | °C | scalar |
+
 **BSH** (`bsh_current_northsea`):
 
 | `parameter` | Name | Unit | Type |
@@ -1413,7 +1485,7 @@ include `swell_direction` too, or the swell rows have no arrows.
 
 | Key | Values |
 | --- | --- |
-| `source` | `knmi`, `dwd` or `bsh` |
+| `source` | `knmi`, `dwd`, `bsh` or `dmi` |
 | `api_key` | KNMI Open Data key (leave empty for DWD/BSH) |
 | `notification_api_key` | optional; **separate** KNMI Notification Service key (empty, or your Open Data key = polling only) |
 | `dataset` | a dataset key from the table above |
@@ -1424,7 +1496,7 @@ include `swell_direction` too, or the swell rows have no arrows.
 | Key | Type | Default | Range / form |
 | --- | --- | --- | --- |
 | `parameters` | list | the choice made when adding | which parameters of the dataset are downloaded and shown. A parameter you switch on appears once the current run has been processed again; that starts right after saving |
-| `forecast_horizon_hours` | number (hours) | `24` | 1–60 |
+| `forecast_horizon_hours` | number (hours) | `24` | 1–168 |
 | `retain_runs` | integer | `2` | 1–10 |
 | `update_interval_minutes` | integer (min) | `30` | 5–180 |
 | `notification_api_key` | text | (empty) | **separate** KNMI Notification Service key for push. Not your Open Data key: the broker refuses that with `Not authorized`. Empty = polling only, no MQTT attempt |
@@ -1700,6 +1772,14 @@ Also:
   note that a longer forecast horizon yields many frames (24 h = 96 frames). Only
   the BSH North Sea area is supported (which covers the NL/BE/FR coast); the finer
   sub-areas and the Baltic are not yet.
+- **DMI** publishes one file per hour per run. For WAM that is 1–2 MB per hour;
+  of DKSS (9 MB per hour, mostly currents at dozens of depths) the integration
+  reads only the beginning with the surface fields, ~0.3 MB per hour. A new run
+  appears every 6 hours, ~2.5 hours after its run time; a run is only picked up
+  once every hour is online. Set the forecast horizon to what you need (e.g.
+  120) — the default 24 hours uses only part of the 5 days.
+- **Water level** in DMI DKSS is the height above that model's mean sea level,
+  not above NAP (Dutch datum); don't compare it one-to-one with Dutch gauges.
 
 ## Development & testing
 

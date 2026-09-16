@@ -236,7 +236,9 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(
                     CONF_FORECAST_HORIZON_HOURS,
                     default=options.get(CONF_FORECAST_HORIZON_HOURS, DEFAULT_FORECAST_HORIZON_HOURS),
-                ): vol.All(vol.Coerce(float), vol.Range(min=1, max=60)),  # KNMI HARMONIE runs to +60h
+                # HARMONIE runs to +60 h, DMI's waves to +132 h; a longer
+                # horizon than a dataset has just yields its last lead time.
+                ): vol.All(vol.Coerce(float), vol.Range(min=1, max=168)),
                 vol.Required(
                     CONF_RETAIN_RUNS,
                     default=options.get(CONF_RETAIN_RUNS, DEFAULT_RETAIN_RUNS),

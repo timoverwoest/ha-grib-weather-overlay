@@ -32,6 +32,7 @@ PARAMETER_NAMES_EN: dict[str, str] = {
     "wave_height": "Wave height (significant)",
     "wave_period": "Wave period (mean)",
     "wave_direction": "Wave direction (mean)",
+    "wave_peak_period": "Waves: peak period",
     "swell_height": "Swell: height",
     "swell_period": "Swell: period (mean)",
     "swell_peak_period": "Swell: peak period",
@@ -41,6 +42,8 @@ PARAMETER_NAMES_EN: dict[str, str] = {
     "wind_wave_peak_period": "Wind waves: peak period",
     "wind_wave_direction": "Wind waves: direction",
     "current": "Sea current (surface)",
+    "water_level": "Water level",
+    "water_temperature": "Water temperature",
     "cape": "CAPE (thunderstorm energy)",
 }
 
@@ -50,6 +53,9 @@ DATASET_NAMES_EN: dict[str, str] = {
     "ewam": "DWD EWAM - European waves (North Sea, Atlantic Ocean, Mediterranean)",
     "icon_d2": "DWD ICON-D2 - weather model 2.2 km (Germany, Benelux, southern North Sea)",
     "bsh_current_northsea": "BSH - North Sea currents (NL/BE/FR coast)",
+    "dmi_wam_nsb": "DMI WAM - waves North Sea and Baltic (~5 km)",
+    "dmi_wam_natlant": "DMI WAM - waves North Atlantic (0.25°)",
+    "dmi_dkss_nsbs": "DMI DKSS - currents and water level North Sea and Baltic (~5 km)",
 }
 
 SOURCE_NAMES_EN: dict[str, str] = {

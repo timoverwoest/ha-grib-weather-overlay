@@ -60,6 +60,7 @@ def _pack(raw_values, bits: int) -> bytes:
 def _make_grib1(
     *, param: int, level: int, raw_values, bits: int, ref: float = 0.0,
     binary_scale: int = 0, present=None, ni: int = 3, nj: int = 2,
+    scan: int = 0x40, tri: int = 0, p1: int = 3, p2: int = 0,
 ) -> bytes:
     """A regular lat/lon (scan 0x40) simple-packing message; ``present`` adds a bitmap."""
     pds = bytearray(28)
@@ -69,16 +70,18 @@ def _make_grib1(
     pds[8], pds[9] = param, 105  # indicatorOfParameter, indicatorOfTypeOfLevel
     pds[10:12] = _u2(level)
     pds[12], pds[13], pds[14], pds[15] = 26, 9, 16, 6  # 2026-09-16 06:00
-    pds[17], pds[18] = 1, 3  # hours, P1 = +3h
+    pds[17], pds[18], pds[19], pds[20] = 1, p1, p2, tri  # hours, P1, P2, timeRangeIndicator
     pds[24] = 21  # century
 
     gds = bytearray(32)
     gds[0:3] = _u3(32)
     gds[4] = 255
     gds[6:8], gds[8:10] = _u2(ni), _u2(nj)
-    gds[10:13], gds[13:16] = _u3(49000), _u3(0)  # lat1 49.0, lon1 0.0
-    gds[17:20], gds[20:23] = _u3(56000), _u3(11000)  # lat2 56.0, lon2 11.0
-    gds[27] = 0x40
+    # Scan 0x40 lists the southern row first, 0x00 the northern one.
+    first, last = (49000, 56000) if scan == 0x40 else (56000, 49000)
+    gds[10:13], gds[13:16] = _u3(first), _u3(0)  # lat1, lon1 0.0
+    gds[17:20], gds[20:23] = _u3(last), _u3(11000)  # lat2, lon2 11.0
+    gds[27] = scan
 
     bms = b""
     if present is not None:
@@ -257,3 +260,30 @@ def test_matches_eccodes_bit_for_bit() -> None:
         finite = ~np.isnan(message.values)
         if finite.any():
             assert np.allclose(message.values[finite], ecc[finite], atol=1e-6)
+
+
+def test_north_first_grid_is_flipped_to_south_first() -> None:
+    """DMI WAM and MET Norway scan north to south (mode 0x00)."""
+    raw = _make_grib1(param=229, level=0, bits=4, raw_values=[1, 2, 3, 4, 5, 6], scan=0x00)
+    (m,) = list(grib1.iter_messages(raw))
+    grid, lats, lons = grib1.to_grid(m)
+    assert lats.tolist() == [49.0, 56.0]
+    # The first transmitted row (1, 2, 3) is the northern one, so it ends up last.
+    assert grid.tolist() == [[4, 5, 6], [1, 2, 3]]
+    assert lons.tolist() == [0.0, 5.5, 11.0]
+
+
+def test_other_scan_modes_still_refuse() -> None:
+    raw = _make_grib1(param=229, level=0, bits=4, raw_values=range(6), scan=0x80)
+    (m,) = list(grib1.iter_messages(raw))
+    with pytest.raises(grib1.Grib1Error):
+        grib1.to_grid(m)
+
+
+def test_two_octet_lead_time(tmp_path) -> None:
+    """timeRangeIndicator 10: P1 spans octets 19-20 (DMI, leads past 255 h)."""
+    raw = _make_grib1(param=229, level=0, bits=4, raw_values=range(6), tri=10, p1=1, p2=8)
+    path = tmp_path / "wam.grib"
+    path.write_bytes(raw)
+    valid, run = grib_decode.peek_valid_time(path)
+    assert (valid - run).total_seconds() == 264 * 3600  # 1 * 256 + 8

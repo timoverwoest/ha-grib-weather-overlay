@@ -306,13 +306,18 @@ def _unpack(
 def to_grid(message: Grib1Message) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return (grid[Nj, Ni] south->north rows, lats[Nj] ascending, lons[Ni] ascending).
 
-    Only scan mode 0x40 (+i west->east, +j south->north, i-consecutive) is
-    produced by the KNMI HARMONIE datasets and validated here; other scan
-    modes raise so we never silently return a flipped/rotated grid.
+    Two i-consecutive, west->east scan modes are supported: 0x40 (+j, rows run
+    south->north: KNMI HARMONIE, DMI DKSS) and 0x00 (-j, first row northernmost:
+    DMI WAM, MET Norway), which is flipped. Anything else raises so we never
+    silently return a mirrored or rotated grid.
     """
-    if message.scan_mode != 0x40:
+    if message.scan_mode not in (0x00, 0x40):
         raise Grib1Error(f"unsupported scanning mode {message.scan_mode:#04x}")
     grid = message.values.reshape(message.nj, message.ni)
-    lats = np.linspace(message.lat1, message.lat2, message.nj)
     lons = np.linspace(message.lon1, message.lon2, message.ni)
+    if message.scan_mode == 0x40:
+        lats = np.linspace(message.lat1, message.lat2, message.nj)
+    else:
+        grid = np.flipud(grid)
+        lats = np.linspace(message.lat2, message.lat1, message.nj)
     return grid, lats, lons

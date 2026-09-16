@@ -350,6 +350,7 @@ const GRIB_PARAM_NAMES = {
     wave_height: "Golfhoogte (significant)",
     wave_period: "Golfperiode (gemiddeld)",
     wave_direction: "Golfrichting (gemiddeld)",
+    wave_peak_period: "Golf: piekperiode",
     swell_height: "Deining: hoogte",
     swell_period: "Deining: periode (gemiddeld)",
     swell_peak_period: "Deining: piekperiode",
@@ -359,6 +360,8 @@ const GRIB_PARAM_NAMES = {
     wind_wave_peak_period: "Windgolven: piekperiode",
     wind_wave_direction: "Windgolven: richting",
     current: "Zeestroming (oppervlak)",
+    water_level: "Waterstand",
+    water_temperature: "Watertemperatuur",
     cape: "CAPE (onweersenergie)",
   },
   en: {
@@ -374,6 +377,7 @@ const GRIB_PARAM_NAMES = {
     wave_height: "Wave height (significant)",
     wave_period: "Wave period (mean)",
     wave_direction: "Wave direction (mean)",
+    wave_peak_period: "Waves: peak period",
     swell_height: "Swell: height",
     swell_period: "Swell: period (mean)",
     swell_peak_period: "Swell: peak period",
@@ -383,6 +387,8 @@ const GRIB_PARAM_NAMES = {
     wind_wave_peak_period: "Wind waves: peak period",
     wind_wave_direction: "Wind waves: direction",
     current: "Sea current (surface)",
+    water_level: "Water level",
+    water_temperature: "Water temperature",
     cape: "CAPE (thunderstorm energy)",
   },
 };
@@ -397,6 +403,9 @@ const GRIB_DATASET_NAMES = {
     ewam: "DWD EWAM - European waves (North Sea, Atlantic Ocean, Mediterranean)",
     icon_d2: "DWD ICON-D2 - weather model 2.2 km (Germany, Benelux, southern North Sea)",
     bsh_current_northsea: "BSH - North Sea currents (NL/BE/FR coast)",
+    dmi_wam_nsb: "DMI WAM - waves North Sea and Baltic (~5 km)",
+    dmi_wam_natlant: "DMI WAM - waves North Atlantic (0.25°)",
+    dmi_dkss_nsbs: "DMI DKSS - currents and water level North Sea and Baltic (~5 km)",
   },
 };
 
