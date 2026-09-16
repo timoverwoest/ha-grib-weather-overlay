@@ -21,6 +21,7 @@ import json
 import logging
 import shutil
 import tarfile
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -100,6 +101,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
     # backup) resume normal operation after this long rather than pausing
     # downloads forever.
     _BACKUP_MAX_SECONDS = 1800
+    # Guards the one-time removal of the 0.26-0.34 cache root (see
+    # _remove_legacy_share_root), which runs in executor threads.
+    _share_root_lock = threading.Lock()
 
     @classmethod
     def set_backup_active(cls, active: bool) -> None:
@@ -220,18 +224,21 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         self._remove_legacy_share_root(in_use)
         self._legacy_migrated = True
 
-    @staticmethod
-    def _remove_legacy_share_root(in_use: list[Path]) -> None:
+    @classmethod
+    def _remove_legacy_share_root(cls, in_use: list[Path]) -> None:
         """Blocking: drop what else 0.26-0.34 left in /share/grib_overlay.
 
         Its scratch and weather-chart folders, and the caches of entries that
         have since been deleted -- unless some entry is configured to use it.
+        Every entry sets up at the same time, in executor threads: the lock
+        makes one of them do it (and log it), not all.
         """
         root = storage_paths.LEGACY_SHARE_ROOT
-        if not root.is_dir() or any(storage_paths.overlaps(root, p) for p in in_use):
-            return
-        shutil.rmtree(root, ignore_errors=True)
-        _LOGGER.warning("Removed the old GRIB cache folder %s (part of backups)", root)
+        with cls._share_root_lock:
+            if not root.is_dir() or any(storage_paths.overlaps(root, p) for p in in_use):
+                return
+            shutil.rmtree(root, ignore_errors=True)
+            _LOGGER.warning("Removed the old GRIB cache folder %s (part of backups)", root)
 
     async def _async_migrate_legacy_storage(self) -> None:
         """Run the one-time cleanup of old cache folders, unless a backup is walking them."""

@@ -12,6 +12,7 @@ Two layers, both covered here:
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -389,3 +390,16 @@ async def test_share_cleanup_waits_for_a_backup(hass, tmp_path, monkeypatch) -> 
     GribOverlayCoordinator.set_backup_active(False)
     await coordinator._async_migrate_legacy_storage()
     assert not share_root.exists()
+
+
+async def test_share_root_is_removed_and_logged_once(hass, tmp_path, monkeypatch, caplog) -> None:
+    """All entries set up at once, each in an executor thread."""
+    entry, share_root = _share_entry(hass, tmp_path, monkeypatch)
+    (share_root / "weather_maps").mkdir(parents=True)
+    coordinators = [GribOverlayCoordinator(hass, entry) for _ in range(6)]
+
+    await asyncio.gather(*(c._async_migrate_legacy_storage() for c in coordinators))
+
+    assert not share_root.exists()
+    removed = [r for r in caplog.records if "Removed the old GRIB cache folder" in r.getMessage()]
+    assert len(removed) == 1
