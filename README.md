@@ -771,7 +771,8 @@ Extra's:
 - **ICON-D2** is per parameter per uur een los bestand van ~1 MB. Met alle 10
   parameters en de standaardhorizon van 24 uur is een run dus ~250 MB download
   (48 uur: ~500 MB). Er komt elke 3 uur een nieuwe run, zo'n 80 minuten na de
-  runtijd; de integratie pakt een run pas op als die compleet op de server staat.
+  runtijd. De integratie pakt een run (ook bij EWAM, dat ~35 minuten over het
+  publiceren doet) pas op als die compleet op de server staat.
   Zet alleen de parameters aan die je gebruikt, of verhoog het poll-interval.
 - **BSH-zeestroming** is 15-minuten-data: één BSH-bestand bevat een heel etmaal
   aan tijdstappen (96 per 24 u). De integratie splitst dat in losse tijdstappen,
@@ -1584,8 +1585,8 @@ Also:
 - **ICON-D2** is a separate file of ~1 MB per parameter per hour. With all 10
   parameters and the default 24-hour horizon a run is therefore a ~250 MB download
   (48 hours: ~500 MB). A new run appears every 3 hours, about 80 minutes after
-  its run time; the integration only picks a run up once it is complete on the
-  server. Switch on only the parameters you use, or raise the polling interval.
+  its run time. The integration only picks a run up (for EWAM too, which takes
+  ~35 minutes to publish one) once it is complete on the server. Switch on only the parameters you use, or raise the polling interval.
 - **BSH sea current** is 15-minute data: one BSH file contains a whole day of time
   steps (96 per 24 h). The integration splits that into individual time steps, but
   note that a longer forecast horizon yields many frames (24 h = 96 frames). Only

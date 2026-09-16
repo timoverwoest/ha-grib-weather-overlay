@@ -140,6 +140,11 @@ _EWAM_PARAMETERS: tuple[GribParameter, ...] = (
     ),
 )
 
+# EWAM runs at 00 and 12 UTC to +78 h. DWD publishes a run over ~35 minutes,
+# lead time by lead time, starting ~3 h 15 min after the run time.
+_EWAM_RUN_HOURS = ("00", "12")
+_EWAM_LAST_STEP = 78
+
 # key -> DWD Open Data sub-directory name.
 _EWAM_DIR = {
     "wave_height": "swh",
@@ -328,6 +333,20 @@ def _icon_d2_file_re(dwd_dir: str) -> re.Pattern:
     )
 
 
+def _require_steps(run: str, dwd_dir: str, steps: dict, wanted: list[int]) -> None:
+    """Refuse a run caught mid-publication before anything is downloaded.
+
+    The coordinator processes a run once, so gaps would stay; failing here makes
+    it retry at the next poll instead.
+    """
+    missing = [s for s in wanted if s not in steps]
+    if missing:
+        raise GribSourceError(
+            f"{run} is not complete yet: {dwd_dir} lacks {len(missing)} of "
+            f"{len(wanted)} lead times"
+        )
+
+
 class DwdSource(GribSource):
     """GribSource for DWD Open Data (opendata.dwd.de): EWAM waves and ICON-D2."""
 
@@ -357,11 +376,27 @@ class DwdSource(GribSource):
     async def _runs_for(self, dwd_dir: str) -> dict[str, list[tuple[int, str, str]]]:
         """Map run id -> [(step_hours, run_hour, filename)] for one parameter dir."""
         runs: dict[str, list[tuple[int, str, str]]] = {}
-        for hh in ("00", "12"):
+        for hh in _EWAM_RUN_HOURS:
             html = await self._list_dir(f"{_BASE}/{hh}/{dwd_dir}/")
             for filename, run, step in _FILE_RE.findall(html):
                 runs.setdefault(run, []).append((int(step), hh, filename))
         return runs
+
+    async def _download_ewam_run(
+        self, run_id: str, run_dir: Path, param_keys: list[str], horizon_hours: float, loop
+    ) -> list[Path]:
+        wanted_steps = [s for s in range(_EWAM_LAST_STEP + 1) if s <= horizon_hours]
+        keys = [k for k in param_keys if k in _EWAM_DIR]
+        listings = await asyncio.gather(*(self._runs_for(_EWAM_DIR[k]) for k in keys))
+        available: dict[str, dict[int, str]] = {}
+        for key, runs in zip(keys, listings):
+            steps = {step: f"{_BASE}/{hh}/{_EWAM_DIR[key]}/{name}" for step, hh, name in runs.get(run_id, [])}
+            _require_steps(f"EWAM run {run_id}", _EWAM_DIR[key], steps, wanted_steps)
+            available[key] = steps
+        return await self._fetch_all(
+            [([available[k][s]], run_dir / f"{k}_{s:03d}.grib2") for k in keys for s in wanted_steps],
+            loop,
+        )
 
     # -- ICON-D2 ----------------------------------------------------------------
 
@@ -404,20 +439,28 @@ class DwdSource(GribSource):
         listings = await asyncio.gather(*(self._icon_d2_steps(hh, d) for d in dirs))
         available = {d: runs.get(run_id, {}) for d, runs in zip(dirs, listings)}
         for dwd_dir, steps in available.items():
-            missing = [s for s in wanted_steps if s not in steps]
-            if missing:
-                raise GribSourceError(
-                    f"ICON-D2 run {run_id} is not complete yet: {dwd_dir} lacks "
-                    f"{len(missing)} of {len(wanted_steps)} lead times"
+            _require_steps(f"ICON-D2 run {run_id}", dwd_dir, steps, wanted_steps)
+        return await self._fetch_all(
+            [
+                (
+                    [f"{_ICON_D2_BASE}/{hh}/{d}/{available[d][s]}" for d in _ICON_D2_DIRS[k]],
+                    run_dir / f"{k}_{s:03d}.grib2",
                 )
+                for k in keys
+                for s in wanted_steps
+            ],
+            loop,
+        )
 
+    async def _fetch_all(self, jobs: list[tuple[list[str], Path]], loop) -> list[Path]:
+        """Download ``(urls, dest)`` jobs a few at a time; return the paths in job order.
+
+        Job order is per parameter in ascending lead time: the coordinator relies
+        on that to turn accumulated totals into hourly amounts.
+        """
         semaphore = asyncio.Semaphore(_DOWNLOAD_CONCURRENCY)
 
-        async def fetch(key: str, step: int) -> Path:
-            dest = run_dir / f"{key}_{step:03d}.grib2"
-            urls = [
-                f"{_ICON_D2_BASE}/{hh}/{d}/{available[d][step]}" for d in _ICON_D2_DIRS[key]
-            ]
+        async def fetch(urls: list[str], dest: Path) -> Path:
             async with semaphore:
                 await self._download_bunzip(urls, dest, loop)
             return dest
@@ -425,13 +468,11 @@ class DwdSource(GribSource):
         # Let every download finish (or fail) before reporting, so nothing is
         # still writing into run_dir when the caller cleans it up after an error.
         results = await asyncio.gather(
-            *(fetch(k, s) for k in keys for s in wanted_steps), return_exceptions=True
+            *(fetch(urls, dest) for urls, dest in jobs), return_exceptions=True
         )
         for result in results:
             if isinstance(result, BaseException):
                 raise result
-        # Returned per parameter in ascending lead time: the coordinator relies on
-        # that order to turn accumulated totals into hourly amounts.
         return list(results)
 
     # -- GribSource ---------------------------------------------------------------
@@ -447,8 +488,16 @@ class DwdSource(GribSource):
         if dataset.key == "icon_d2":
             latest = await self._icon_d2_latest_complete_run()
         else:
-            runs = await self._runs_for("swh")  # swh is always present; probe with it
-            latest = max(runs) if runs else None
+            # swh is always present; probe with it. Only a run whose last lead time
+            # is out counts: DWD publishes over ~35 minutes, and a run picked up
+            # halfway would stay that way until the next one, 12 hours later.
+            runs = await self._runs_for("swh")
+            complete = [
+                run
+                for run, entries in runs.items()
+                if any(step == _EWAM_LAST_STEP for step, _, _ in entries)
+            ]
+            latest = max(complete) if complete else None
         if latest is None:
             return []
         run_dt = datetime.strptime(latest, "%Y%m%d%H").replace(tzinfo=timezone.utc)
@@ -475,20 +524,7 @@ class DwdSource(GribSource):
             return await self._download_icon_d2_run(
                 run_id, run_dir, param_keys, horizon_hours, loop
             )
-
-        paths: list[Path] = []
-        for key in param_keys:
-            dwd_dir = _EWAM_DIR.get(key)
-            if dwd_dir is None:
-                continue
-            entries = (await self._runs_for(dwd_dir)).get(run_id, [])
-            for step, hh, filename in sorted(entries):
-                if step > horizon_hours:
-                    continue
-                dest = run_dir / f"{key}_{step:03d}.grib2"
-                await self._download_bunzip([f"{_BASE}/{hh}/{dwd_dir}/{filename}"], dest, loop)
-                paths.append(dest)
-        return paths
+        return await self._download_ewam_run(run_id, run_dir, param_keys, horizon_hours, loop)
 
     async def _download_bunzip(self, urls: list[str], dest: Path, loop) -> None:
         """Download one or more .bz2 GRIB files and write them, joined, to ``dest``."""

@@ -60,8 +60,8 @@ def _listing(run: str, steps: range) -> str:
 @pytest.mark.asyncio
 async def test_lists_latest_run() -> None:
     pages = {
-        f"{_BASE}/00/swh/": _listing("2026072300", range(0, 4)),
-        f"{_BASE}/12/swh/": _listing("2026072312", range(0, 4)),
+        f"{_BASE}/00/swh/": _listing("2026072300", range(0, 79)),
+        f"{_BASE}/12/swh/": _listing("2026072312", range(0, 79)),
     }
     src = DwdSource(_FakeSession(pages))
     files = await src.async_list_files(EWAM)
@@ -69,6 +69,46 @@ async def test_lists_latest_run() -> None:
     # 12Z run is newer than the same day's 00Z run.
     assert files[0].filename == "2026072312"
     assert files[0].last_modified.startswith("2026-07-23T12:00")
+
+
+@pytest.mark.asyncio
+async def test_a_run_still_being_published_is_not_listed() -> None:
+    """DWD publishes an EWAM run over ~35 minutes. A poll that lands at the
+    start used to take the run with a single file -- and, since a run is
+    processed once, keep that one frame for 12 hours."""
+    pages = {
+        f"{_BASE}/00/swh/": _listing("2026091600", range(0, 1)),  # just started
+        f"{_BASE}/12/swh/": _listing("2026091512", range(0, 79)),  # yesterday, complete
+    }
+    src = DwdSource(_FakeSession(pages))
+    files = await src.async_list_files(EWAM)
+    assert [f.filename for f in files] == ["2026091512"]
+
+
+@pytest.mark.asyncio
+async def test_ewam_refuses_a_run_with_a_parameter_still_missing(monkeypatch, tmp_path) -> None:
+    run = "2026091600"
+    pages = {
+        f"{_BASE}/00/swh/": _listing(run, range(0, 79)),
+        f"{_BASE}/12/swh/": "",
+        # mwd trails swh by a few seconds per lead time.
+        f"{_BASE}/00/mwd/": "".join(
+            f'<a href="EWAM_MWD_{run}_{s:03d}.grib2.bz2">x</a>' for s in range(0, 40)
+        ),
+        f"{_BASE}/12/mwd/": "",
+    }
+    src = DwdSource(_FakeSession(pages))
+    fetched: list = []
+
+    async def _fake_dl(urls, dest, loop):
+        fetched.append(dest)
+
+    monkeypatch.setattr(src, "_download_bunzip", _fake_dl)
+    with pytest.raises(GribSourceError, match="not complete"):
+        await src.async_download_run(
+            EWAM, run, tmp_path, ["wave_height", "wave_direction"], horizon_hours=60
+        )
+    assert fetched == []
 
 
 @pytest.mark.asyncio
@@ -118,7 +158,7 @@ async def test_swell_comes_from_its_own_directory(monkeypatch, tmp_path) -> None
         dest.write_bytes(b"x")
 
     monkeypatch.setattr(src, "_download_bunzip", _fake_dl)
-    await src.async_download_run(EWAM, run, tmp_path, ["swell_height"], horizon_hours=48)
+    await src.async_download_run(EWAM, run, tmp_path, ["swell_height"], horizon_hours=2)
     assert urls == [f"{_BASE}/12/shts/EWAM_SHTS_{run}_{s:03d}.grib2.bz2" for s in range(3)]
 
 
