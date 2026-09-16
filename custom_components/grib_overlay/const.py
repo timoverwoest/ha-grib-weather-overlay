@@ -45,5 +45,6 @@ HTTP_POINT_PATH = "/api/grib_overlay/point"
 HTTP_POINT_ALL_PATH = "/api/grib_overlay/point_all"
 HTTP_STATION_OBS_PATH = "/api/grib_overlay/station_obs"
 HTTP_STATIONS_PATH = "/api/grib_overlay/stations"
+HTTP_WEATHER_MAPS_PATH = "/api/grib_overlay/weather_maps"
 
 STORAGE_VERSION = 1

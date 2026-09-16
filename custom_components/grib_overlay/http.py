@@ -18,7 +18,8 @@ from homeassistant.core import HomeAssistant
 
 from . import field_grid
 from . import observations
-from .const import CONF_ALIAS, CONF_DATASET, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_ALL_PATH, HTTP_POINT_PATH, HTTP_STATION_OBS_PATH, HTTP_STATIONS_PATH, HTTP_WIND_PATH
+from . import weather_maps
+from .const import CONF_ALIAS, CONF_DATASET, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_ALL_PATH, HTTP_POINT_PATH, HTTP_STATION_OBS_PATH, HTTP_STATIONS_PATH, HTTP_WEATHER_MAPS_PATH, HTTP_WIND_PATH
 from .coordinator import GribOverlayCoordinator, enabled_parameter_keys
 from .sources.base import direction_key_for
 
@@ -399,6 +400,53 @@ class GribOverlayStationsView(HomeAssistantView):
         return web.json_response({"stations": stations})
 
 
+class GribOverlayWeatherMapsView(HomeAssistantView):
+    """Lists KNMI's current weather charts (and fetches their images into the cache)."""
+
+    url = HTTP_WEATHER_MAPS_PATH
+    name = "api:grib_overlay:weather_maps"
+    requires_auth = True
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        try:
+            charts = await weather_maps.get(hass).charts()
+        except weather_maps.WeatherMapError as err:
+            _LOGGER.warning("KNMI weather charts unavailable: %s", err)
+            return web.json_response({"charts": [], "error": str(err)})
+        return web.json_response(
+            {
+                "charts": [
+                    {**c.as_dict(), "image_url": f"{HTTP_WEATHER_MAPS_PATH}/{c.name}"}
+                    for c in charts
+                ],
+                "attribution": "© KNMI",
+            }
+        )
+
+
+class GribOverlayWeatherMapImageView(HomeAssistantView):
+    """Serves one cached KNMI chart image.
+
+    requires_auth is False for the same reason as the frame images: an <img>
+    can't send Home Assistant's token. Only a chart that the authenticated
+    listing above put in the cache is served, so this never calls KNMI; the
+    charts themselves are KNMI's public open data.
+    """
+
+    url = HTTP_WEATHER_MAPS_PATH + "/{name}"
+    name = "api:grib_overlay:weather_map_image"
+    requires_auth = False
+
+    async def get(self, request: web.Request, name: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        path = await weather_maps.get(hass).image(name)
+        if path is None:
+            return web.Response(status=404)
+        data = await hass.async_add_executor_job(path.read_bytes)
+        return web.Response(body=data, content_type="image/gif", headers={"Cache-Control": "max-age=600"})
+
+
 VIEWS = (
     GribOverlayEntriesView,
     GribOverlayFramesView,
@@ -409,4 +457,6 @@ VIEWS = (
     GribOverlayPointAllView,
     GribOverlayStationObsView,
     GribOverlayStationsView,
+    GribOverlayWeatherMapsView,
+    GribOverlayWeatherMapImageView,
 )

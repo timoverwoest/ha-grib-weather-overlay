@@ -10,7 +10,7 @@
   body { font-family: sans-serif; background: #eee; margin: 0; padding: 24px; }
   h1 { font-size: 1rem; color: #555; }
   h2 { font-size: 0.95rem; color: #555; max-width: 700px; margin: 28px auto 8px; }
-  grib-overlay-card, grib-overlay-compare-card { display: block; max-width: 700px; margin: 0 auto; }
+  grib-overlay-card, grib-overlay-compare-card, grib-overlay-weathermap-card { display: block; max-width: 700px; margin: 0 auto; }
 </style>
 </head>
 <body>
@@ -19,6 +19,9 @@
 
 <h2>grib-overlay-compare-card (modelvergelijking)</h2>
 <grib-overlay-compare-card id="compare"></grib-overlay-compare-card>
+
+<h2>grib-overlay-weathermap-card (KNMI-weerkaart)</h2>
+<grib-overlay-weathermap-card id="wm"></grib-overlay-weathermap-card>
 
 <script>
   // Minimal <ha-card> stand-in that mimics the real element: its own shadow
@@ -76,6 +79,10 @@
   const compare = document.getElementById("compare");
   compare.setConfig({ type: "custom:grib-overlay-compare-card", center: [52.4, 4.5], zoom: 8, ...baseMap });
   compare.hass = hass;
+
+  const wm = document.getElementById("wm");
+  wm.setConfig({ type: "custom:grib-overlay-weathermap-card" });
+  wm.hass = hass;
 </script>
 </body>
 </html>

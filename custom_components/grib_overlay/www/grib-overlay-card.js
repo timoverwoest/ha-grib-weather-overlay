@@ -78,6 +78,9 @@ function gribApplyLanguage(root) {
   for (const el of root.querySelectorAll("[data-i18n-title]")) {
     el.title = gribT(el.getAttribute("data-i18n-title"));
   }
+  for (const el of root.querySelectorAll("[data-i18n-aria-label]")) {
+    el.setAttribute("aria-label", gribT(el.getAttribute("data-i18n-aria-label")));
+  }
 }
 
 // BCP-47 tag for Intl date/number formatting (weekday and month names).
@@ -202,6 +205,18 @@ const GRIB_TEXT = {
     compareCardName: "GRIB Weather Overlay — modelvergelijking",
     compareCardDescription:
       "Vergelijk wat verschillende GRIB-bronnen op één punt voorspellen (lijngrafiek + tabel).",
+    wmCardName: "GRIB Weather Overlay — KNMI-weerkaart",
+    wmCardDescription: "De KNMI-weerkaart met fronten: analyse en verwachting tot 48 uur.",
+    wmTitle: "KNMI-weerkaart",
+    wmAnalysis: "Analyse",
+    wmForecast: "Verwachting",
+    wmPrev: "Vorige kaart",
+    wmNext: "Volgende kaart",
+    wmLoading: "Weerkaarten laden…",
+    wmNone: "Geen weerkaarten beschikbaar.",
+    wmNoKnmi: "De weerkaart gebruikt de sleutel van een KNMI-integratie; voeg die eerst toe.",
+    wmError: "Weerkaart niet beschikbaar: {msg}",
+    wmIssued: "uitgegeven {time}",
     // map layers
     layerOsm: "OpenStreetMap",
     layerCustom: "Eigen kaart",
@@ -320,6 +335,18 @@ const GRIB_TEXT = {
     compareCardName: "GRIB Weather Overlay — model comparison",
     compareCardDescription:
       "Compare what different GRIB sources predict at one point (line chart + table).",
+    wmCardName: "GRIB Weather Overlay — KNMI weather map",
+    wmCardDescription: "KNMI's weather chart with fronts: analysis and forecast up to 48 hours.",
+    wmTitle: "KNMI weather map",
+    wmAnalysis: "Analysis",
+    wmForecast: "Forecast",
+    wmPrev: "Previous chart",
+    wmNext: "Next chart",
+    wmLoading: "Loading weather charts…",
+    wmNone: "No weather charts available.",
+    wmNoKnmi: "The weather map uses the key of a KNMI integration; add one first.",
+    wmError: "Weather map unavailable: {msg}",
+    wmIssued: "issued {time}",
     // map layers
     layerOsm: "OpenStreetMap",
     layerCustom: "Custom map",
@@ -5844,6 +5871,214 @@ class GribCompareCard extends HTMLElement {
 
 customElements.define("grib-overlay-compare-card", GribCompareCard);
 
+// -- KNMI weather map card ------------------------------------------------------
+// KNMI's hand-analysed surface charts (isobars, fronts, H/L): the latest
+// analyses and the forecast charts after them, browsed one at a time. They are
+// images in KNMI's own projection, not a map layer; the backend fetches them
+// with the KNMI key and serves them from its cache.
+
+const WEATHER_MAP_REFRESH_MS = 10 * 60 * 1000;
+
+class GribWeatherMapCard extends HTMLElement {
+  static getStubConfig() {
+    return { type: "custom:grib-overlay-weathermap-card" };
+  }
+
+  setConfig(config) {
+    this._config = config || {};
+    this._render();
+    // A title of your own replaces the translated default.
+    const title = this._els.title;
+    if (this._config.title) {
+      title.removeAttribute("data-i18n");
+      title.textContent = this._config.title;
+    } else {
+      title.setAttribute("data-i18n", "wmTitle");
+      title.textContent = gribT("wmTitle");
+    }
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (gribSyncLang(hass) && this._built) {
+      gribApplyLanguage(this.shadowRoot);
+      this._show();
+    }
+    if (!this._loaded && this.isConnected) this._load();
+  }
+
+  getCardSize() {
+    return 8;
+  }
+
+  getGridOptions() {
+    return { columns: "full", rows: 8, min_columns: 3, max_columns: 12, min_rows: 4, max_rows: 20 };
+  }
+
+  getLayoutOptions() {
+    return this.getGridOptions();
+  }
+
+  connectedCallback() {
+    if (this._hass && !this._loaded) this._load();
+    this._timer = this._timer || setInterval(() => this._load(true), WEATHER_MAP_REFRESH_MS);
+  }
+
+  disconnectedCallback() {
+    clearInterval(this._timer);
+    this._timer = null;
+  }
+
+  _render() {
+    if (this._built) return;
+    this._built = true;
+    gribSyncLang(this._hass);
+    const root = this.attachShadow({ mode: "open" });
+    const style = document.createElement("style");
+    style.textContent = `
+      :host { display: block; height: 100%; }
+      ha-card { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+      .head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; }
+      .title { font-weight: 600; flex: 1 1 auto; min-width: 0; }
+      .nav { display: flex; align-items: center; gap: 6px; padding: 0 12px 8px; flex-wrap: wrap; }
+      .nav button { font: inherit; border: 1px solid var(--divider-color, #ccc); border-radius: 6px;
+        background: var(--card-background-color, #fff); color: var(--primary-text-color, #000);
+        padding: 4px 10px; cursor: pointer; }
+      .nav button:disabled { opacity: 0.4; cursor: default; }
+      .nav select { font: inherit; padding: 4px 8px; border-radius: 6px; flex: 1 1 12em; min-width: 0;
+        border: 1px solid var(--divider-color, #ccc);
+        background: var(--card-background-color, #fff); color: var(--primary-text-color, #000); }
+      .frame { flex: 1 1 auto; min-height: 120px; display: flex; align-items: center; justify-content: center;
+        background: #fff; touch-action: pan-y; }
+      .frame img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+      .msg { padding: 16px; color: var(--secondary-text-color, #666); text-align: center; }
+      .foot { display: flex; justify-content: space-between; gap: 8px; padding: 4px 12px 8px;
+        font-size: 0.8em; color: var(--secondary-text-color, #666); }
+    `;
+    root.appendChild(style);
+    const card = document.createElement("ha-card");
+    card.innerHTML = `
+      <div class="head"><span class="title" data-i18n="wmTitle"></span></div>
+      <div class="nav">
+        <button class="prev" type="button" data-i18n-title="wmPrev" data-i18n-aria-label="wmPrev">◀</button>
+        <select class="pick"></select>
+        <button class="next" type="button" data-i18n-title="wmNext" data-i18n-aria-label="wmNext">▶</button>
+      </div>
+      <div class="frame"><div class="msg" data-i18n="wmLoading"></div></div>
+      <div class="foot"><span class="issued"></span><span class="credit">© KNMI</span></div>
+    `;
+    root.appendChild(card);
+    this._els = {
+      title: card.querySelector(".title"),
+      prev: card.querySelector(".prev"),
+      next: card.querySelector(".next"),
+      pick: card.querySelector(".pick"),
+      frame: card.querySelector(".frame"),
+      issued: card.querySelector(".issued"),
+    };
+    gribApplyLanguage(root);
+    this._els.prev.addEventListener("click", () => this._step(-1));
+    this._els.next.addEventListener("click", () => this._step(1));
+    this._els.pick.addEventListener("change", () => {
+      this._index = Number(this._els.pick.value);
+      this._show();
+    });
+    // Swipe left/right on the chart, as on a phone you would expect.
+    let startX = null;
+    this._els.frame.addEventListener("pointerdown", (ev) => { startX = ev.clientX; });
+    this._els.frame.addEventListener("pointerup", (ev) => {
+      if (startX === null) return;
+      const dx = ev.clientX - startX;
+      startX = null;
+      if (Math.abs(dx) > 40) this._step(dx < 0 ? 1 : -1);
+    });
+  }
+
+  async _load(refresh = false) {
+    if (!this._hass || (this._loading && !refresh)) return;
+    this._loading = true;
+    try {
+      const data = await this._hass.callApi("GET", "grib_overlay/weather_maps");
+      this._loaded = true;
+      const charts = data.charts || [];
+      const current = this._charts && this._charts[this._index];
+      this._charts = charts;
+      this._error = data.error || null;
+      // Keep the chart the user was looking at; otherwise start at the latest analysis.
+      const kept = current ? charts.findIndex((c) => c.name === current.name) : -1;
+      const latestAnalysis = charts.map((c) => c.kind).lastIndexOf("analysis");
+      this._index = kept >= 0 ? kept : Math.max(0, latestAnalysis);
+      this._fillPicker();
+      this._show();
+    } catch (err) {
+      this._error = err && err.message ? err.message : String(err);
+      this._show();
+    } finally {
+      this._loading = false;
+    }
+  }
+
+  // Local time for reading, plus the UTC hour the chart itself is labelled with.
+  _label(chart) {
+    const valid = new Date(chart.valid_time);
+    const when = valid.toLocaleString(gribLocale(), {
+      weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+    });
+    const utc = String(valid.getUTCHours()).padStart(2, "0");
+    return `${gribT(chart.kind === "analysis" ? "wmAnalysis" : "wmForecast")} · ${when} (${utc} UTC)`;
+  }
+
+  _fillPicker() {
+    const pick = this._els.pick;
+    pick.innerHTML = "";
+    (this._charts || []).forEach((chart, i) => {
+      const opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = this._label(chart);
+      pick.appendChild(opt);
+    });
+  }
+
+  _step(delta) {
+    if (!this._charts || !this._charts.length) return;
+    this._index = Math.min(this._charts.length - 1, Math.max(0, this._index + delta));
+    this._show();
+  }
+
+  _show() {
+    if (!this._els) return;
+    const charts = this._charts || [];
+    const chart = charts[this._index];
+    this._els.prev.disabled = !chart || this._index <= 0;
+    this._els.next.disabled = !chart || this._index >= charts.length - 1;
+    if (!chart) {
+      let text = gribT(this._loaded ? "wmNone" : "wmLoading");
+      if (this._error) {
+        text = /no KNMI entry/.test(this._error) ? gribT("wmNoKnmi") : gribT("wmError", { msg: this._error });
+      }
+      this._els.frame.innerHTML = `<div class="msg">${escapeXml(text)}</div>`;
+      this._els.issued.textContent = "";
+      return;
+    }
+    this._fillPicker();
+    this._els.pick.value = String(this._index);
+    let img = this._els.frame.querySelector("img");
+    if (!img) {
+      this._els.frame.innerHTML = "";
+      img = document.createElement("img");
+      this._els.frame.appendChild(img);
+    }
+    img.alt = this._label(chart);
+    img.src = chart.image_url;
+    const issued = chart.issued
+      ? new Date(chart.issued).toLocaleString(gribLocale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+      : "";
+    this._els.issued.textContent = issued ? gribT("wmIssued", { time: issued }) : "";
+  }
+}
+
+customElements.define("grib-overlay-weathermap-card", GribWeatherMapCard);
+
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "grib-overlay-card",
@@ -5854,4 +6089,9 @@ window.customCards.push({
   type: "grib-overlay-compare-card",
   name: gribT("compareCardName"),
   description: gribT("compareCardDescription"),
+});
+window.customCards.push({
+  type: "grib-overlay-weathermap-card",
+  name: gribT("wmCardName"),
+  description: gribT("wmCardDescription"),
 });

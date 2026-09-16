@@ -440,6 +440,28 @@ class Handler(BaseHTTPRequestHandler):
             lon = float(q.get("lon", [4.5])[0])
             radius = float(q.get("radius", [10])[0])
             self._json({"stations": _stations_near(param, lat, lon, radius)})
+        elif parsed.path == "/api/grib_overlay/weather_maps":
+            # Four analyses and four forecast charts around "now"; every image is
+            # the same local sample (dev/output/weather_map.gif, a real KNMI chart
+            # if you put one there).
+            base = BASE_RUN_TIME.replace(hour=BASE_RUN_TIME.hour - BASE_RUN_TIME.hour % 6)
+            charts = []
+            for i in range(-3, 5):
+                valid = base + timedelta(hours=6 * i if i <= 0 else 12 * i)
+                kind = "analysis" if i <= 0 else "forecast"
+                name = f"{'AL' if i <= 0 else 'PL'}_{valid:%Y%m%d%H%M}.gif"
+                charts.append({
+                    "name": name, "kind": kind, "valid_time": valid.isoformat(),
+                    "issued": (base + timedelta(minutes=40)).isoformat(),
+                    "image_url": f"/api/grib_overlay/weather_maps/{name}",
+                })
+            self._json({"charts": charts, "attribution": "© KNMI"})
+        elif parts[:3] == ["api", "grib_overlay", "weather_maps"]:
+            sample = OUTPUT_DIR / "weather_map.gif"
+            if sample.exists():
+                self._file(sample, "image/gif")
+            else:
+                self._file(OUTPUT_DIR / "pressure_msl.png", "image/png")
         elif parts[:3] == ["api", "map_tiles", "raster"]:
             # Stand-in for Home Assistant's tile proxy: a placeholder image for a
             # live mock token, 401 for the expired one (as core does for a stale token).

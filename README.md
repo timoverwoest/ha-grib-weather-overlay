@@ -57,6 +57,8 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   (SWAN) — dezelfde modellen die Rijkswaterstaat zelf gebruikt.
 - **De Noorse kant** (MET Norway): wind, neerslag, luchtdruk, golven en stroming
   tot in de Oslofjord.
+- **KNMI-weerkaart met fronten** als eigen card: analyses en verwachtingskaarten
+  tot 48 uur vooruit.
 - **Zeekaartlagen** zoals op map.openseamap.org: zeetekens, sport, dieptelijnen,
   dieptemetingen, GEBCO-diepte en een EMODnet-dieptekaart als ondergrond, via een
   lagenknop op de kaart.
@@ -259,7 +261,7 @@ temperature_2m: -10:#313695, 0:#ffffbf, 35:#a50026
 
 ## Cards toevoegen aan een dashboard
 
-De integratie levert **twee** Lovelace-cards:
+De integratie levert **drie** Lovelace-cards:
 
 - **`custom:grib-overlay-card`** — de kaart met GRIB-overlay, tijd-slider/animatie
   en het uitgebreide meteogram (alle parameters van elke bron op een punt).
@@ -268,6 +270,9 @@ De integratie levert **twee** Lovelace-cards:
   GRIB-bronnen voorspellen, als **lijngrafiek + tabel** per model. Dezelfde
   vergelijking zit ook in het uitgebreide meteogram onder **Weergave → “vergelijk
   modellen”**.
+- **`custom:grib-overlay-weathermap-card`** — de **KNMI-weerkaart** met isobaren,
+  hoge- en lagedrukgebieden en **fronten**: de laatste analyses en de
+  verwachtingskaarten tot 48 uur vooruit.
 
 ### Overlay-card (`grib-overlay-card`)
 
@@ -435,6 +440,28 @@ wordt alleen getoond als het door minstens één gesloten isobaar wordt omsloten
 plus een minimale onderlinge afstand en een maximum. Zo verdwijnen de vele kleine
 "ruis"-centra. Beperk ze verder met `max_pressure_centres` (standaard 4 per type)
 of zet ze uit met `show_pressure_centres: false`.
+
+### Weerkaart-card (`grib-overlay-weathermap-card`)
+
+```yaml
+type: custom:grib-overlay-weathermap-card
+# title: Weerkaart   # optioneel; standaard "KNMI-weerkaart"
+```
+
+Toont de weerkaart van het KNMI zoals het KNMI hem tekent: isobaren, H/L en
+warme, koude en occlusiefronten over Europa en de oostelijke Atlantische Oceaan.
+Je bladert met ◀ ▶ (op een telefoon ook door te vegen) of kiest een kaart in de
+lijst: de laatste vier **analyses** (om 00, 06, 12 en 18 UTC, ongeveer een uur
+later beschikbaar) en de **verwachtingskaarten** daarna, tot 48 uur vooruit. De
+card begint bij de nieuwste analyse en ververst de lijst elke 10 minuten. Tijden
+staan in je eigen tijdzone, met het UTC-uur erbij dat op de kaart zelf staat.
+
+- **Sleutel:** de kaarten komen uit de KNMI-dataset `weather_maps` en gebruiken de
+  Open Data-sleutel van je KNMI-integratie; zonder KNMI-integratie meldt de card dat.
+- **Opslag:** Home Assistant haalt de kaarten op en bewaart ze (~50 KB per stuk)
+  in de cachemap.
+- **Geen kaartlaag:** het zijn plaatjes in de eigen projectie van het KNMI, dus ze
+  worden niet over de andere kaarten gelegd.
 
 ### Grootte / layout
 
@@ -698,6 +725,12 @@ chips, “Alle rijen tonen”) geldt tijdelijk, voor dat geopende venster.
 | `meteogram_resolution` | tekst | `uur` | kolom-tijdstap van de tabel: `kwartier`, `uur`, `3uur`, `dag` |
 | `wind_unit`, `visibility_unit`, `direction_unit` | tekst | zie hieronder | zelfde eenheden-opties als de overlay-card |
 
+### Weerkaart-card (`grib-overlay-weathermap-card`)
+
+| Sleutel | Type | Default | Waarden / betekenis |
+| --- | --- | --- | --- |
+| `title` | tekst | `KNMI-weerkaart` | kop van de card |
+
 ### Eenheden (geldige waarden + aliassen)
 
 - **`wind_unit`** — geldt voor alle m/s-parameters (wind, windstoten,
@@ -784,6 +817,9 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
   controleren dát je notificatiesleutel goed staat in plaats van te moeten raden.
 - **`KNMI EDR /locations HTTP 401/403`** — de **observaties-sleutel**. Alleen de
   meetstations werken dan niet; de rest van de kaart draait door.
+- **`KNMI weather charts unavailable`** — de KNMI-weerkaart kon niet worden
+  opgehaald; de melding zegt waarom (bijv. een geweigerde sleutel). De rest van de
+  integratie werkt gewoon door.
 - **Kaarttegels met "Access blocked"** — de ondergrond; zie
   [Kaartlagen](#kaartlagen). Werk bij naar 0.29.1 of nieuwer en
   ververs het dashboard (de browser bewaart de geblokkeerde tegels even).
@@ -1051,6 +1087,8 @@ changing the map card or the rest of the backend):
   — the models Rijkswaterstaat uses itself.
 - **The Norwegian end** (MET Norway): wind, precipitation, pressure, waves and
   currents, right into the Oslofjord.
+- **KNMI weather map with fronts** as its own card: analyses and forecast charts
+  up to 48 hours ahead.
 - **Nautical chart layers** as on map.openseamap.org: seamarks, sport, depth
   contours, depth soundings, GEBCO depth and an EMODnet bathymetry base map, via a
   layer button on the map.
@@ -1243,7 +1281,7 @@ temperature_2m: -10:#313695, 0:#ffffbf, 35:#a50026
 
 ## Adding cards to a dashboard
 
-The integration provides **two** Lovelace cards:
+The integration provides **three** Lovelace cards:
 
 - **`custom:grib-overlay-card`** — the map with the GRIB overlay, time
   slider/animation and the detailed meteogram (all parameters of every source at
@@ -1253,6 +1291,9 @@ The integration provides **two** Lovelace cards:
   sources predict, as a **line chart + table** per model. The same comparison is
   also in the detailed meteogram under **Weergave → “vergelijk modellen”** (View →
   compare models).
+- **`custom:grib-overlay-weathermap-card`** — the **KNMI weather map** with
+  isobars, high and low pressure centres and **fronts**: the latest analyses and
+  the forecast charts up to 48 hours ahead.
 
 ### Overlay card (`grib-overlay-card`)
 
@@ -1417,6 +1458,28 @@ shown only if it is enclosed by at least one closed isobar (adjustable with
 distance and a maximum. That removes the many small "noise" centres. Limit them
 further with `max_pressure_centres` (default 4 per type) or turn them off with
 `show_pressure_centres: false`.
+
+### Weather-map card (`grib-overlay-weathermap-card`)
+
+```yaml
+type: custom:grib-overlay-weathermap-card
+# title: Weather map   # optional; default "KNMI weather map"
+```
+
+Shows KNMI's weather chart as KNMI draws it: isobars, H/L and warm, cold and
+occluded fronts over Europe and the eastern Atlantic. Browse with ◀ ▶ (or swipe
+on a phone) or pick a chart from the list: the latest four **analyses** (00, 06,
+12 and 18 UTC, available about an hour later) and the **forecast charts** after
+them, up to 48 hours ahead. The card starts at the newest analysis and refreshes
+the list every 10 minutes. Times are in your own time zone, with the UTC hour
+printed on the chart itself alongside.
+
+- **Key:** the charts come from KNMI's `weather_maps` dataset and use the Open
+  Data key of your KNMI integration; without a KNMI integration the card says so.
+- **Storage:** Home Assistant fetches the charts and keeps them (~50 KB each) in
+  the cache folder.
+- **Not a map layer:** they are images in KNMI's own projection, so they are not
+  laid over the other maps.
 
 ### Size / layout
 
@@ -1680,6 +1743,12 @@ applies temporarily, for that opened window.
 | `meteogram_resolution` | text | `uur` | column time step of the table: `kwartier`, `uur`, `3uur`, `dag` |
 | `wind_unit`, `visibility_unit`, `direction_unit` | text | see below | same unit options as the overlay card |
 
+### Weather-map card (`grib-overlay-weathermap-card`)
+
+| Key | Type | Default | Values / meaning |
+| --- | --- | --- | --- |
+| `title` | text | `KNMI weather map` | card heading |
+
 ### Units (valid values + aliases)
 
 - **`wind_unit`** — applies to all m/s parameters (wind, gusts, sea current): `m/s`
@@ -1765,6 +1834,9 @@ What you will see in the log (Settings → System → Logs):
   confirm the notification key is right instead of guessing.
 - **`KNMI EDR /locations HTTP 401/403`** — the **observations key**. Only the
   measurement stations stop working; the rest of the map carries on.
+- **`KNMI weather charts unavailable`** — the KNMI weather map could not be
+  fetched; the message says why (e.g. a refused key). The rest of the
+  integration carries on.
 - **Map tiles saying "Access blocked"** — the base map; see [Map layers](#map-layers).
   Update to 0.29.1 or newer and reload the dashboard (the browser keeps the
   blocked tiles for a while).
