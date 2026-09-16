@@ -409,6 +409,9 @@ const GRIB_DATASET_NAMES = {
     rws_dcsm: "RWS DCSM - currents and water level (Norwegian coast to northern Spain)",
     rws_swan_dcsm: "RWS SWAN - waves North Sea",
     rws_swan_kuststrook: "RWS SWAN - waves Dutch coast (fine)",
+    metno_oslofjord: "MET Norway - Oslofjord: weather, waves and currents",
+    metno_skagerrak: "MET Norway - Skagerrak: weather, waves and currents",
+    metno_sorlandet: "MET Norway - Sørlandet: weather, waves and currents",
   },
 };
 

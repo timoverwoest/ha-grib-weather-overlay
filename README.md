@@ -27,6 +27,9 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   **DCSM-model** (waterstand en stroming van de Noorse kust tot Noord-Spanje) en
   de **SWAN-golfmodellen** (Noordzee, en fijnmazig langs de Nederlandse kust),
   48 uur vooruit, NetCDF, **zonder sleutel**.
+- [MET Norway](https://api.met.no/weatherapi/gribfiles/1.1/documentation) — weer
+  (MEPS), golven (4 km) en stroming (800 m-model) voor **Oslofjord, Skagerrak en
+  Sørlandet**, 3 tot 5 dagen vooruit, GRIB1, **zonder sleutel**.
 
 ## Features
 
@@ -52,6 +55,8 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 - **Waterstand en stroming van Rijkswaterstaat** (DCSM) van de Noorse kust tot
   Noord-Spanje, en golven van de Noordzee en fijnmazig langs de Nederlandse kust
   (SWAN) — dezelfde modellen die Rijkswaterstaat zelf gebruikt.
+- **De Noorse kant** (MET Norway): wind, neerslag, luchtdruk, golven en stroming
+  tot in de Oslofjord.
 - **Zeekaartlagen** zoals op map.openseamap.org: zeetekens, sport, dieptelijnen,
   dieptemetingen, GEBCO-diepte en een EMODnet-dieptekaart als ondergrond, via een
   lagenknop op de kaart.
@@ -212,13 +217,14 @@ worden zonder de kaart of de rest van de backend te wijzigen):
    Notification Service. Laat het leeg als je die niet hebt — dan pollt de
    integratie, en dat is de enige zichtbare consequentie. Plak er **niet** je
    Open Data-sleutel in: die wordt geweigerd. Voor **DWD Open Data**, **BSH**,
-   **DMI Open Data** en **Rijkswaterstaat** laat je de sleutel-velden leeg — die
-   hebben geen sleutel nodig.
+   **DMI Open Data**, **Rijkswaterstaat** en **MET Norway** laat je de
+   sleutel-velden leeg — die hebben geen sleutel nodig.
 3. Kies een dataset. KNMI: HARMONIE-AROME Cy43 **Nederland** (standaard) of
    **Europa (DINI)**. DWD: **EWAM** (Europese golven) of **ICON-D2** (weermodel).
    DMI: **WAM Noordzee/Oostzee**, **WAM Noord-Atlantisch** (golven) of **DKSS**
    (stroming en waterstand). Rijkswaterstaat: **DCSM** (stroming en waterstand),
-   **SWAN Noordzee** of **SWAN Nederlandse kust** (golven).
+   **SWAN Noordzee** of **SWAN Nederlandse kust** (golven). MET Norway:
+   **Oslofjord**, **Skagerrak** of **Sørlandet** (weer, golven en stroming).
    Wil je zowel weer als golven, voeg dan een integratie-instantie per dataset
    toe; in de kaart wissel je tussen instanties.
 4. Kies welke parameters bijgehouden moeten worden. Dat kan later nog via
@@ -479,6 +485,7 @@ hoofdlettergevoelig; gebruik ze exact zoals hieronder.
 | `bsh` | BSH (zeestroming Noordzee) | nee |
 | `dmi` | DMI Open Data | nee |
 | `rws` | Rijkswaterstaat (NOOS-Matroos) | nee |
+| `metno` | MET Norway | nee |
 
 ### Datasets (`dataset`)
 
@@ -495,6 +502,9 @@ hoofdlettergevoelig; gebruik ze exact zoals hieronder.
 | `rws` | `rws_dcsm` | RWS DCSM — stroming en waterstand (43–64°N, 12°W–13°O, 0,05°) | regulier lat/lon | 48 u | 1 u |
 | `rws` | `rws_swan_dcsm` | RWS SWAN — golven Noordzee en Kanaal (48–64°N, 12°W–9°O, 0,05°) | regulier lat/lon | 48 u | 1 u |
 | `rws` | `rws_swan_kuststrook` | RWS SWAN — golven Nederlandse kust (51–54,4°N, 0,02°) | regulier lat/lon | 48 u | 1 u |
+| `metno` | `metno_oslofjord` | MET Norway — Oslofjord (58,9–60,0°N, 9,8–11,2°O) | regulier lat/lon, 0,05° | 66–120 u | 1 u |
+| `metno` | `metno_skagerrak` | MET Norway — Skagerrak (57,7–59,4°N, 7,8–12,0°O) | regulier lat/lon, 0,05° | 66–120 u | 1 u |
+| `metno` | `metno_sorlandet` | MET Norway — Sørlandet (57,8–58,8°N, 7,0–9,4°O) | regulier lat/lon, 0,05° | 66–120 u | 1 u |
 
 ### Parameters (`parameter` / `parameters`)
 
@@ -583,6 +593,17 @@ van een run (+0 u) bestaan die twee nog niet, dus die beelden ontbreken daar.
 | `wave_period` | Golfperiode (gemiddeld, Tm-1,0) | s | scalar |
 | `wave_direction` | Golfrichting (gemiddeld, Th0) | ° | scalar |
 
+**MET Norway** (`metno_oslofjord`, `metno_skagerrak`, `metno_sorlandet`):
+
+| `parameter` | Naam | Eenheid | Type | Model, vooruit |
+| --- | --- | --- | --- | --- |
+| `wind_10m` | Wind (10m) | m/s | vector | MEPS, ~66 u |
+| `precipitation` | Neerslag (per uur) | mm | scalar | MEPS, ~66 u |
+| `pressure_msl` | Luchtdruk (zeeniveau) | hPa | scalar | MEPS, ~66 u |
+| `wave_height` | Golfhoogte (significant) | m | scalar | WAVEWATCH III 4 km, ~72 u |
+| `wave_direction` | Golfrichting (gemiddeld) | ° | scalar | WAVEWATCH III 4 km, ~72 u |
+| `current` | Zeestroming (3 m diep) | m/s | vector | NorKyst 800 m, ~120 u |
+
 **BSH** (`bsh_current_northsea`):
 
 | `parameter` | Naam | Eenheid | Type |
@@ -601,7 +622,7 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 
 | Sleutel | Waarden |
 | --- | --- |
-| `source` | `knmi`, `dwd`, `bsh`, `dmi` of `rws` |
+| `source` | `knmi`, `dwd`, `bsh`, `dmi`, `rws` of `metno` |
 | `api_key` | KNMI Open Data-sleutel (leeg laten voor DWD/BSH) |
 | `notification_api_key` | optioneel; **aparte** KNMI Notification Service-sleutel (leeg, of je Open Data-sleutel = alleen pollen) |
 | `dataset` | een dataset-sleutel uit de tabel hierboven |
@@ -913,6 +934,13 @@ Extra's:
   integratie verwijdert cellen die meer dan 2 m van hun buren afwijken (~0,04%);
   echte uitschieters zoals springtij bij Saint-Malo blijven staan. De waterstand
   is zoals het model hem levert, niet omgerekend naar een lokaal peil.
+- **MET Norway** levert per gebied kant-en-klare bestanden (0,2–1,2 MB). Weer,
+  golven en stroming worden elk op hun eigen moment ververst (weer ongeveer elk
+  uur); bij elke update haalt de integratie de bestanden voor de gekozen
+  parameters opnieuw op. Elke inhoud heeft zijn eigen runtijd en reikwijdte (zie
+  de tabel). De stroming is die op 3 m diepte. De dienst eist dat een app zich
+  identificeert; de integratie stuurt daarvoor haar naam en projectadres mee.
+  Gegevens: MET Norway, CC BY 4.0.
 
 ## Ontwikkelen & testen
 
@@ -990,6 +1018,9 @@ changing the map card or the rest of the backend):
   model (water level and currents from the Norwegian coast to northern Spain) and
   the **SWAN** wave models (North Sea, and at a fine grid along the Dutch coast),
   48 hours ahead, NetCDF, **no key**.
+- [MET Norway](https://api.met.no/weatherapi/gribfiles/1.1/documentation) —
+  weather (MEPS), waves (4 km) and currents (800 m model) for the **Oslofjord,
+  Skagerrak and Sørlandet**, 3 to 5 days ahead, GRIB1, **no key**.
 
 ## Features
 
@@ -1015,6 +1046,8 @@ changing the map card or the rest of the backend):
 - **Rijkswaterstaat water level and currents** (DCSM) from the Norwegian coast to
   northern Spain, and waves for the North Sea and, finely, the Dutch coast (SWAN)
   — the models Rijkswaterstaat uses itself.
+- **The Norwegian end** (MET Norway): wind, precipitation, pressure, waves and
+  currents, right into the Oslofjord.
 - **Nautical chart layers** as on map.openseamap.org: seamarks, sport, depth
   contours, depth soundings, GEBCO depth and an EMODnet bathymetry base map, via a
   layer button on the map.
@@ -1168,12 +1201,14 @@ changing the map card or the rest of the backend):
    Notification Service. Leave it empty if you don't have one — the integration
    then polls, which is the only visible consequence. Do **not** paste your Open
    Data key there: it is refused. For **DWD Open Data**, **BSH**, **DMI Open
-   Data** and **Rijkswaterstaat** leave the key fields empty — they need no key.
+   Data**, **Rijkswaterstaat** and **MET Norway** leave the key fields empty —
+   they need no key.
 3. Choose a dataset. KNMI: HARMONIE-AROME Cy43 **Netherlands** (default) or
    **Europe (DINI)**. DWD: **EWAM** (European waves) or **ICON-D2** (weather
    model). DMI: **WAM North Sea/Baltic**, **WAM North Atlantic** (waves) or
    **DKSS** (currents and water level). Rijkswaterstaat: **DCSM** (currents and
-   water level), **SWAN North Sea** or **SWAN Dutch coast** (waves). If you want both weather and waves, add one integration instance per
+   water level), **SWAN North Sea** or **SWAN Dutch coast** (waves). MET Norway:
+   **Oslofjord**, **Skagerrak** or **Sørlandet** (weather, waves and currents). If you want both weather and waves, add one integration instance per
    dataset; in the card you switch between instances.
 4. Choose which parameters should be kept up to date. You can change that later
    under **Configure** (see step 5) — for instance to switch swell on for an
@@ -1429,6 +1464,7 @@ exactly as below.
 | `bsh` | BSH (North Sea current) | no |
 | `dmi` | DMI Open Data | no |
 | `rws` | Rijkswaterstaat (NOOS-Matroos) | no |
+| `metno` | MET Norway | no |
 
 ### Datasets (`dataset`)
 
@@ -1445,6 +1481,9 @@ exactly as below.
 | `rws` | `rws_dcsm` | RWS DCSM — currents and water level (43–64°N, 12°W–13°E, 0.05°) | regular lat/lon | 48 h | 1 h |
 | `rws` | `rws_swan_dcsm` | RWS SWAN — waves North Sea and Channel (48–64°N, 12°W–9°E, 0.05°) | regular lat/lon | 48 h | 1 h |
 | `rws` | `rws_swan_kuststrook` | RWS SWAN — waves Dutch coast (51–54.4°N, 0.02°) | regular lat/lon | 48 h | 1 h |
+| `metno` | `metno_oslofjord` | MET Norway — Oslofjord (58.9–60.0°N, 9.8–11.2°E) | regular lat/lon, 0.05° | 66–120 h | 1 h |
+| `metno` | `metno_skagerrak` | MET Norway — Skagerrak (57.7–59.4°N, 7.8–12.0°E) | regular lat/lon, 0.05° | 66–120 h | 1 h |
+| `metno` | `metno_sorlandet` | MET Norway — Sørlandet (57.8–58.8°N, 7.0–9.4°E) | regular lat/lon, 0.05° | 66–120 h | 1 h |
 
 ### Parameters (`parameter` / `parameters`)
 
@@ -1533,6 +1572,17 @@ maximum of the past hour, without a direction of their own. At a run's start tim
 | `wave_period` | Wave period (mean, Tm-1,0) | s | scalar |
 | `wave_direction` | Wave direction (mean, Th0) | ° | scalar |
 
+**MET Norway** (`metno_oslofjord`, `metno_skagerrak`, `metno_sorlandet`):
+
+| `parameter` | Name | Unit | Type | Model, ahead |
+| --- | --- | --- | --- | --- |
+| `wind_10m` | Wind (10 m) | m/s | vector | MEPS, ~66 h |
+| `precipitation` | Precipitation (per hour) | mm | scalar | MEPS, ~66 h |
+| `pressure_msl` | Pressure (mean sea level) | hPa | scalar | MEPS, ~66 h |
+| `wave_height` | Wave height (significant) | m | scalar | WAVEWATCH III 4 km, ~72 h |
+| `wave_direction` | Wave direction (mean) | ° | scalar | WAVEWATCH III 4 km, ~72 h |
+| `current` | Sea current (3 m deep) | m/s | vector | NorKyst 800 m, ~120 h |
+
 **BSH** (`bsh_current_northsea`):
 
 | `parameter` | Name | Unit | Type |
@@ -1551,7 +1601,7 @@ include `swell_direction` too, or the swell rows have no arrows.
 
 | Key | Values |
 | --- | --- |
-| `source` | `knmi`, `dwd`, `bsh`, `dmi` or `rws` |
+| `source` | `knmi`, `dwd`, `bsh`, `dmi`, `rws` or `metno` |
 | `api_key` | KNMI Open Data key (leave empty for DWD/BSH) |
 | `notification_api_key` | optional; **separate** KNMI Notification Service key (empty, or your Open Data key = polling only) |
 | `dataset` | a dataset key from the table above |
@@ -1856,6 +1906,13 @@ Also:
   integration removes cells that differ from their neighbours by more than 2 m
   (~0.04%); real extremes such as a spring tide at Saint-Malo stay. The water
   level is as the model delivers it, not converted to a local datum.
+- **MET Norway** serves ready-made files per area (0.2–1.2 MB). Weather, waves
+  and currents are each refreshed on their own schedule (weather about hourly);
+  on every update the integration fetches the files for the chosen parameters
+  again. Each content has its own run time and reach (see the table). The
+  current is the one 3 m below the surface. The service requires apps to
+  identify themselves; the integration sends its name and project address.
+  Data: MET Norway, CC BY 4.0.
 
 ## Development & testing
 

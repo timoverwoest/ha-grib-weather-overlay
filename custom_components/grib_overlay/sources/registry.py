@@ -12,6 +12,7 @@ from .bsh import BshSource
 from .dmi import DmiSource
 from .dwd import DwdSource
 from .knmi import KnmiSource
+from .metno import MetnoSource
 from .rws import RwsSource
 
 SOURCE_REGISTRY: dict[str, type[GribSource]] = {
@@ -20,6 +21,7 @@ SOURCE_REGISTRY: dict[str, type[GribSource]] = {
     BshSource.key: BshSource,
     DmiSource.key: DmiSource,
     RwsSource.key: RwsSource,
+    MetnoSource.key: MetnoSource,
 }
 
 
