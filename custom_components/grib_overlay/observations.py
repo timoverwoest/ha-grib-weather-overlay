@@ -405,17 +405,6 @@ def parse_knmi_coveragejson(
         v = values[i] if i < len(values) else None
         if v is None:
             continue
-    dirs = None
-    if dir_code:
-        try:
-            dirs = data["ranges"][dir_code]["values"]
-        except (KeyError, TypeError):
-            dirs = None
-    out: list[dict] = []
-    for i, t in enumerate(times):
-        v = values[i] if i < len(values) else None
-        if v is None:
-            continue
         point: dict[str, Any] = {"valid_time": t, "value": round(float(v) * scale, 3)}
         if dirs is not None and i < len(dirs) and dirs[i] is not None:
             point["direction"] = round(float(dirs[i]), 0)

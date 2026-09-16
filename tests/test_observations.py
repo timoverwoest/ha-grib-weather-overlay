@@ -81,6 +81,30 @@ def test_parse_knmi_coveragecollection() -> None:
     ]
 
 
+def test_parse_knmi_coveragecollection_keeps_direction() -> None:
+    # The direction range lives in coverages[0] too, not at the top level.
+    data = {
+        "type": "CoverageCollection",
+        "coverages": [
+            {
+                "domain": {
+                    "axes": {
+                        "t": {"values": ["2026-08-23T10:00:00Z", "2026-08-23T10:10:00Z"]}
+                    }
+                },
+                "ranges": {
+                    "ff": {"values": [7.1, 8.4]},
+                    "dd": {"values": [240, None]},  # missing direction -> no key
+                },
+            }
+        ],
+    }
+    assert parse_knmi_coveragejson(data, "ff", "dd") == [
+        {"valid_time": "2026-08-23T10:00:00Z", "value": 7.1, "direction": 240},
+        {"valid_time": "2026-08-23T10:10:00Z", "value": 8.4},
+    ]
+
+
 def test_nearest_knmi_location_picks_closest_feature() -> None:
     locs = {
         "type": "FeatureCollection",
