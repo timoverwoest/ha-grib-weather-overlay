@@ -6,20 +6,20 @@ Two providers, chosen by the parameter:
   precipitation, pressure, visibility) — queried by position (nearest station)
   from the 10-minute in-situ observation collection. Uses the KNMI Open Data key
   the integration already stores (any configured ``knmi`` entry's ``api_key``).
-- **RWS Waterinfo — WaterWebservices** (water params: wave height/period/
-  direction, current) — keyless JSON; the station catalogue is fetched once and
-  cached, then the nearest station offering the parameter is queried.
+- **RWS Waterinfo — WaterWebservices DDAPI20** (water params: wave height/
+  period/direction, current) — keyless JSON; the station catalogue is fetched
+  once and cached, then the nearest station offering the parameter is queried.
 
 Each provider returns a series ``[{valid_time, value, direction?}]`` in the
 parameter's SOURCE unit (the same unit the forecast ``point`` endpoint reports),
 so the card can line the observations up with the forecast columns and compute a
 delta directly.
 
-NOTE: the provider parameter codes and request shapes here are best-effort from
-the public documentation and should be verified against a live key/endpoint. The
-response *parsers* are pure and unit-tested with representative fixtures; if a
-provider names a field differently, adjust the ``KNMI_EDR`` / ``RWS_AQUO`` maps —
-the plumbing around them does not change.
+NOTE: the KNMI parameter codes and request shapes are best-effort from the public
+documentation; the RWS ones were checked against the live DDAPI20 service
+(2026-09-16). The response *parsers* are pure and unit-tested with representative
+fixtures; if a provider names a field differently, adjust the ``KNMI_EDR`` /
+``RWS_AQUO`` maps — the plumbing around them does not change.
 """
 
 from __future__ import annotations
@@ -62,16 +62,24 @@ KNMI_EDR: dict[str, tuple[str, float]] = {
 KNMI_EDR_DIR: dict[str, str] = {"wind_10m": "dd", "wind_gust_10m": "dd"}
 
 # --- RWS Waterinfo (water) -------------------------------------------------
-RWS_BASE = "https://waterwebservices.rijkswaterstaat.nl"
-RWS_CATALOGUS = f"{RWS_BASE}/METADATASERVICES_DBO/OphalenCatalogus"
-RWS_WAARNEMINGEN = f"{RWS_BASE}/ONLINEWAARNEMINGENSERVICES_DBO/OphalenWaarnemingen"
+# DDAPI20 WaterWebservices (Swagger: {RWS_BASE}/swagger-ui/index.html). The
+# classic `_DBO` endpoints on waterwebservices.rijkswaterstaat.nl are switched off
+# and answer 301 (which aiohttp follows as a GET). The X-API-KEY header is
+# optional -- RWS uses it to attribute requests and advises sending one.
+RWS_BASE = "https://ddapi20-waterwebservices.rijkswaterstaat.nl"
+RWS_CATALOGUS = f"{RWS_BASE}/METADATASERVICES/OphalenCatalogus"
+RWS_WAARNEMINGEN = f"{RWS_BASE}/ONLINEWAARNEMINGENSERVICES/OphalenWaarnemingen"
+RWS_HEADERS = {"X-API-KEY": "grib_overlay"}
 # param_key -> (AQUO grootheid code, optional companion direction grootheid).
 RWS_AQUO: dict[str, tuple[str, str | None]] = {
-    "wave_height": ("Hm0", None),          # significant wave height (m)
+    "wave_height": ("Hm0", None),          # significant wave height (cm -> m)
     "wave_period": ("Tm02", None),         # mean wave period (s)
     "wave_direction": ("Th0", None),       # mean wave direction (deg)
-    "current": ("Stroomsnelheid", "Stroomrichting"),  # surface current (m/s, deg)
+    "current": ("STROOMSHD", "STROOMRTG"),  # surface current (m/s, deg)
 }
+# RWS unit (a series' AquoMetadata.Eenheid.Code) -> factor to the forecast's SI
+# unit; units not listed (m, s, m/s, graad) pass through unchanged.
+_RWS_UNIT_SCALE: dict[str, float] = {"mm": 0.001, "cm": 0.01, "dm": 0.1, "cm/s": 0.01}
 _RWS_MISSING = 999999999.0  # RWS sentinel for a missing value
 
 
@@ -213,11 +221,10 @@ async def _rws_nearby(
     for loc in cat.get("LocatieLijst") or []:
         if allowed is not None and loc.get("Locatie_MessageID") not in allowed:
             continue
-        try:
-            x, y = float(loc["X"]), float(loc["Y"])
-        except (KeyError, TypeError, ValueError):
+        pos = _rws_location_latlon(loc)
+        if pos is None:
             continue
-        slat, slon = utm31n_to_wgs84(x, y)
+        slat, slon = pos
         d = _haversine_km(lat, lon, slat, slon)
         if d > radius_km:
             continue
@@ -427,11 +434,20 @@ async def _rws_catalogus(hass: HomeAssistant) -> dict | None:
     session = async_get_clientsession(hass)
     body = {"CatalogusFilter": {"Grootheden": True, "Locaties": True}}
     try:
-        async with session.post(RWS_CATALOGUS, json=body, timeout=_TIMEOUT) as resp:
+        async with session.post(
+            RWS_CATALOGUS, json=body, headers=RWS_HEADERS, timeout=_TIMEOUT
+        ) as resp:
             if resp.status != 200:
+                _LOGGER.warning("RWS OphalenCatalogus HTTP %s", resp.status)
                 return None
             data = await resp.json()
-    except Exception:  # noqa: BLE001
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("RWS OphalenCatalogus request failed: %s", err)
+        return None
+    if not (data or {}).get("LocatieLijst"):  # e.g. Succesvol=false: don't cache
+        _LOGGER.warning(
+            "RWS OphalenCatalogus returned no locations: %s", (data or {}).get("Foutmelding")
+        )
         return None
     cache["data"] = data
     return data
@@ -452,8 +468,10 @@ async def _fetch_rws(
     async def _one(gr: str) -> list[dict]:
         body = _rws_waarnemingen_body(station, gr, start, end)
         try:
-            async with session.post(RWS_WAARNEMINGEN, json=body, timeout=_TIMEOUT) as resp:
-                if resp.status != 200:
+            async with session.post(
+                RWS_WAARNEMINGEN, json=body, headers=RWS_HEADERS, timeout=_TIMEOUT
+            ) as resp:
+                if resp.status != 200:  # 204 = no observations in the window
                     return []
                 return parse_rws_waarnemingen(await resp.json())
         except Exception:  # noqa: BLE001
@@ -480,14 +498,12 @@ async def _fetch_rws(
 
 
 def _rws_waarnemingen_body(station: dict, grootheid: str, start: str, end: str) -> dict:
+    # DDAPI20 identifies a location by Code alone. ProcesType pins measured values:
+    # the same service also returns forecast/astronomical series (e.g. WATHTE).
     return {
-        "Locatie": {
-            "Code": station.get("Code"),
-            "X": station.get("X"),
-            "Y": station.get("Y"),
-        },
+        "Locatie": {"Code": station.get("Code")},
         "AquoPlusWaarnemingMetadata": {
-            "AquoMetadata": {"Grootheid": {"Code": grootheid}}
+            "AquoMetadata": {"Grootheid": {"Code": grootheid}, "ProcesType": "meting"}
         },
         "Periode": {"Begindatumtijd": start, "Einddatumtijd": end},
     }
@@ -512,13 +528,30 @@ def _rws_allowed_locations(cat: dict, grootheid: str) -> set | None:
     }
 
 
+def _rws_location_latlon(loc: dict) -> tuple[float, float] | None:
+    """A catalogue location's position as (lat, lon) degrees, or None.
+
+    DDAPI20 gives ``Lat``/``Lon`` (ETRS89 -- equal to WGS84 at this scale); the
+    classic service gave ``X``/``Y`` in EPSG:25831 (UTM zone 31N), which is still
+    converted when a location carries only those.
+    """
+    try:
+        return float(loc["Lat"]), float(loc["Lon"])
+    except (KeyError, TypeError, ValueError):
+        pass
+    try:
+        return utm31n_to_wgs84(float(loc["X"]), float(loc["Y"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def nearest_rws_station(
     cat: dict, grootheid: str, lat: float, lon: float
 ) -> dict | None:
     """Nearest catalogue station that offers ``grootheid``, with WGS84 coords added.
 
-    RWS stations carry X/Y in EPSG:25831 (UTM zone 31N); we convert to lat/lon to
-    rank by distance and to report the station position back to the card.
+    The ``_lat``/``_lon`` added are used to rank by distance and to report the
+    station position back to the card.
     """
     locs = cat.get("LocatieLijst") or []
     allowed = _rws_allowed_locations(cat, grootheid)
@@ -527,12 +560,10 @@ def nearest_rws_station(
     for loc in locs:
         if allowed is not None and loc.get("Locatie_MessageID") not in allowed:
             continue
-        try:
-            x = float(loc["X"])
-            y = float(loc["Y"])
-        except (KeyError, TypeError, ValueError):
+        pos = _rws_location_latlon(loc)
+        if pos is None:
             continue
-        slat, slon = utm31n_to_wgs84(x, y)
+        slat, slon = pos
         d = _haversine_km(lat, lon, slat, slon)
         if d < best_d:
             best_d = d
@@ -541,11 +572,19 @@ def nearest_rws_station(
 
 
 def parse_rws_waarnemingen(data: dict) -> list[dict]:
-    """RWS OphalenWaarnemingen JSON -> ``[{valid_time, value}]`` (pure, testable)."""
+    """RWS OphalenWaarnemingen JSON -> ``[{valid_time, value}]`` (pure, testable).
+
+    Values are scaled from each series' ``Eenheid`` to the forecast's SI unit (Hm0
+    comes in cm, the forecast in m). Forecast/astronomical series are skipped.
+    """
     if not data or not data.get("Succesvol", True):
         return []
     out: list[dict] = []
     for w in data.get("WaarnemingenLijst") or []:
+        meta = w.get("AquoMetadata") or {}
+        if meta.get("ProcesType", "meting") != "meting":
+            continue
+        scale = _RWS_UNIT_SCALE.get((meta.get("Eenheid") or {}).get("Code"), 1.0)
         for m in w.get("MetingenLijst") or []:
             t = m.get("Tijdstip")
             mw = m.get("Meetwaarde") or {}
@@ -558,7 +597,7 @@ def parse_rws_waarnemingen(data: dict) -> list[dict]:
                 continue
             if abs(v) >= _RWS_MISSING:
                 continue
-            out.append({"valid_time": t, "value": round(v, 3)})
+            out.append({"valid_time": t, "value": round(v * scale, 3)})
     return out
 
 

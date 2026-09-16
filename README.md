@@ -377,11 +377,14 @@ KNMI via de **EDR**-API — `.../collections/10-minute-in-situ-meteorological-ob
 (het dichtstbijzijnde station wordt uit `/locations` bepaald; `/position` bestaat hier
 niet), met **dezelfde KNMI Open Data-sleutel** die de integratie al gebruikt en de
 EDR-variabelen `ff`/`gff`/`dd`/`ta`/`td`/`rh`/`rg`/`pp`/`zm`. RWS via de **sleutelloze**
-WaterWebservices (`OphalenCatalogus` → dichtstbijzijnde station → `OphalenWaarnemingen`,
-AQUO-parametermodel). De exacte codes/aanroepen kunnen per provider afwijken; bij een
-mislukking zie je nu een melding in de card **én** een `WARNING` in de HA-log met de
-exacte oorzaak. De response-parsers zijn met fixtures getest. *(Neerslag komt van KNMI
-als intensiteit `rg` in mm/u — geen directe som per interval; hou daar rekening mee.)*
+WaterWebservices **DDAPI20** (`ddapi20-waterwebservices.rijkswaterstaat.nl`:
+`OphalenCatalogus` → dichtstbijzijnde station → `OphalenWaarnemingen`, AQUO-grootheden
+`Hm0`/`Tm02`/`Th0`/`STROOMSHD`+`STROOMRTG`; `Hm0` komt in cm en wordt naar m omgerekend) —
+de klassieke `_DBO`-adressen zijn uitgezet; live getest op 16-09-2026. De exacte
+KNMI-codes/aanroepen kunnen afwijken; bij een mislukking zie je nu een melding in de card
+**én** een `WARNING` in de HA-log met de exacte oorzaak. De response-parsers zijn met
+fixtures getest. *(Neerslag komt van KNMI als intensiteit `rg` in mm/u — geen directe som
+per interval; hou daar rekening mee.)*
 
 > **KNMI 403 bij downloaden?** Je HARMONIE-sleutel is vaak **niet** geautoriseerd voor de
 > observations-dataset (KNMI antwoordt dan `403`). Maak/vraag op het
@@ -1359,11 +1362,14 @@ via the **EDR** API — `.../collections/10-minute-in-situ-meteorological-observ
 (the nearest station is resolved from `/locations`; `/position` does not exist here),
 with the **same KNMI Open Data key** the integration already uses and the EDR variables
 `ff`/`gff`/`dd`/`ta`/`td`/`rh`/`rg`/`pp`/`zm`. RWS via the **keyless** WaterWebservices
-(`OphalenCatalogus` → nearest station → `OphalenWaarnemingen`, AQUO parameter model). The
-exact codes/requests may differ per provider; on a failure you now get a message in the
-card **and** a `WARNING` in the HA log with the exact cause. The response parsers are
-covered by fixture tests. *(Precipitation comes from KNMI as intensity `rg` in mm/h — not
-a direct per-interval sum; keep that in mind.)*
+**DDAPI20** (`ddapi20-waterwebservices.rijkswaterstaat.nl`: `OphalenCatalogus` → nearest
+station → `OphalenWaarnemingen`, AQUO quantities
+`Hm0`/`Tm02`/`Th0`/`STROOMSHD`+`STROOMRTG`; `Hm0` arrives in cm and is converted to m) —
+the classic `_DBO` endpoints are switched off; verified live on 2026-09-16. The exact KNMI
+codes/requests may differ; on a failure you now get a message in the card **and** a
+`WARNING` in the HA log with the exact cause. The response parsers are covered by fixture
+tests. *(Precipitation comes from KNMI as intensity `rg` in mm/h — not a direct
+per-interval sum; keep that in mind.)*
 
 > **KNMI 403 on download?** Your HARMONIE key is often **not** authorised for the
 > observations dataset (KNMI then returns `403`). Create/request a key with access to

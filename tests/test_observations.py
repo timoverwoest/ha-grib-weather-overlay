@@ -8,9 +8,11 @@ what breaks silently if a provider tweaks its shape.
 from __future__ import annotations
 
 from custom_components.grib_overlay.observations import (
+    RWS_AQUO,
     _features_within,
     _iso_seconds,
     _rws_allowed_locations,
+    _rws_waarnemingen_body,
     nearest_knmi_location,
     nearest_rws_station,
     parse_knmi_coveragejson,
@@ -174,6 +176,7 @@ def test_utm31n_offset_is_east_and_plausible() -> None:
 
 def test_nearest_rws_station_picks_closest_offering_the_grootheid() -> None:
     # Two stations; only the far one offers Hm0 -> it must be chosen despite distance.
+    # Classic-service shape (UTM X/Y, no Lat/Lon) -> covers the UTM fallback.
     cat = {
         "LocatieLijst": [
             {"Locatie_MessageID": 1, "Code": "NEAR", "Naam": "Near", "X": 500000, "Y": 5764000},
@@ -192,3 +195,110 @@ def test_nearest_rws_station_picks_closest_offering_the_grootheid() -> None:
     assert station is not None
     assert station["Code"] == "FAR"
     assert "_lat" in station and "_lon" in station
+
+
+# --- RWS DDAPI20 shapes (trimmed from live responses, 2026-09-16) -----------
+
+# OphalenCatalogus: locations carry Lat/Lon (ETRS89) and lowercase dotted codes,
+# no X/Y; the coupling key is spelled AquoMetaData_MessageID.
+DDAPI20_CATALOGUS = {
+    "Succesvol": True,
+    "AquoMetadataLijst": [
+        {"AquoMetadata_MessageID": 52, "Grootheid": {"Code": "Hm0", "Omschrijving": "Significante golfhoogte in het spectrale domein"}},
+        {"AquoMetadata_MessageID": 101, "Grootheid": {"Code": "STROOMSHD", "Omschrijving": "Stroomsnelheid"}},
+    ],
+    "AquoMetadataLocatieLijst": [
+        {"AquoMetaData_MessageID": 101, "Locatie_MessageID": 1},
+        {"AquoMetaData_MessageID": 52, "Locatie_MessageID": 2},
+        {"AquoMetaData_MessageID": 52, "Locatie_MessageID": 3},
+        {"AquoMetaData_MessageID": 101, "Locatie_MessageID": 2},
+    ],
+    "LocatieLijst": [
+        {"Locatie_MessageID": 1, "Code": "ijmuiden.erosiegeul", "Coordinatenstelsel": "ETRS89", "Lat": 52.4697, "Lon": 4.5236, "Naam": "IJmuiden, erosiegeul"},
+        {"Locatie_MessageID": 2, "Code": "ijgeul.1", "Coordinatenstelsel": "ETRS89", "Lat": 52.463943, "Lon": 4.517596, "Naam": "IJGeul, 1"},
+        {"Locatie_MessageID": 3, "Code": "ijmuiden.5a", "Coordinatenstelsel": "ETRS89", "Lat": 52.55, "Lon": 4.40, "Naam": "IJmuiden, 05 A"},
+    ],
+}
+
+
+def _ddapi20_series(eenheid: str, values: list, proces: str = "meting") -> dict:
+    return {
+        "AquoMetadata": {
+            "Compartiment": {"Code": "OW", "Omschrijving": "Oppervlaktewater"},
+            "Eenheid": {"Code": eenheid},
+            "Grootheid": {"Code": "Hm0"},
+            "ProcesType": proces,
+        },
+        "Locatie": {"Code": "ijgeul.1", "Coordinatenstelsel": "ETRS89", "Lat": 52.463943, "Lon": 4.517596, "Naam": "IJGeul, 1"},
+        "MetingenLijst": [
+            {
+                "Meetwaarde": {"Waarde_Alfanumeriek": str(v), "Waarde_Numeriek": v},
+                "Tijdstip": t,
+                "WaarnemingMetadata": {"Statuswaarde": "Ongecontroleerd", "Bemonsteringshoogte": "0"},
+            }
+            for t, v in values
+        ],
+    }
+
+
+def test_nearest_rws_station_ddapi20_uses_lat_lon() -> None:
+    # Near IJmuiden: the erosiegeul is closest but has no Hm0 -> ijgeul.1.
+    station = nearest_rws_station(DDAPI20_CATALOGUS, "Hm0", 52.46, 4.55)
+    assert station is not None
+    assert station["Code"] == "ijgeul.1"
+    assert station["_lat"] == 52.463943 and station["_lon"] == 4.517596
+    assert 2.0 < station["_dist_km"] < 2.5
+    # STROOMSHD: the erosiegeul (closer) now qualifies.
+    assert nearest_rws_station(DDAPI20_CATALOGUS, "STROOMSHD", 52.47, 4.53)["Code"] == "ijmuiden.erosiegeul"
+
+
+def test_rws_waarnemingen_body_ddapi20_shape() -> None:
+    body = _rws_waarnemingen_body(
+        {"Code": "ijgeul.1", "Lat": 52.46, "Lon": 4.52}, "Hm0",
+        "2026-09-16T14:00:00.000Z", "2026-09-16T20:00:00.000Z",
+    )
+    assert body == {
+        "Locatie": {"Code": "ijgeul.1"},  # DDAPI20: Code only, no X/Y
+        "AquoPlusWaarnemingMetadata": {
+            "AquoMetadata": {"Grootheid": {"Code": "Hm0"}, "ProcesType": "meting"}
+        },
+        "Periode": {
+            "Begindatumtijd": "2026-09-16T14:00:00.000Z",
+            "Einddatumtijd": "2026-09-16T20:00:00.000Z",
+        },
+    }
+
+
+def test_rws_current_uses_ddapi20_grootheid_codes() -> None:
+    assert RWS_AQUO["current"] == ("STROOMSHD", "STROOMRTG")
+
+
+def test_parse_rws_waarnemingen_ddapi20_scales_cm_to_m() -> None:
+    data = {
+        "Succesvol": True,
+        "WaarnemingenLijst": [
+            _ddapi20_series("cm", [
+                ("2026-09-16T15:40:00.000+01:00", 111.0),
+                ("2026-09-16T15:50:00.000+01:00", 999999999.0),  # missing
+                ("2026-09-16T16:00:00.000+01:00", 108.0),
+            ]),
+        ],
+    }
+    assert parse_rws_waarnemingen(data) == [
+        {"valid_time": "2026-09-16T15:40:00.000+01:00", "value": 1.11},
+        {"valid_time": "2026-09-16T16:00:00.000+01:00", "value": 1.08},
+    ]
+
+
+def test_parse_rws_waarnemingen_ddapi20_passes_si_units_and_skips_forecasts() -> None:
+    data = {
+        "Succesvol": True,
+        "WaarnemingenLijst": [
+            _ddapi20_series("m/s", [("2026-09-16T21:20:00.000+01:00", 0.369)]),
+            _ddapi20_series("m/s", [("2026-09-16T22:00:00.000+01:00", 0.5)], proces="verwachting"),
+            _ddapi20_series("cm", [("2026-09-16T22:00:00.000+01:00", 42.0)], proces="astronomisch"),
+        ],
+    }
+    assert parse_rws_waarnemingen(data) == [
+        {"valid_time": "2026-09-16T21:20:00.000+01:00", "value": 0.369}
+    ]
