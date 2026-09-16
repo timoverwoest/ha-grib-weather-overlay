@@ -24,15 +24,21 @@ Scope (verified bit-exact against ecCodes across every message in a real
 Anything outside this scope raises Grib1Error so the caller can skip the
 message rather than silently mis-decode it.
 
+Only the section headers are parsed up front; the bitmap and the packed data
+are unpacked the first time a message's ``values`` are read.
+
 All functions are blocking/CPU-bound by design; callers run them in an
 executor.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import cached_property
 
 import numpy as np
+
+from .packing import MAX_BITS, unpack_bits
 
 MISSING = np.nan
 
@@ -63,13 +69,21 @@ class Grib1Message:
     lat2: float
     lon2: float
     scan_mode: int
-    # Decoded data, flat, in the message's own scan order; NaN where missing.
-    values: np.ndarray
     # (south_pole_lat, south_pole_lon, angle_of_rotation) for a rotated lat/lon
     # grid (data representation type 10), else None. lat1/lon1/lat2/lon2 above
     # are then in the *rotated* coordinate system; reproject.py maps them back
     # to geographic coordinates.
     rotation: tuple[float, float, float] | None = None
+    # The packed bitmap and data sections, unpacked on first use of ``values``.
+    # A KNMI lead-time file holds every parameter, and it is searched once per
+    # enabled parameter (plus once for its valid time), so only the message
+    # that matches is worth the unpacking.
+    _packed: dict = field(default_factory=dict, repr=False, compare=False)
+
+    @cached_property
+    def values(self) -> np.ndarray:
+        """Decoded data, flat, in the message's own scan order; NaN where missing."""
+        return _unpack(self.ni * self.nj, **self._packed)
 
     def matches(self, filt: dict) -> bool:
         """True if every (key, value) in ``filt`` matches this message's PDS.
@@ -229,9 +243,7 @@ def _parse_message(msg: bytes) -> Grib1Message:
         table_ref = _u(bms[4:6])
         if table_ref != 0:
             raise Grib1Error("predefined bitmap tables are not supported")
-        bitmap = np.unpackbits(np.frombuffer(bms[6:], dtype=np.uint8))
-        if unused_bits:
-            bitmap = bitmap[:-unused_bits]
+        bitmap = (bms[6:], unused_bits)
         o += bms_len
 
     # -- Section 4: Binary Data Section --
@@ -242,30 +254,53 @@ def _parse_message(msg: bytes) -> Grib1Message:
         raise Grib1Error("spherical harmonic / non-grid-point data is not supported")
     if bds_flags & 0x40:
         raise Grib1Error("second-order (complex) packing is not supported")
-    binary_scale = _signed(_u(bds[4:6]), 16)
-    reference_value = _ibm_hex_float(bds[6:10])
     bits_per_value = bds[10]
+    if bits_per_value > MAX_BITS:
+        raise Grib1Error(f"unsupported bits per value: {bits_per_value}")
+    rec["_packed"] = {
+        "bitmap": bitmap,
+        "binary_scale": _signed(_u(bds[4:6]), 16),
+        "reference_value": _ibm_hex_float(bds[6:10]),
+        "bits_per_value": bits_per_value,
+        "data": bds[11:],
+    }
+    return Grib1Message(**rec)
 
-    npoints = ni * nj
-    n_present = int(bitmap.sum()) if bitmap is not None else npoints
+
+def _unpack(
+    npoints: int,
+    *,
+    bitmap: tuple[bytes, int] | None,
+    binary_scale: int,
+    reference_value: float,
+    bits_per_value: int,
+    data: bytes,
+) -> np.ndarray:
+    """Simple packing -> float64 values, NaN where the bitmap says missing."""
+    present_mask = None
+    if bitmap is not None:
+        bitmap_bytes, unused_bits = bitmap
+        present_mask = np.unpackbits(np.frombuffer(bitmap_bytes, dtype=np.uint8))
+        if unused_bits:
+            present_mask = present_mask[:-unused_bits]
+        n_present = int(present_mask.sum())
+    else:
+        n_present = npoints
 
     if bits_per_value == 0:
         present = np.full(n_present, reference_value, dtype=np.float64)
     else:
-        packed = np.frombuffer(bds[11:], dtype=np.uint8)
-        bits = np.unpackbits(packed)[: n_present * bits_per_value]
-        bits = bits.reshape(n_present, bits_per_value)
-        weights = (1 << np.arange(bits_per_value - 1, -1, -1)).astype(np.uint64)
-        raw = (bits.astype(np.uint64) * weights).sum(axis=1)
+        try:
+            raw = unpack_bits(data, n_present, bits_per_value)
+        except ValueError as err:
+            raise Grib1Error(str(err)) from err
         present = reference_value + raw.astype(np.float64) * (2.0 ** binary_scale)
 
-    if bitmap is not None:
+    if present_mask is not None:
         values = np.full(npoints, MISSING, dtype=np.float64)
-        values[bitmap.astype(bool)] = present
-    else:
-        values = present
-
-    return Grib1Message(values=values, **rec)
+        values[present_mask.astype(bool)] = present
+        return values
+    return present
 
 
 def to_grid(message: Grib1Message) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

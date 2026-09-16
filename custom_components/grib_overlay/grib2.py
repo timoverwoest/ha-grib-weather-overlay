@@ -29,6 +29,8 @@ from functools import cached_property
 
 import numpy as np
 
+from .packing import unpack_bits
+
 MISSING = np.nan
 
 
@@ -216,28 +218,6 @@ def _finish(rec: dict, npoints: int | None, bitmap: bytes | None) -> Grib2Messag
     return Grib2Message(**rec)
 
 
-_WHOLE_BYTES = {8: ">u1", 16: ">u2", 32: ">u4"}
-
-
-def _unpack_bits(data: bytes, count: int, bits: int) -> np.ndarray:
-    """``count`` big-endian unsigned integers of ``bits`` bits each, packed end to end.
-
-    Reads, for every value, the 8 bytes starting at its first byte as one
-    64-bit word and shifts the value out of it -- a few arrays of ``count``
-    words, instead of one row of ``bits`` bits per value (~200 MB for a single
-    ICON-D2 field).
-    """
-    if bits in _WHOLE_BYTES:
-        return np.frombuffer(data, dtype=_WHOLE_BYTES[bits], count=count).astype(np.uint64)
-    if bits > 57:  # the value would not fit in one 8-byte window
-        raise Grib2Error(f"unsupported bits per value: {bits}")
-    buf = np.frombuffer(bytes(data) + bytes(8), dtype=np.uint8)
-    start = np.arange(count, dtype=np.int64) * bits
-    windows = np.lib.stride_tricks.sliding_window_view(buf, 8)[start >> 3]
-    words = np.ascontiguousarray(windows).view(">u8").ravel().astype(np.uint64)
-    return (words << (start & 7).astype(np.uint64)) >> np.uint64(64 - bits)
-
-
 def _unpack(
     total: int,
     *,
@@ -260,7 +240,10 @@ def _unpack(
     if bits == 0:
         present = np.full(n_present, ref / dec, dtype=np.float64)
     else:
-        raw = _unpack_bits(data_bytes, n_present, bits)
+        try:
+            raw = unpack_bits(data_bytes, n_present, bits)
+        except ValueError as err:
+            raise Grib2Error(str(err)) from err
         present = (ref + raw.astype(np.float64) * (2.0 ** bin_scale)) / dec
 
     if bitmap is not None:

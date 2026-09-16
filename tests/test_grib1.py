@@ -1,8 +1,9 @@
 """Tests for the pure-Python GRIB1 decoder (grib1.py) and grib_decode.py.
 
-Two opt-in levels, both keyed off GRIB_OVERLAY_SAMPLE_GRIB (a single
-extracted HARMONIE lead-time GRIB file -- see dev/render_preview.py's
-docstring for how to obtain one):
+Hand-crafted messages exercise simple packing, bitmaps and the lazy unpacking
+with no network. On top of that, two opt-in levels, both keyed off
+GRIB_OVERLAY_SAMPLE_GRIB (a single extracted HARMONIE lead-time GRIB file --
+see dev/render_preview.py's docstring for how to obtain one):
 
 - structural: decode every configured parameter and assert the fields look
   sane (right shape, ascending grid, plausible ranges). Runs with just numpy.
@@ -19,19 +20,177 @@ import numpy as np
 import pytest
 
 from custom_components.grib_overlay import grib1, grib_decode
+from custom_components.grib_overlay.sources.base import GribParameter
 from custom_components.grib_overlay.sources.knmi import KNOWN_DATASETS
 
 SAMPLE_ENV_VAR = "GRIB_OVERLAY_SAMPLE_GRIB"
 
-pytestmark = pytest.mark.skipif(
+requires_sample = pytest.mark.skipif(
     not os.environ.get(SAMPLE_ENV_VAR), reason=f"set {SAMPLE_ENV_VAR} to a sample GRIB file to run"
 )
+
+
+def _u2(n: int) -> bytes:
+    return int(n).to_bytes(2, "big")
+
+
+def _u3(n: int) -> bytes:
+    return int(n).to_bytes(3, "big")
+
+
+def _ibm(value: float) -> bytes:
+    """IBM System/360 single-precision hex float (exact for the values used here)."""
+    sign = 0x80 if value < 0 else 0
+    mantissa, exponent = abs(value), 64
+    if mantissa == 0:
+        return bytes(4)
+    while mantissa >= 1:
+        mantissa, exponent = mantissa / 16, exponent + 1
+    while mantissa < 1 / 16:
+        mantissa, exponent = mantissa * 16, exponent - 1
+    return bytes([sign | exponent]) + _u3(round(mantissa * 2**24))
+
+
+def _pack(raw_values, bits: int) -> bytes:
+    """Big-endian, end-to-end bit packing, done the slow obvious way."""
+    bitstr = "".join(format(int(v), f"0{bits}b") for v in raw_values)
+    return np.packbits(np.array([int(c) for c in bitstr], dtype=np.uint8)).tobytes()
+
+
+def _make_grib1(
+    *, param: int, level: int, raw_values, bits: int, ref: float = 0.0,
+    binary_scale: int = 0, present=None, ni: int = 3, nj: int = 2,
+) -> bytes:
+    """A regular lat/lon (scan 0x40) simple-packing message; ``present`` adds a bitmap."""
+    pds = bytearray(28)
+    pds[0:3] = _u3(28)
+    pds[3], pds[4] = 253, 99  # table2Version, centre
+    pds[7] = 0x80 | (0x40 if present is not None else 0)  # GDS, optional BMS
+    pds[8], pds[9] = param, 105  # indicatorOfParameter, indicatorOfTypeOfLevel
+    pds[10:12] = _u2(level)
+    pds[12], pds[13], pds[14], pds[15] = 26, 9, 16, 6  # 2026-09-16 06:00
+    pds[17], pds[18] = 1, 3  # hours, P1 = +3h
+    pds[24] = 21  # century
+
+    gds = bytearray(32)
+    gds[0:3] = _u3(32)
+    gds[4] = 255
+    gds[6:8], gds[8:10] = _u2(ni), _u2(nj)
+    gds[10:13], gds[13:16] = _u3(49000), _u3(0)  # lat1 49.0, lon1 0.0
+    gds[17:20], gds[20:23] = _u3(56000), _u3(11000)  # lat2 56.0, lon2 11.0
+    gds[27] = 0x40
+
+    bms = b""
+    if present is not None:
+        bitmap = np.packbits(np.array(present, dtype=np.uint8)).tobytes()
+        unused = len(bitmap) * 8 - len(present)
+        bms = _u3(6 + len(bitmap)) + bytes([unused]) + _u2(0) + bitmap
+
+    data = _pack(raw_values, bits) if bits else b""
+    scale = abs(binary_scale) | (0x8000 if binary_scale < 0 else 0)
+    bds = bytes([0]) + _u2(scale) + _ibm(ref) + bytes([bits]) + data
+    bds = _u3(3 + len(bds)) + bds
+
+    body = bytes(pds) + bytes(gds) + bms + bds + b"7777"
+    return b"GRIB" + _u3(8 + len(body)) + bytes([1]) + body
+
+
+@pytest.fixture
+def unpack_calls(monkeypatch) -> list[int]:
+    """Record every unpacking of a message's values."""
+    calls: list[int] = []
+    unpack = grib1._unpack
+
+    def counting(npoints, **packed):
+        calls.append(npoints)
+        return unpack(npoints, **packed)
+
+    monkeypatch.setattr(grib1, "_unpack", counting)
+    return calls
+
+
+def test_decode_simple_packing_with_bitmap() -> None:
+    # 10-bit values straddle byte boundaries; the 6-point bitmap has 2 unused bits.
+    raw = _make_grib1(
+        param=11, level=2, bits=10, ref=-2.5, binary_scale=-1,
+        present=[1, 0, 1, 1, 0, 1], raw_values=[0, 5, 1023, 7],
+    )
+    (m,) = list(grib1.iter_messages(raw))
+    assert (m.indicator_of_parameter, m.level, m.ni, m.nj) == (11, 2, 3, 2)
+    expected = [-2.5, np.nan, 0.0, 509.0, np.nan, 1.0]
+    assert np.array_equal(m.values, expected, equal_nan=True)
+    grid, lats, lons = grib1.to_grid(m)
+    assert np.array_equal(grid, np.reshape(expected, (2, 3)), equal_nan=True)
+    assert lats.tolist() == [49.0, 56.0] and lons.tolist() == [0.0, 5.5, 11.0]
+
+
+def test_values_are_unpacked_only_when_read(unpack_calls) -> None:
+    buf = b"".join(
+        _make_grib1(param=param, level=2, bits=12, raw_values=range(param, param + 6))
+        for param in (11, 17, 52)
+    )
+    messages = list(grib1.iter_messages(buf))
+    assert [m.indicator_of_parameter for m in messages] == [11, 17, 52]
+    assert unpack_calls == []  # headers only
+
+    assert messages[1].values.tolist() == [17, 18, 19, 20, 21, 22]
+    assert messages[1].values is messages[1].values  # unpacked once, then cached
+    assert unpack_calls == [6]
+    assert "values" not in vars(messages[0]) and "values" not in vars(messages[2])
+
+
+def test_decode_unpacks_only_the_messages_it_needs(tmp_path, unpack_calls) -> None:
+    """A KNMI lead-time file holds every parameter; decoding one must not unpack the rest."""
+    path = tmp_path / "member.grib"
+    path.write_bytes(b"".join([
+        _make_grib1(param=11, level=2, bits=16, ref=250.0, raw_values=[0, 1, 2, 3, 4, 5]),
+        _make_grib1(param=33, level=10, bits=8, raw_values=[3] * 6),
+        _make_grib1(param=34, level=10, bits=8, raw_values=[4] * 6),
+        _make_grib1(param=1, level=0, bits=24, raw_values=[101325] * 6),
+    ]))
+    temperature = GribParameter(
+        key="temperature_2m", name="T", unit="degC", offset=-273.15,
+        grib_filter={"indicatorOfParameter": 11, "indicatorOfTypeOfLevel": 105, "level": 2},
+    )
+    wind = GribParameter(
+        key="wind_10m", name="Wind", unit="m/s", kind="vector",
+        grib_filter_u={"indicatorOfParameter": 33, "indicatorOfTypeOfLevel": 105, "level": 10},
+        grib_filter_v={"indicatorOfParameter": 34, "indicatorOfTypeOfLevel": 105, "level": 10},
+    )
+
+    valid_time, run_time = grib_decode.peek_valid_time(path)
+    assert (valid_time.hour, run_time.hour) == (9, 6)
+    assert unpack_calls == []
+
+    field = grib_decode.decode_parameter(path, temperature)
+    assert np.allclose(field.data.ravel(), np.arange(6) + 250.0 - 273.15)
+    assert len(unpack_calls) == 1
+
+    vector = grib_decode.decode_vector_components(path, wind)
+    assert np.all(vector.u == 3.0) and np.all(vector.v == 4.0)
+    assert len(unpack_calls) == 3
+
+
+def test_truncated_data_section_raises_when_read() -> None:
+    """A data section too short for its point count must not decode its
+    missing tail as zeros."""
+    raw = _make_grib1(param=11, level=2, bits=12, raw_values=[1, 2, 3, 4], ni=5, nj=1)
+    (m,) = list(grib1.iter_messages(raw))  # the headers are fine
+    with pytest.raises(grib1.Grib1Error):
+        m.values
+
+
+def test_values_wider_than_the_unpacker_are_rejected_up_front() -> None:
+    raw = _make_grib1(param=11, level=2, bits=58, raw_values=[1] * 6)
+    with pytest.raises(grib1.Grib1Error):
+        list(grib1.iter_messages(raw))
 
 
 def _sample_path() -> Path:
     return Path(os.environ[SAMPLE_ENV_VAR])
 
 
+@requires_sample
 def test_iter_messages_returns_regular_grid_messages() -> None:
     buf = _sample_path().read_bytes()
     messages = list(grib1.iter_messages(buf))
@@ -42,6 +201,7 @@ def test_iter_messages_returns_regular_grid_messages() -> None:
         assert m.lat1 < m.lat2  # KNMI grids scan south -> north
 
 
+@requires_sample
 def test_decode_all_configured_parameters() -> None:
     path = _sample_path()
     dataset = KNOWN_DATASETS[0]
@@ -60,6 +220,7 @@ def test_decode_all_configured_parameters() -> None:
     assert decoded_any, "expected to decode at least one configured parameter"
 
 
+@requires_sample
 def test_grid_bounds_match_dataset() -> None:
     path = _sample_path()
     dataset = KNOWN_DATASETS[0]
@@ -72,6 +233,7 @@ def test_grid_bounds_match_dataset() -> None:
     assert field.lons[-1] == pytest.approx(east, abs=0.01)
 
 
+@requires_sample
 def test_matches_eccodes_bit_for_bit() -> None:
     eccodes = pytest.importorskip("eccodes", reason="eccodes not installed; cross-check skipped")
     path = _sample_path()
