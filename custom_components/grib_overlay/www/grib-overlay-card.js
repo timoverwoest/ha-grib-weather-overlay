@@ -406,6 +406,9 @@ const GRIB_DATASET_NAMES = {
     dmi_wam_nsb: "DMI WAM - waves North Sea and Baltic (~5 km)",
     dmi_wam_natlant: "DMI WAM - waves North Atlantic (0.25°)",
     dmi_dkss_nsbs: "DMI DKSS - currents and water level North Sea and Baltic (~5 km)",
+    rws_dcsm: "RWS DCSM - currents and water level (Norwegian coast to northern Spain)",
+    rws_swan_dcsm: "RWS SWAN - waves North Sea",
+    rws_swan_kuststrook: "RWS SWAN - waves Dutch coast (fine)",
   },
 };
 

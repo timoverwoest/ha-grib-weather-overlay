@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import grib1, grib2, reproject
+from . import grib1, grib2, gridded, reproject
 from .sources.base import GribParameter
 
 
@@ -65,19 +65,29 @@ _TIME_UNIT_HOURS = {0: 1 / 60, 1: 1, 2: 24, 10: 3, 11: 6, 12: 12, 13: 0.25}
 
 
 def _iter_messages(buf: bytes):
-    """Yield messages from a GRIB1 or GRIB2 buffer, dispatching on the edition."""
+    """Yield messages from a GRIB1 or GRIB2 buffer, dispatching on the edition,
+    or from a gridded member (see gridded.py)."""
+    if buf[:4] == gridded.MAGIC:
+        try:
+            return iter(gridded.iter_messages(buf))
+        except gridded.GriddedError as err:
+            raise GribDecodeError(str(err)) from err
     idx = buf.find(b"GRIB")
     edition = buf[idx + 7] if idx >= 0 else 1
     return (grib2 if edition == 2 else grib1).iter_messages(buf)
 
 
 def _to_grid(message):
-    """Grid extraction dispatched by message type (GRIB1 vs GRIB2)."""
+    """Grid extraction dispatched by message type (GRIB1, GRIB2, gridded member)."""
+    if isinstance(message, gridded.FieldMessage):
+        return gridded.to_grid(message)
     module = grib2 if isinstance(message, grib2.Grib2Message) else grib1
     return module.to_grid(message)
 
 
 def _message_times(message) -> tuple[datetime, datetime]:
+    if isinstance(message, gridded.FieldMessage):
+        return gridded.message_times(message)
     if isinstance(message, grib2.Grib2Message):
         return grib2.message_times(message)
     run_time = _grib_datetime(message.data_date, message.data_time)

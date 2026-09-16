@@ -12,12 +12,14 @@ from .bsh import BshSource
 from .dmi import DmiSource
 from .dwd import DwdSource
 from .knmi import KnmiSource
+from .rws import RwsSource
 
 SOURCE_REGISTRY: dict[str, type[GribSource]] = {
     KnmiSource.key: KnmiSource,
     DwdSource.key: DwdSource,
     BshSource.key: BshSource,
     DmiSource.key: DmiSource,
+    RwsSource.key: RwsSource,
 }
 
 

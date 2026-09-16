@@ -23,6 +23,10 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   (Noordzee/Oostzee op ~5 km en de Noord-Atlantische Oceaan op 0,25°) en het
   stormvloedmodel **DKSS** (stroming, waterstand en watertemperatuur van
   Skagerrak tot het Kanaal), tot 5 dagen vooruit, GRIB1, **zonder sleutel**.
+- [Rijkswaterstaat](https://noos.matroos.rws.nl/) (NOOS-Matroos) — het
+  **DCSM-model** (waterstand en stroming van de Noorse kust tot Noord-Spanje) en
+  de **SWAN-golfmodellen** (Noordzee, en fijnmazig langs de Nederlandse kust),
+  48 uur vooruit, NetCDF, **zonder sleutel**.
 
 ## Features
 
@@ -45,6 +49,9 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 - **Golven, stroming en waterstand tot 5 dagen vooruit** (DMI): WAM-golven van
   de Oslofjord tot Noord-Spanje, en stroming, waterstand en watertemperatuur
   van Skagerrak tot het Kanaal.
+- **Waterstand en stroming van Rijkswaterstaat** (DCSM) van de Noorse kust tot
+  Noord-Spanje, en golven van de Noordzee en fijnmazig langs de Nederlandse kust
+  (SWAN) — dezelfde modellen die Rijkswaterstaat zelf gebruikt.
 - **Zeekaartlagen** zoals op map.openseamap.org: zeetekens, sport, dieptelijnen,
   dieptemetingen, GEBCO-diepte en een EMODnet-dieptekaart als ondergrond, via een
   lagenknop op de kaart.
@@ -204,12 +211,14 @@ worden zonder de kaart of de rest van de backend te wijzigen):
    [developer.dataplatform.knmi.nl](https://developer.dataplatform.knmi.nl) →
    Notification Service. Laat het leeg als je die niet hebt — dan pollt de
    integratie, en dat is de enige zichtbare consequentie. Plak er **niet** je
-   Open Data-sleutel in: die wordt geweigerd. Voor **DWD Open Data**, **BSH** en
-   **DMI Open Data** laat je de sleutel-velden leeg — die hebben geen sleutel nodig.
+   Open Data-sleutel in: die wordt geweigerd. Voor **DWD Open Data**, **BSH**,
+   **DMI Open Data** en **Rijkswaterstaat** laat je de sleutel-velden leeg — die
+   hebben geen sleutel nodig.
 3. Kies een dataset. KNMI: HARMONIE-AROME Cy43 **Nederland** (standaard) of
    **Europa (DINI)**. DWD: **EWAM** (Europese golven) of **ICON-D2** (weermodel).
    DMI: **WAM Noordzee/Oostzee**, **WAM Noord-Atlantisch** (golven) of **DKSS**
-   (stroming en waterstand).
+   (stroming en waterstand). Rijkswaterstaat: **DCSM** (stroming en waterstand),
+   **SWAN Noordzee** of **SWAN Nederlandse kust** (golven).
    Wil je zowel weer als golven, voeg dan een integratie-instantie per dataset
    toe; in de kaart wissel je tussen instanties.
 4. Kies welke parameters bijgehouden moeten worden. Dat kan later nog via
@@ -469,6 +478,7 @@ hoofdlettergevoelig; gebruik ze exact zoals hieronder.
 | `dwd` | DWD Open Data | nee |
 | `bsh` | BSH (zeestroming Noordzee) | nee |
 | `dmi` | DMI Open Data | nee |
+| `rws` | Rijkswaterstaat (NOOS-Matroos) | nee |
 
 ### Datasets (`dataset`)
 
@@ -482,6 +492,9 @@ hoofdlettergevoelig; gebruik ze exact zoals hieronder.
 | `dmi` | `dmi_wam_nsb` | DMI WAM — golven Noordzee en Oostzee (47–66°N, 13°W–30°O, ~5 km) | regulier lat/lon | 132 u | 1 u |
 | `dmi` | `dmi_wam_natlant` | DMI WAM — golven Noord-Atlantisch (30–78°N, 69°W–30°O, 0,25°) | regulier lat/lon | 132 u | 1 u |
 | `dmi` | `dmi_dkss_nsbs` | DMI DKSS — stroming en waterstand (48,5–65,9°N, vanaf 4,1°W, ~5 km) | regulier lat/lon | 120 u | 1 u |
+| `rws` | `rws_dcsm` | RWS DCSM — stroming en waterstand (43–64°N, 12°W–13°O, 0,05°) | regulier lat/lon | 48 u | 1 u |
+| `rws` | `rws_swan_dcsm` | RWS SWAN — golven Noordzee en Kanaal (48–64°N, 12°W–9°O, 0,05°) | regulier lat/lon | 48 u | 1 u |
+| `rws` | `rws_swan_kuststrook` | RWS SWAN — golven Nederlandse kust (51–54,4°N, 0,02°) | regulier lat/lon | 48 u | 1 u |
 
 ### Parameters (`parameter` / `parameters`)
 
@@ -555,6 +568,21 @@ van een run (+0 u) bestaan die twee nog niet, dus die beelden ontbreken daar.
 | `water_level` | Waterstand | m | scalar |
 | `water_temperature` | Watertemperatuur | °C | scalar |
 
+**RWS** (`rws_dcsm`):
+
+| `parameter` | Naam | Eenheid | Type |
+| --- | --- | --- | --- |
+| `current` | Zeestroming (oppervlak) | m/s | vector |
+| `water_level` | Waterstand | m | scalar |
+
+**RWS** (`rws_swan_dcsm` en `rws_swan_kuststrook`):
+
+| `parameter` | Naam | Eenheid | Type |
+| --- | --- | --- | --- |
+| `wave_height` | Golfhoogte (significant, Hm0) | m | scalar |
+| `wave_period` | Golfperiode (gemiddeld, Tm-1,0) | s | scalar |
+| `wave_direction` | Golfrichting (gemiddeld, Th0) | ° | scalar |
+
 **BSH** (`bsh_current_northsea`):
 
 | `parameter` | Naam | Eenheid | Type |
@@ -573,7 +601,7 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 
 | Sleutel | Waarden |
 | --- | --- |
-| `source` | `knmi`, `dwd`, `bsh` of `dmi` |
+| `source` | `knmi`, `dwd`, `bsh`, `dmi` of `rws` |
 | `api_key` | KNMI Open Data-sleutel (leeg laten voor DWD/BSH) |
 | `notification_api_key` | optioneel; **aparte** KNMI Notification Service-sleutel (leeg, of je Open Data-sleutel = alleen pollen) |
 | `dataset` | een dataset-sleutel uit de tabel hierboven |
@@ -874,6 +902,17 @@ Extra's:
 - **Waterstand** is bij DMI DKSS de hoogte ten opzichte van het gemiddelde
   zeeniveau van dat model, niet ten opzichte van NAP; vergelijk hem niet
   één-op-één met Nederlandse peilen.
+- **Rijkswaterstaat** (NOOS-Matroos) rekent elke aanvraag op eigen servers om
+  naar een regelmatig rooster. Om die dienst te ontzien haalt de integratie één
+  run per 6 uur op (de modellen draaien elke 3 uur), in stukken van 7 uur. Voor
+  DCSM is dat ~2,5 MB per uur voor het hele gebied (24 uur vooruit: ~60 MB per
+  run); SWAN Noordzee ~1,6 MB en SWAN-kust ~0,7 MB per uur. De modellen reiken
+  tot 48 uur vooruit.
+- **DCSM-waterstand**: de omrekening naar een regelmatig rooster levert langs
+  kusten en in afgesloten bekkens een handvol onmogelijke waarden (8–12 m). De
+  integratie verwijdert cellen die meer dan 2 m van hun buren afwijken (~0,04%);
+  echte uitschieters zoals springtij bij Saint-Malo blijven staan. De waterstand
+  is zoals het model hem levert, niet omgerekend naar een lokaal peil.
 
 ## Ontwikkelen & testen
 
@@ -947,6 +986,10 @@ changing the map card or the rest of the backend):
   (North Sea/Baltic at ~5 km and the North Atlantic at 0.25°) and the **DKSS**
   storm-surge model (currents, water level and water temperature from the
   Skagerrak to the Channel), up to 5 days ahead, GRIB1, **no key**.
+- [Rijkswaterstaat](https://noos.matroos.rws.nl/) (NOOS-Matroos) — the **DCSM**
+  model (water level and currents from the Norwegian coast to northern Spain) and
+  the **SWAN** wave models (North Sea, and at a fine grid along the Dutch coast),
+  48 hours ahead, NetCDF, **no key**.
 
 ## Features
 
@@ -969,6 +1012,9 @@ changing the map card or the rest of the backend):
 - **Waves, currents and water level up to 5 days ahead** (DMI): WAM waves from
   the Oslofjord to northern Spain, and currents, water level and water
   temperature from the Skagerrak to the Channel.
+- **Rijkswaterstaat water level and currents** (DCSM) from the Norwegian coast to
+  northern Spain, and waves for the North Sea and, finely, the Dutch coast (SWAN)
+  — the models Rijkswaterstaat uses itself.
 - **Nautical chart layers** as on map.openseamap.org: seamarks, sport, depth
   contours, depth soundings, GEBCO depth and an EMODnet bathymetry base map, via a
   layer button on the map.
@@ -1121,12 +1167,13 @@ changing the map card or the rest of the backend):
    [developer.dataplatform.knmi.nl](https://developer.dataplatform.knmi.nl) →
    Notification Service. Leave it empty if you don't have one — the integration
    then polls, which is the only visible consequence. Do **not** paste your Open
-   Data key there: it is refused. For **DWD Open Data**, **BSH** and **DMI Open
-   Data** leave the key fields empty — they need no key.
+   Data key there: it is refused. For **DWD Open Data**, **BSH**, **DMI Open
+   Data** and **Rijkswaterstaat** leave the key fields empty — they need no key.
 3. Choose a dataset. KNMI: HARMONIE-AROME Cy43 **Netherlands** (default) or
    **Europe (DINI)**. DWD: **EWAM** (European waves) or **ICON-D2** (weather
    model). DMI: **WAM North Sea/Baltic**, **WAM North Atlantic** (waves) or
-   **DKSS** (currents and water level). If you want both weather and waves, add one integration instance per
+   **DKSS** (currents and water level). Rijkswaterstaat: **DCSM** (currents and
+   water level), **SWAN North Sea** or **SWAN Dutch coast** (waves). If you want both weather and waves, add one integration instance per
    dataset; in the card you switch between instances.
 4. Choose which parameters should be kept up to date. You can change that later
    under **Configure** (see step 5) — for instance to switch swell on for an
@@ -1381,6 +1428,7 @@ exactly as below.
 | `dwd` | DWD Open Data | no |
 | `bsh` | BSH (North Sea current) | no |
 | `dmi` | DMI Open Data | no |
+| `rws` | Rijkswaterstaat (NOOS-Matroos) | no |
 
 ### Datasets (`dataset`)
 
@@ -1394,6 +1442,9 @@ exactly as below.
 | `dmi` | `dmi_wam_nsb` | DMI WAM — waves North Sea and Baltic (47–66°N, 13°W–30°E, ~5 km) | regular lat/lon | 132 h | 1 h |
 | `dmi` | `dmi_wam_natlant` | DMI WAM — waves North Atlantic (30–78°N, 69°W–30°E, 0.25°) | regular lat/lon | 132 h | 1 h |
 | `dmi` | `dmi_dkss_nsbs` | DMI DKSS — currents and water level (48.5–65.9°N, from 4.1°W, ~5 km) | regular lat/lon | 120 h | 1 h |
+| `rws` | `rws_dcsm` | RWS DCSM — currents and water level (43–64°N, 12°W–13°E, 0.05°) | regular lat/lon | 48 h | 1 h |
+| `rws` | `rws_swan_dcsm` | RWS SWAN — waves North Sea and Channel (48–64°N, 12°W–9°E, 0.05°) | regular lat/lon | 48 h | 1 h |
+| `rws` | `rws_swan_kuststrook` | RWS SWAN — waves Dutch coast (51–54.4°N, 0.02°) | regular lat/lon | 48 h | 1 h |
 
 ### Parameters (`parameter` / `parameters`)
 
@@ -1467,6 +1518,21 @@ maximum of the past hour, without a direction of their own. At a run's start tim
 | `water_level` | Water level | m | scalar |
 | `water_temperature` | Water temperature | °C | scalar |
 
+**RWS** (`rws_dcsm`):
+
+| `parameter` | Name | Unit | Type |
+| --- | --- | --- | --- |
+| `current` | Sea current (surface) | m/s | vector |
+| `water_level` | Water level | m | scalar |
+
+**RWS** (`rws_swan_dcsm` and `rws_swan_kuststrook`):
+
+| `parameter` | Name | Unit | Type |
+| --- | --- | --- | --- |
+| `wave_height` | Wave height (significant, Hm0) | m | scalar |
+| `wave_period` | Wave period (mean, Tm-1,0) | s | scalar |
+| `wave_direction` | Wave direction (mean, Th0) | ° | scalar |
+
 **BSH** (`bsh_current_northsea`):
 
 | `parameter` | Name | Unit | Type |
@@ -1485,7 +1551,7 @@ include `swell_direction` too, or the swell rows have no arrows.
 
 | Key | Values |
 | --- | --- |
-| `source` | `knmi`, `dwd`, `bsh` or `dmi` |
+| `source` | `knmi`, `dwd`, `bsh`, `dmi` or `rws` |
 | `api_key` | KNMI Open Data key (leave empty for DWD/BSH) |
 | `notification_api_key` | optional; **separate** KNMI Notification Service key (empty, or your Open Data key = polling only) |
 | `dataset` | a dataset key from the table above |
@@ -1780,6 +1846,16 @@ Also:
   120) — the default 24 hours uses only part of the 5 days.
 - **Water level** in DMI DKSS is the height above that model's mean sea level,
   not above NAP (Dutch datum); don't compare it one-to-one with Dutch gauges.
+- **Rijkswaterstaat** (NOOS-Matroos) interpolates every request to a regular grid
+  on its own servers. To go easy on that service the integration takes one run
+  every 6 hours (the models run every 3), in pieces of 7 hours. For DCSM that is
+  ~2.5 MB per hour for the whole area (24 hours ahead: ~60 MB per run); SWAN
+  North Sea ~1.6 MB and SWAN coast ~0.7 MB per hour. The models reach 48 hours.
+- **DCSM water level**: interpolating to a regular grid leaves a handful of
+  impossible values (8–12 m) along coasts and in enclosed basins. The
+  integration removes cells that differ from their neighbours by more than 2 m
+  (~0.04%); real extremes such as a spring tide at Saint-Malo stay. The water
+  level is as the model delivers it, not converted to a local datum.
 
 ## Development & testing
 
