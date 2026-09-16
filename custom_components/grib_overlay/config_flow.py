@@ -270,8 +270,8 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                     },
                 ): str,
                 # Where the GRIB working files go. Blank -> the default root
-                # outside /config (/share/grib_overlay, else the temp dir), which
-                # is what keeps Home Assistant backups small and reliable.
+                # outside every backup folder (/var/tmp/grib_overlay), which is
+                # what keeps Home Assistant backups small and reliable.
                 vol.Optional(
                     CONF_STORAGE_PATH,
                     description={

@@ -140,25 +140,25 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             notification_api_key=notification_key,
             instance_id=entry.entry_id,  # stable MQTT client id across reloads
         )
-        # Everything this integration writes lives OUTSIDE /config: Home Assistant
-        # tars that folder for every backup, and our file churn used to abort the
-        # backup outright (FileNotFoundError on a member deleted mid-tar) while
-        # the rendered cache needlessly bloated it. See storage_paths.
-        self.storage_dir = storage_paths.entry_dir(
-            entry.options.get(CONF_STORAGE_PATH) or entry.data.get(CONF_STORAGE_PATH),
-            entry.entry_id,
-        )
-        # In-flight downloads go somewhere a backup never looks. By default that
-        # is NOT the cache location: /share can be (and often is) included in the
-        # automatic backup, and a run caught mid-download adds gigabytes to it.
-        # An explicit storage_path is honoured for both -- the user picked it.
-        self._scratch_root = storage_paths.scratch_dir(
-            entry.options.get(CONF_STORAGE_PATH) or entry.data.get(CONF_STORAGE_PATH),
-            entry.entry_id,
-        )
-        # Pre-0.26 location, inside /config. Cleared once on setup (see
-        # _migrate_legacy_storage) so an upgrade actually shrinks the backup.
-        self._legacy_storage_dir = Path(hass.config.path(DOMAIN, entry.entry_id))
+        # Everything this integration writes lives outside every folder a backup
+        # can include: our file churn used to abort backups outright
+        # (FileNotFoundError on a member deleted mid-tar) and the cache made them
+        # gigabytes heavier, while all of it can be downloaded again. See
+        # storage_paths.
+        configured = entry.options.get(CONF_STORAGE_PATH) or entry.data.get(CONF_STORAGE_PATH)
+        self.storage_dir = storage_paths.entry_dir(configured, entry.entry_id)
+        self._scratch_root = storage_paths.scratch_dir(configured, entry.entry_id)
+        # Earlier locations -- /config (up to 0.25) and /share (0.26-0.34), both in
+        # backups. Cleared once (see _migrate_legacy_storage) so an upgrade
+        # actually shrinks the backup; never the folder in use now.
+        self._legacy_storage_dirs = [
+            legacy
+            for legacy in (
+                Path(hass.config.path(DOMAIN, entry.entry_id)),
+                storage_paths.LEGACY_SHARE_ROOT / entry.entry_id,
+            )
+            if not storage_paths.overlaps(legacy, self.storage_dir)
+        ]
         self._legacy_migrated = False
         # Optional per-parameter custom colour scales (baked into the PNG at
         # render time). Parsed once; the coordinator is recreated on an options
@@ -178,63 +178,73 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
     @property
     def _raw_dir(self) -> Path:
-        """Scratch space for in-flight downloads (run archive, raw members).
-
-        Kept out of the cache tree on purpose: /share can be included in the
-        automatic backup, and a run caught mid-download would then add gigabytes
-        to it. See storage_paths.
-        """
+        """Scratch space for in-flight downloads (run archive, raw members)."""
         return self._scratch_root
 
-    def _migrate_legacy_storage(self) -> None:
-        """Blocking: get the pre-0.26 cache out of /config, once.
+    def _migrate_legacy_storage(self, in_use: list[Path]) -> None:
+        """Blocking: get the caches of earlier versions out of the backup folders, once.
 
-        Up to 0.25 the run cache lived in ``/config/grib_overlay/<entry_id>``.
-        Leaving it there would keep every backup hundreds of MB heavier, so move
-        it to the new root -- or, when that crosses a filesystem boundary (it
-        does on Home Assistant OS, where /config and /share are separate mounts),
-        simply drop it: it is a cache and the next poll rebuilds it.
+        Each is moved to the current root when that is a plain rename, and
+        otherwise dropped -- it is a cache, and on Home Assistant OS /config,
+        /share and /var/tmp are separate mounts anyway. ``in_use`` are the
+        folders any entry is configured to use now; those are never touched.
         """
         if self._legacy_migrated:
             return
-        legacy = self._legacy_storage_dir
-        if not legacy.is_dir():
-            self._legacy_migrated = True
-            return
-        self.storage_dir.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            if not self.storage_dir.exists():
-                legacy.rename(self.storage_dir)
-                _LOGGER.warning(
-                    "Moved the GRIB cache out of the config folder: %s -> %s "
-                    "(config is tarred for every Home Assistant backup)",
-                    legacy,
-                    self.storage_dir,
-                )
-                self._legacy_migrated = True
-                return
-        except OSError as err:
-            _LOGGER.debug("Could not move %s to %s: %s", legacy, self.storage_dir, err)
-        shutil.rmtree(legacy, ignore_errors=True)
-        _LOGGER.warning(
-            "Removed the old GRIB cache from the config folder (%s); it is "
-            "rebuilt at %s on the next run so backups stay small and can no "
-            "longer fail on a file that vanished mid-backup",
-            legacy,
-            self.storage_dir,
-        )
+        for legacy in self._legacy_storage_dirs:
+            if not legacy.is_dir() or any(storage_paths.overlaps(legacy, p) for p in in_use):
+                continue
+            moved = False
+            try:
+                if not self.storage_dir.exists():
+                    self.storage_dir.parent.mkdir(parents=True, exist_ok=True)
+                    legacy.rename(self.storage_dir)
+                    moved = True
+            except OSError as err:
+                _LOGGER.debug("Could not move %s to %s: %s", legacy, self.storage_dir, err)
+            if not moved:
+                shutil.rmtree(legacy, ignore_errors=True)
+            _LOGGER.warning(
+                "%s the old GRIB cache at %s (now %s): it was part of Home "
+                "Assistant backups, making them larger and able to fail on a file "
+                "that vanished mid-backup",
+                "Moved" if moved else "Removed",
+                legacy,
+                self.storage_dir,
+            )
+            # Drops /config/grib_overlay once the last entry has left it.
+            try:
+                legacy.parent.rmdir()
+            except OSError:
+                pass
+        self._remove_legacy_share_root(in_use)
         self._legacy_migrated = True
-        # Drops /config/grib_overlay itself once the last entry has migrated.
-        try:
-            legacy.parent.rmdir()
-        except OSError:
-            pass
+
+    @staticmethod
+    def _remove_legacy_share_root(in_use: list[Path]) -> None:
+        """Blocking: drop what else 0.26-0.34 left in /share/grib_overlay.
+
+        Its scratch and weather-chart folders, and the caches of entries that
+        have since been deleted -- unless some entry is configured to use it.
+        """
+        root = storage_paths.LEGACY_SHARE_ROOT
+        if not root.is_dir() or any(storage_paths.overlaps(root, p) for p in in_use):
+            return
+        shutil.rmtree(root, ignore_errors=True)
+        _LOGGER.warning("Removed the old GRIB cache folder %s (part of backups)", root)
 
     async def _async_migrate_legacy_storage(self) -> None:
-        """Run the one-time /config cleanup, unless a backup is walking it."""
+        """Run the one-time cleanup of old cache folders, unless a backup is walking them."""
         if self._legacy_migrated or self.backup_in_progress():
             return
-        await self.hass.async_add_executor_job(self._migrate_legacy_storage)
+        in_use = [
+            storage_paths.storage_root(
+                e.options.get(CONF_STORAGE_PATH) or e.data.get(CONF_STORAGE_PATH)
+            )
+            for e in self.hass.config_entries.async_entries(DOMAIN)
+            if e.options.get(CONF_STORAGE_PATH) or e.data.get(CONF_STORAGE_PATH)
+        ]
+        await self.hass.async_add_executor_job(self._migrate_legacy_storage, in_use)
 
     def _auth_failure(self, err: GribSourceAuthError) -> str:
         """Log an actionable warning for a rejected key; return the failure text.
@@ -552,7 +562,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
         for frames in new_frames.values():
             frames.sort(key=lambda f: f.valid_time)
-        self._write_frames_manifest(run_dir, run_filename, new_frames)
+        self._write_frames_manifest(run_dir, run_filename, new_frames, horizon_hours)
         return new_frames
 
     @staticmethod
@@ -660,13 +670,18 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         return json.dumps(self._color_scales, sort_keys=True) if self._color_scales else ""
 
     def _write_frames_manifest(
-        self, run_dir: Path, run_filename: str, frames: dict[str, list[Frame]]
+        self,
+        run_dir: Path,
+        run_filename: str,
+        frames: dict[str, list[Frame]],
+        horizon_hours: float | None = None,
     ) -> None:
         """Persist frame metadata so a restart can rebuild self.frames from disk."""
         manifest = {
             "manifest_version": self.MANIFEST_VERSION,
             "color_scales": self._color_scales_signature(),
             "run_filename": run_filename,
+            "horizon_hours": horizon_hours,
             "frames": {
                 key: [
                     {
@@ -695,6 +710,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         if not self.storage_dir.exists():
             return None, {}
         enabled = set(enabled_parameter_keys(self.entry))
+        horizon = float(
+            self.entry.options.get(CONF_FORECAST_HORIZON_HOURS, DEFAULT_FORECAST_HORIZON_HOURS)
+        )
         run_dirs = sorted((p for p in self.storage_dir.iterdir() if p.is_dir()), reverse=True)
         for run_dir in run_dirs:
             manifest_path = run_dir / self.MANIFEST_NAME
@@ -718,6 +736,13 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             cached = manifest.get("frames", {})
             if not enabled <= set(cached):
                 continue
+            # Rendered for a shorter horizon than is now asked for -> process the
+            # run again, or the card would stay short until the next run. (A
+            # longer one is simply cut; a manifest from before 0.35 has no record
+            # and is taken as it is.)
+            cached_horizon = manifest.get("horizon_hours")
+            if cached_horizon is not None and float(cached_horizon) < horizon:
+                continue
             frames: dict[str, list[Frame]] = {}
             valid = True
             for key, flist in cached.items():
@@ -725,6 +750,10 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                     continue  # switched off since: don't offer it
                 frames[key] = []
                 for fd in flist:
+                    valid_time = datetime.fromisoformat(fd["valid_time"])
+                    run_time = datetime.fromisoformat(fd["run_time"])
+                    if valid_time - run_time > timedelta(hours=horizon):
+                        continue
                     png_path = run_dir / fd["png"]
                     if not png_path.exists():
                         valid = False
@@ -743,8 +772,8 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                     frames[key].append(
                         Frame(
                             parameter_key=key,
-                            valid_time=datetime.fromisoformat(fd["valid_time"]),
-                            run_time=datetime.fromisoformat(fd["run_time"]),
+                            valid_time=valid_time,
+                            run_time=run_time,
                             png_path=png_path,
                             bounds=tuple(fd["bounds"]),
                             legend=legend,
@@ -760,8 +789,8 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
     def _cleanup_old_runs(self) -> None:
         retain = self.entry.options.get(CONF_RETAIN_RUNS, DEFAULT_RETAIN_RUNS)
-        # The cache does live in a folder a backup can include (/share by
-        # default), and this is the one place that deletes from it in bulk. A
+        # The default cache is in no backup folder, but a storage_path may point
+        # into one, and this is the one place that deletes from it in bulk. A
         # backup may have started during the decode, after the check that let
         # this run through -- so re-check right before removing anything. The
         # stale run is simply dropped after the next run instead.

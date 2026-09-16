@@ -663,13 +663,13 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 | Sleutel | Type | Default | Bereik / vorm |
 | --- | --- | --- | --- |
 | `parameters` | lijst | de keuze bij het toevoegen | welke parameters van de dataset gedownload en getoond worden. Een parameter die je aanzet verschijnt zodra de huidige run opnieuw is verwerkt; dat begint direct na opslaan |
-| `forecast_horizon_hours` | getal (uren) | `24` | 1–168 |
+| `forecast_horizon_hours` | getal (uren) | `24` | 1–168. Maak je hem langer, dan wordt de huidige run direct opnieuw verwerkt; korter knipt de al verwerkte run in |
 | `retain_runs` | geheel getal | `2` | 1–10 |
 | `update_interval_minutes` | geheel getal (min) | `30` | 5–180 |
 | `notification_api_key` | tekst | (leeg) | **aparte** KNMI Notification Service-sleutel voor push. Niet je Open Data-sleutel: die weigert de broker met `Not authorized`. Leeg = alleen pollen, geen MQTT-poging |
 | `observations_api_key` | tekst | (leeg) | KNMI Open Data-sleutel mét toegang tot `10-minute-in-situ-meteorological-observations`, voor het **downloaden van stationswaarnemingen**. Je HARMONIE-sleutel heeft daar vaak géén toegang toe (KNMI geeft 403). Leeg = HARMONIE-sleutel hergebruiken |
 | `alias` | tekst | (leeg) | **korte naam** voor deze bron, getoond als compact label in de vergelijking en het meteogram (bv. `KNMI NL`). Leeg = automatisch afgeleid uit de bron (bronnen van dezelfde soort worden vanzelf onderscheiden) |
-| `storage_path` | tekst | (leeg) | **map voor de werkbestanden** (run-archief, gedecodeerde leden, gerenderde cache). Leeg = `/share/grib_overlay` op HAOS/Supervised, anders de tijdelijke systeemmap. Zet dit **nooit** binnen `/config`: die map gaat in elke back-up (zie [Back-ups](#back-ups)) |
+| `storage_path` | tekst | (leeg) | **map voor de werkbestanden** (run-archief, uitgepakte bestanden, gerenderde cache). Leeg = `/var/tmp/grib_overlay`: in geen enkele back-up, en geleegd bij een HA-update (daarna wordt alles opnieuw gedownload). Zet dit **nooit** in een map die je back-up meeneemt (zie [Back-ups](#back-ups)) |
 | `color_scales` | meerregelige tekst | (leeg) | per regel: `parameter: waarde:#hex, waarde:#hex, …` (waarden in de **eigen eenheid** van de parameter) |
 
 ### Card-instellingen (Lovelace-YAML)
@@ -869,54 +869,54 @@ Een taal toevoegen betekent: een blok bijzetten in `GRIB_TEXT`,
 
 ## Back-ups
 
-Home Assistant zet de **hele** `/config`-map in elke back-up. Tot en met v0.25
-stonden de werkbestanden van deze integratie daar ook, met twee gevolgen: de
-back-up werd honderden MB's groter dan nodig, en als een bestand precies tussen
-"back-up inventariseert" en "back-up schrijft" verdween, faalde de **héle**
-back-up met `FileNotFoundError`.
-
-**Sinds v0.26 schrijft de integratie niets meer in `/config`.** Alles — het
-run-archief, de uitgepakte GRIB-leden en de gerenderde PNG/JSON-cache — staat
-buiten de configuratiemap:
+**De integratie schrijft niets meer in een map die een back-up kan meenemen.**
+Alle werkbestanden — run-archieven, uitgepakte GRIB-bestanden en de gerenderde
+PNG/JSON-cache — zijn opnieuw te downloaden en horen niet in een back-up:
 
 | Wat | Standaardlocatie |
 | --- | --- |
-| **Cache** (gerenderde PNG/JSON per run) | `/share/grib_overlay/…`, of de tijdelijke systeemmap zonder `/share` |
-| **Werkbestanden tijdens een download** (run-archief, uitgepakte GRIB-leden) | `/var/tmp/grib_overlay/…` |
+| **Cache** (gerenderde beelden per run) | `/var/tmp/grib_overlay/<integratie>/…` |
+| **Werkbestanden tijdens een download** | `/var/tmp/grib_overlay/.raw/<integratie>/…` |
+| **KNMI-weerkaarten** | `/var/tmp/grib_overlay/weather_maps/` |
 
-Die splitsing is bewust. `/share` is echte schijf en valt buiten de config-tar,
-maar je kunt in de back-upinstellingen wél kiezen om de map **share** mee te
-nemen — en veel mensen doen dat. Een run die tijdens de back-up wordt
-gedownload zet er dan even **gigabytes** neer (gemeten: 3,4 GB over twee
-KNMI-bronnen) en die gaan mee de tar in. Supervisor kent geen manier om een map
-uit te sluiten, dus de enige knop is de locatie: de werkbestanden staan in
-`/var/tmp`, dat in geen enkele back-upmap zit. Ze mogen ook zonder pardon
-verdwijnen — het zijn puur bestanden die tijdens één download bestaan.
+Waarom dat ertoe doet:
+
+- **Grootte.** Met een handvol bronnen is de cache al snel 1–2 GB, en kaartbeelden
+  laten zich nauwelijks comprimeren.
+- **Betrouwbaarheid.** Verdwijnt een bestand precies tussen "back-up
+  inventariseert" en "back-up schrijft", dan faalt de **hele** back-up met
+  `FileNotFoundError`. Deze integratie ruimt voortdurend bestanden op.
+
+`/config` gaat altijd mee in een back-up, en `/share` en `/media` als je die in
+de back-upinstellingen aanvinkt; Supervisor kan geen losse map uitsluiten. De
+enige knop is dus de locatie. `/var/tmp` is binnen de Home Assistant-container
+gewoon schijf en zit in geen enkele back-upmap.
+
+**Gevolg:** bij een update van Home Assistant wordt de container opnieuw
+aangemaakt en is `/var/tmp` leeg. De integratie downloadt dan bij de volgende
+poll gewoon alles opnieuw; tot die tijd zijn de kaarten leeg. Een gewone herstart
+laat de cache staan.
 
 Waarom niet `/tmp`? Dat is binnen HAOS een *tmpfs* (RAM), en een archief van
-~850 MB hoort niet in je geheugen. `/var/tmp` is in dezelfde container gewoon
-schijf.
+~850 MB hoort niet in je geheugen.
 
-Met de optie **Map voor werkbestanden** kies je desgewenst zelf een pad; dan
-komen cache én werkbestanden daar te staan (jij koos die plek immers bewust).
-Zet dat nooit binnen `/config`.
+Met de optie **Map voor werkbestanden** kies je desgewenst zelf een pad (cache en
+werkbestanden komen dan daar). Zet dat nooit binnen `/config`, en ook niet in
+`/share` of `/media` als je back-up die meeneemt.
 
 Extra's:
 
-- **Automatische opruiming bij het updaten.** De oude cache in
-  `/config/grib_overlay/…` wordt bij de eerste start na de update verplaatst of
-  (als dat een filesystem-grens kruist, wat op HAOS het geval is) weggegooid —
-  het is een cache, die binnen enkele minuten opnieuw is opgebouwd. Zie het
-  `WARNING` in het logboek. Zo wordt je back-up direct kleiner.
-- **Ruwe downloads apart.** Het archief en de uitgepakte leden leven in een
-  aparte scratch-map naast de run-mappen, zodat het opruimen van oude runs nooit
-  een lopende download kan raken.
-- **Pauze tijdens de back-up.** Via HA's back-up-platform (`async_pre_backup` /
-  `async_post_backup`) pauzeert de integratie het verwerken en opruimen van runs
-  zolang een back-up loopt. Dit is nu een tweede vangnet (voor het opruimen
-  hierboven, en voor wie de map bewust tóch in `/config` zet): het was
-  onvoldoende als vaste oplossing, omdat het verwerken van een run langer kan
-  duren dan de wachttijd waarna de back-up alsnog begint.
+- **Automatische opruiming bij het updaten.** Oudere versies bewaarden de cache in
+  `/config/grib_overlay` (tot v0.25) en `/share/grib_overlay` (v0.26–v0.34). Bij de
+  eerste start na de update worden die mappen verwijderd — niet terwijl er een
+  back-up loopt — en is je volgende back-up direct kleiner. Zie het `WARNING` in
+  het logboek. Een map die je zelf als **Map voor werkbestanden** hebt ingesteld,
+  blijft staan.
+- **Ruwe downloads apart.** Het archief en de uitgepakte bestanden staan naast de
+  run-mappen, zodat het opruimen van oude runs nooit een lopende download raakt.
+- **Pauze tijdens de back-up.** Via HA's back-up-platform pauzeert de integratie
+  het verwerken en opruimen van runs zolang een back-up loopt: een vangnet voor het
+  opruimen hierboven en voor wie de map bewust in een back-upmap zet.
 
 ## Bekende beperkingen
 
@@ -1681,13 +1681,13 @@ include `swell_direction` too, or the swell rows have no arrows.
 | Key | Type | Default | Range / form |
 | --- | --- | --- | --- |
 | `parameters` | list | the choice made when adding | which parameters of the dataset are downloaded and shown. A parameter you switch on appears once the current run has been processed again; that starts right after saving |
-| `forecast_horizon_hours` | number (hours) | `24` | 1–168 |
+| `forecast_horizon_hours` | number (hours) | `24` | 1–168. Making it longer processes the current run again right away; shorter cuts the run already processed |
 | `retain_runs` | integer | `2` | 1–10 |
 | `update_interval_minutes` | integer (min) | `30` | 5–180 |
 | `notification_api_key` | text | (empty) | **separate** KNMI Notification Service key for push. Not your Open Data key: the broker refuses that with `Not authorized`. Empty = polling only, no MQTT attempt |
 | `observations_api_key` | text | (empty) | KNMI Open Data key with access to `10-minute-in-situ-meteorological-observations`, for **downloading station observations**. Your HARMONIE key is often not authorised for it (KNMI returns 403). Empty = reuse the HARMONIE key |
 | `alias` | text | (empty) | **short name** for this source, shown as the compact label in the comparison and meteogram (e.g. `KNMI NL`). Empty = derived automatically from the source (same-source entries are disambiguated automatically) |
-| `storage_path` | text | (empty) | **folder for the working files** (run archive, decoded members, rendered cache). Empty = `/share/grib_overlay` on HAOS/Supervised, otherwise the system temp folder. **Never** point this inside `/config`: that folder goes into every backup (see [Backups](#backups)) |
+| `storage_path` | text | (empty) | **folder for the working files** (run archive, extracted files, rendered cache). Empty = `/var/tmp/grib_overlay`: in no backup, and emptied by an HA update (everything is then downloaded again). **Never** point this into a folder your backup includes (see [Backups](#backups)) |
 | `color_scales` | multi-line text | (empty) | per line: `parameter: value:#hex, value:#hex, …` (values in the parameter's **own unit**) |
 
 ### Card settings (Lovelace YAML)
@@ -1886,52 +1886,55 @@ Adding a language means: a block in `GRIB_TEXT`, `GRIB_PARAM_NAMES`,
 
 ## Backups
 
-Home Assistant puts the **entire** `/config` folder into every backup. Up to
-v0.25 this integration's working files lived there too, with two consequences:
-backups grew hundreds of MB larger than necessary, and if a file disappeared
-right between "backup takes inventory" and "backup writes", the **whole** backup
-failed with `FileNotFoundError`.
-
-**Since v0.26 the integration writes nothing inside `/config`.** Everything — the
-run archive, the extracted GRIB members and the rendered PNG/JSON cache — lives
-outside the config folder:
+**The integration writes nothing into a folder a backup can include.** All
+working files — run archives, extracted GRIB files and the rendered PNG/JSON
+cache — can be downloaded again and don't belong in a backup:
 
 | What | Default location |
 | --- | --- |
-| **Cache** (rendered PNG/JSON per run) | `/share/grib_overlay/…`, or the system temp folder without `/share` |
-| **Working files during a download** (run archive, extracted GRIB members) | `/var/tmp/grib_overlay/…` |
+| **Cache** (rendered images per run) | `/var/tmp/grib_overlay/<entry>/…` |
+| **Working files during a download** | `/var/tmp/grib_overlay/.raw/<entry>/…` |
+| **KNMI weather charts** | `/var/tmp/grib_overlay/weather_maps/` |
 
-The split is deliberate. `/share` is real disk and outside the config tar, but
-the backup settings let you include the **share** folder — and plenty of people
-do. A run being downloaded while the backup runs then briefly puts **gigabytes**
-there (measured: 3.4GB across two KNMI sources), and they go straight into the
-tar. Supervisor has no way to exclude a directory, so the only lever is
-location: the working files live in `/var/tmp`, which is not in any backup
-folder. They are also free to vanish at any time — they only exist during one
-download.
+Why that matters:
+
+- **Size.** With a handful of sources the cache easily reaches 1–2 GB, and map
+  images hardly compress.
+- **Reliability.** If a file disappears right between "backup takes inventory"
+  and "backup writes", the **whole** backup fails with `FileNotFoundError`, and
+  this integration removes files all the time.
+
+`/config` always goes into a backup, and `/share` and `/media` when you tick them
+in the backup settings; Supervisor cannot exclude a single directory. So the only
+lever is location. Inside the Home Assistant container `/var/tmp` is plain disk,
+and it is in no backup folder.
+
+**Consequence:** a Home Assistant update recreates the container, which empties
+`/var/tmp`. The integration then simply downloads everything again on the next
+poll; until then the maps are empty. A normal restart keeps the cache.
 
 Why not `/tmp`? On HAOS that is a *tmpfs* (RAM), and a ~850MB archive does not
-belong in memory. `/var/tmp` in the same container is plain disk.
+belong in memory.
 
-The **Working files folder** option lets you pick your own path; the cache and
-the working files then both go there (you chose that place deliberately). Never
-point it inside `/config`.
+The **Working files folder** option lets you pick your own path (cache and
+working files then go there). Never point it inside `/config`, nor into `/share`
+or `/media` if your backup includes them.
 
 Also:
 
-- **Automatic cleanup on upgrade.** The old cache in `/config/grib_overlay/…` is
-  moved on the first start after the update, or dropped when that would cross a
-  filesystem boundary (it does on HAOS) — it is a cache and is rebuilt within
-  minutes. Look for the `WARNING` in the log. Your backup shrinks straight away.
-- **Raw downloads kept apart.** The archive and the extracted members live in a
-  scratch directory *beside* the run directories, so cleaning up old runs can
-  never touch an in-flight download.
-- **Pause during the backup.** Via HA's backup platform (`async_pre_backup` /
-  `async_post_backup`) the integration pauses processing and cleaning up runs
-  while a backup runs. This is now a second line of defence (for the cleanup
-  above, and for anyone who deliberately points the folder back into `/config`):
-  it was not enough on its own, because decoding a run can outlast the drain
-  timeout after which the backup proceeds anyway.
+- **Automatic cleanup on upgrade.** Older versions kept the cache in
+  `/config/grib_overlay` (up to v0.25) and `/share/grib_overlay` (v0.26–v0.34). On
+  the first start after the update those folders are removed — not while a
+  backup is running — and your next backup is smaller straight away. Look for the
+  `WARNING` in the log. A folder you set yourself as **Working files folder**
+  stays.
+- **Raw downloads kept apart.** The archive and the extracted files live beside
+  the run directories, so cleaning up old runs never touches an in-flight
+  download.
+- **Pause during the backup.** Via HA's backup platform the integration pauses
+  processing and cleaning up runs while a backup runs: a safety net for the
+  cleanup above, and for anyone who deliberately puts the folder in a backup
+  folder.
 
 ## Known limitations
 

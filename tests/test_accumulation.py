@@ -18,6 +18,7 @@ from custom_components.grib_overlay import grib_decode
 from custom_components.grib_overlay.const import (
     CONF_API_KEY,
     CONF_DATASET,
+    CONF_FORECAST_HORIZON_HOURS,
     CONF_PARAMETERS,
     CONF_SOURCE,
     CONF_STORAGE_PATH,
@@ -78,34 +79,38 @@ def _entry(hass, tmp_path, **options) -> MockConfigEntry:
     return entry
 
 
-def _write_cached_run(coordinator: GribOverlayCoordinator, keys: list[str]) -> None:
+def _write_cached_run(
+    coordinator: GribOverlayCoordinator, keys: list[str], leads=(0,), horizon=None
+) -> None:
     run_dir = coordinator.storage_dir / "2026091600"
     run_dir.mkdir(parents=True)
     frames = {}
     for key in keys:
-        png = run_dir / f"{key}_20260916T0000.png"
-        png.write_bytes(b"png")
-        frames[key] = [
-            {
-                "valid_time": RUN.isoformat(),
-                "run_time": RUN.isoformat(),
-                "png": png.name,
-                "wind": None,
-                "field": None,
-                "bounds": [30.0, -10.5, 66.0, 42.0],
-                "legend": {"unit": "m", "min_value": 0, "max_value": 8, "stops": []},
-            }
-        ]
-    (run_dir / coordinator.MANIFEST_NAME).write_text(
-        json.dumps(
-            {
-                "manifest_version": coordinator.MANIFEST_VERSION,
-                "color_scales": "",
-                "run_filename": "2026091600",
-                "frames": frames,
-            }
-        )
-    )
+        frames[key] = []
+        for lead in leads:
+            valid = RUN + timedelta(hours=lead)
+            png = run_dir / f"{key}_{valid:%Y%m%dT%H%M}.png"
+            png.write_bytes(b"png")
+            frames[key].append(
+                {
+                    "valid_time": valid.isoformat(),
+                    "run_time": RUN.isoformat(),
+                    "png": png.name,
+                    "wind": None,
+                    "field": None,
+                    "bounds": [30.0, -10.5, 66.0, 42.0],
+                    "legend": {"unit": "m", "min_value": 0, "max_value": 8, "stops": []},
+                }
+            )
+    manifest = {
+        "manifest_version": coordinator.MANIFEST_VERSION,
+        "color_scales": "",
+        "run_filename": "2026091600",
+        "frames": frames,
+    }
+    if horizon is not None:
+        manifest["horizon_hours"] = horizon
+    (run_dir / coordinator.MANIFEST_NAME).write_text(json.dumps(manifest))
 
 
 async def test_options_choice_wins_over_the_setup_choice(hass, tmp_path) -> None:
@@ -140,3 +145,36 @@ async def test_a_switched_off_parameter_is_not_offered_from_the_cache(hass, tmp_
     run, frames = coordinator._load_cached_frames()
     assert run == "2026091600"
     assert list(frames) == ["wave_height"]
+
+
+async def test_a_longer_horizon_processes_the_run_again(hass, tmp_path) -> None:
+    """Otherwise the card stays at the old length until the next run."""
+    entry = _entry(hass, tmp_path, **{CONF_FORECAST_HORIZON_HOURS: 120.0})
+    coordinator = GribOverlayCoordinator(hass, entry)
+    _write_cached_run(coordinator, ["wave_height"], leads=range(25), horizon=24.0)
+    assert coordinator._load_cached_frames() == (None, {})
+
+
+async def test_a_shorter_horizon_cuts_the_cached_run(hass, tmp_path) -> None:
+    entry = _entry(hass, tmp_path, **{CONF_FORECAST_HORIZON_HOURS: 6.0})
+    coordinator = GribOverlayCoordinator(hass, entry)
+    _write_cached_run(coordinator, ["wave_height"], leads=range(25), horizon=24.0)
+    run, frames = coordinator._load_cached_frames()
+    assert run == "2026091600"
+    assert len(frames["wave_height"]) == 7  # +0 .. +6 h
+
+
+async def test_a_run_rendered_for_the_same_horizon_is_reused(hass, tmp_path) -> None:
+    entry = _entry(hass, tmp_path, **{CONF_FORECAST_HORIZON_HOURS: 24.0})
+    coordinator = GribOverlayCoordinator(hass, entry)
+    _write_cached_run(coordinator, ["wave_height"], leads=range(25), horizon=24.0)
+    assert len(coordinator._load_cached_frames()[1]["wave_height"]) == 25
+
+
+async def test_the_manifest_records_the_horizon(hass, tmp_path) -> None:
+    entry = _entry(hass, tmp_path)
+    coordinator = GribOverlayCoordinator(hass, entry)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    coordinator._write_frames_manifest(run_dir, "2026091600", {}, 48.0)
+    assert json.loads((run_dir / coordinator.MANIFEST_NAME).read_text())["horizon_hours"] == 48.0

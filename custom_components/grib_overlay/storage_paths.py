@@ -1,35 +1,30 @@
-"""Where this integration keeps its GRIB working files -- deliberately NOT /config.
+"""Where this integration keeps its GRIB working files: outside every backup.
 
-Home Assistant backs up by tarring the whole ``/config`` folder. This integration
-churns a lot of large files (a HARMONIE run archive is ~850MB and every poll
-writes a new run directory and removes the previous one), which broke backups in
-two ways:
+Home Assistant backs up by tarring ``/config`` and, if the user asks, the
+``share`` and ``media`` folders. This integration churns a lot of large files --
+run archives, extracted members and a rendered cache of a gigabyte or two once a
+few sources are configured -- and all of it can be fetched again. In a backup it
+only did harm:
 
 * a working file removed between the backup's file listing and the tar write
   aborts the *entire* backup with ``FileNotFoundError``;
-* the rendered cache (~600MB in practice) bloated every backup for no gain --
-  it is a cache, regenerated within minutes of a restart.
+* the cache made every backup gigabytes heavier for no gain.
 
-So nothing this integration writes lives under ``/config`` any more. The root is
-picked once per entry:
+Supervisor offers no way to exclude a directory (its only folder filter is for
+network mounts), so the lever is location. The root is picked once per entry:
 
 * an explicit ``storage_path`` option, when the user set one;
-* otherwise ``/share/grib_overlay`` -- present and writable on Home Assistant
-  OS/Supervised, on real disk, and outside the config folder that gets tarred;
-* otherwise the system temp dir (Core/Container installs, and tests).
+* otherwise ``/var/tmp/grib_overlay`` -- real disk inside the Home Assistant
+  container, and in none of the folders a backup can include. It is wiped when
+  the container is recreated (a core update, say), after which the next poll
+  downloads the runs again;
+* otherwise the system temp dir (other platforms, and tests).
 
-Note ``/tmp`` is a *tmpfs* (RAM) inside the Home Assistant OS container, which is
-why it is the last resort rather than the default: an 850MB run archive does not
-belong in RAM.
+``/tmp`` itself is a *tmpfs* (RAM) in the Home Assistant OS container, which is
+why it is not the default: an 850MB run archive does not belong in RAM.
 
-The *scratch* space is a separate question, and the reason for the split. Home
-Assistant's automatic backup can be told to include the ``share`` folder, and
-plenty of people do -- at which point the in-flight run archives and their
-extracted members (measured: 3.4GB across two KNMI entries) land in the backup
-whenever it happens to run mid-download. Supervisor offers no way to exclude a
-directory (its only folder filter is for network mounts), so the only lever is
-location: scratch goes somewhere that is not a backup folder at all, and is
-free to be wiped whenever, because every byte of it is transient.
+Up to 0.25 the cache lived in ``/config/grib_overlay`` and from 0.26 to 0.34 in
+``/share/grib_overlay``; the coordinator clears both on upgrade.
 """
 
 from __future__ import annotations
@@ -40,21 +35,16 @@ from pathlib import Path
 
 from .const import DOMAIN
 
-# First writable candidate wins. /share is a real, persistent, read-write mount
-# on Home Assistant OS/Supervised and is not part of the config folder backup.
-PREFERRED_BASES: tuple[str, ...] = ("/share",)
+# First writable candidate wins.
+DEFAULT_BASES: tuple[str, ...] = ("/var/tmp",)
+
+# The default root of 0.26-0.34, cleared on upgrade (see the coordinator).
+LEGACY_SHARE_ROOT = Path("/share") / DOMAIN
 
 # Transient downloads (run archives, extracted GRIB members) live beside the
 # per-entry directories rather than inside one, so the run-retention cleanup --
 # which walks the entry directory -- can never touch an in-flight download.
 RAW_DIR_NAME = ".raw"
-
-# Scratch bases, first writable wins. /var/tmp is real disk inside the Home
-# Assistant container (only /tmp is a tmpfs there) and is not one of the folders
-# a backup can include, unlike /config, /share and /media. It is wiped when the
-# container is recreated -- on a core update, say -- which is exactly right for
-# files that only exist during one download.
-SCRATCH_BASES: tuple[str, ...] = ("/var/tmp",)
 
 
 def _is_writable_dir(path: Path) -> bool:
@@ -65,7 +55,7 @@ def _is_writable_dir(path: Path) -> bool:
     return path.is_dir() and os.access(path, os.W_OK)
 
 
-def default_storage_root(bases: tuple[str, ...] = PREFERRED_BASES) -> Path:
+def default_storage_root(bases: tuple[str, ...] = DEFAULT_BASES) -> Path:
     """The root directory used when the user configured no explicit path."""
     for base in bases:
         candidate = Path(base)
@@ -86,26 +76,9 @@ def entry_dir(configured: str | None, entry_id: str) -> Path:
     return storage_root(configured) / entry_id
 
 
-def default_scratch_root(bases: tuple[str, ...] = SCRATCH_BASES) -> Path:
-    """Root for in-flight downloads when the user configured no explicit path."""
-    for base in bases:
-        candidate = Path(base)
-        if _is_writable_dir(candidate):
-            return candidate / DOMAIN
-    return Path(tempfile.gettempdir()) / DOMAIN
-
-
 def scratch_dir(configured: str | None, entry_id: str) -> Path:
-    """Scratch directory for one config entry's in-flight downloads.
-
-    An explicit ``storage_path`` is honoured as-is -- the user picked that
-    location deliberately, so both the cache and the scratch go there (and the
-    tests rely on it to keep their writes inside tmp_path). Only the default
-    splits the two, to keep gigabytes of transient data out of backups.
-    """
-    if configured and configured.strip():
-        return raw_dir_for(entry_dir(configured, entry_id))
-    return default_scratch_root() / entry_id
+    """Scratch directory for one config entry's in-flight downloads."""
+    return raw_dir_for(entry_dir(configured, entry_id))
 
 
 def raw_dir_for(entry_directory: Path) -> Path:
@@ -115,3 +88,9 @@ def raw_dir_for(entry_directory: Path) -> Path:
     ``storage_dir`` -- as the tests do -- moves the scratch space with it.
     """
     return entry_directory.parent / RAW_DIR_NAME / entry_directory.name
+
+
+def overlaps(a: Path, b: Path) -> bool:
+    """True when one path is the other or lies inside it."""
+    a, b = Path(os.path.abspath(a)), Path(os.path.abspath(b))
+    return a == b or a in b.parents or b in a.parents

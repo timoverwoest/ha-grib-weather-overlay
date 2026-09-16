@@ -17,10 +17,10 @@ CONF_PARAMETERS = "parameters"
 CONF_ALIAS = "alias"
 
 # Optional override for where the GRIB working files (run archives, decoded
-# members, rendered PNG/JSON cache) are kept. Empty -> /share/grib_overlay when
-# that exists (Home Assistant OS/Supervised), else the system temp dir. Never
-# put this inside /config: Home Assistant tars that folder for every backup, and
-# this integration's file churn both bloats and breaks that tar.
+# members, rendered PNG/JSON cache) are kept. Empty -> /var/tmp/grib_overlay,
+# which no backup includes, else the system temp dir. Never put this inside
+# /config (or /share or /media when those are backed up): this integration's
+# file churn both bloats and breaks the backup's tar.
 CONF_STORAGE_PATH = "storage_path"
 
 CONF_RETAIN_RUNS = "retain_runs"

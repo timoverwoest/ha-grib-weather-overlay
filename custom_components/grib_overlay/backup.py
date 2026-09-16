@@ -6,13 +6,13 @@ backup with ``FileNotFoundError``. Implementing ``async_pre_backup`` /
 ``async_post_backup`` lets us pause our churn for the duration of the backup --
 the same mechanism the recorder uses to keep its database consistent.
 
-This is no longer the primary defence. Since 0.26 the working files live outside
-``/config`` altogether (see ``storage_paths``), which fixes the problem without
-depending on a hook: pausing here could not help when a long decode outlasted the
-drain timeout, which is exactly how backups still failed. What remains for this
-platform is covering the one-time cleanup of the old ``/config`` cache on
-upgrade, and installations that deliberately point ``storage_path`` back inside
-the config folder.
+This is no longer the primary defence. Since 0.35 the working files live
+outside every folder a backup can include (see ``storage_paths``), which fixes
+the problem without depending on a hook: pausing here could not help when a long
+decode outlasted the drain timeout, which is exactly how backups still failed.
+What remains for this platform is covering the one-time cleanup of the old
+``/config`` and ``/share`` caches on upgrade, and installations that deliberately
+point ``storage_path`` into a backed-up folder.
 
 Requires Home Assistant to invoke backup platform hooks (its 2025.1+ backup
 system does this for both core and Home Assistant OS backups). On older cores the

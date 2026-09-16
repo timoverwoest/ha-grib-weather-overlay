@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.grib_overlay import backup as backup_platform
+from custom_components.grib_overlay import storage_paths
 from custom_components.grib_overlay.backup import async_post_backup, async_pre_backup
 from custom_components.grib_overlay.const import (
     CONF_API_KEY,
@@ -240,7 +241,7 @@ async def test_legacy_config_cache_is_cleared_on_setup(hass, tmp_path) -> None:
     )
     coordinator = GribOverlayCoordinator(hass, entry)
 
-    legacy = coordinator._legacy_storage_dir
+    legacy = coordinator._legacy_storage_dirs[0]  # /config/grib_overlay/<entry>
     legacy.mkdir(parents=True)
     (legacy / "old_run").mkdir()
     (legacy / "old_run" / "wind_10m_20260904T0000.png").write_bytes(b"cached")
@@ -265,7 +266,7 @@ async def test_legacy_cache_is_dropped_when_it_cannot_be_moved(hass, tmp_path) -
     coordinator.storage_dir.mkdir(parents=True)
     (coordinator.storage_dir / "keep_me").write_text("current cache")
 
-    legacy = coordinator._legacy_storage_dir
+    legacy = coordinator._legacy_storage_dirs[0]  # /config/grib_overlay/<entry>
     legacy.mkdir(parents=True)
     (legacy / "old_run").mkdir()
 
@@ -281,7 +282,7 @@ async def test_legacy_cache_is_left_alone_during_a_backup(hass, tmp_path) -> Non
         entry, options={CONF_STORAGE_PATH: str(tmp_path / "new")}
     )
     coordinator = GribOverlayCoordinator(hass, entry)
-    legacy = coordinator._legacy_storage_dir
+    legacy = coordinator._legacy_storage_dirs[0]  # /config/grib_overlay/<entry>
     legacy.mkdir(parents=True)
 
     GribOverlayCoordinator.set_backup_active(True)
@@ -314,3 +315,77 @@ async def test_run_retention_does_not_delete_during_a_backup(hass, tmp_path) -> 
     GribOverlayCoordinator.set_backup_active(False)
     coordinator._cleanup_old_runs()
     assert len(list(coordinator.storage_dir.iterdir())) == 2  # retain_runs defaults to 2
+
+
+def _share_entry(hass, tmp_path, monkeypatch, storage_path=None):
+    """An entry whose 0.26-0.34 cache sat in a (fake) /share/grib_overlay."""
+    share_root = tmp_path / "share" / "grib_overlay"
+    monkeypatch.setattr(storage_paths, "LEGACY_SHARE_ROOT", share_root)
+    entry = _make_entry(hass)
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_STORAGE_PATH: storage_path or str(tmp_path / "var-tmp" / "grib_overlay")}
+    )
+    return entry, share_root
+
+
+async def test_share_cache_of_earlier_versions_is_cleared(hass, tmp_path, monkeypatch) -> None:
+    """0.26-0.34 kept the cache in /share, which many backups include."""
+    entry, share_root = _share_entry(hass, tmp_path, monkeypatch)
+    for leftover in (entry.entry_id + "/run-1", ".raw/" + entry.entry_id, "weather_maps", "01DELETED/run-1"):
+        (share_root / leftover).mkdir(parents=True)
+    (share_root / entry.entry_id / "run-1" / "frames.json").write_text("{}")
+
+    coordinator = GribOverlayCoordinator(hass, entry)
+    await coordinator._async_migrate_legacy_storage()
+
+    # This entry's cache moved (same filesystem here; on HAOS it is dropped),
+    # and everything else the old root held -- scratch, charts, caches of
+    # deleted entries -- is gone with it.
+    assert (coordinator.storage_dir / "run-1" / "frames.json").exists()
+    assert not share_root.exists()
+    assert coordinator._legacy_migrated is True
+
+
+async def test_a_share_folder_in_use_is_left_alone(hass, tmp_path, monkeypatch) -> None:
+    share_root = tmp_path / "share" / "grib_overlay"
+    entry, _ = _share_entry(hass, tmp_path, monkeypatch, storage_path=str(share_root))
+    (share_root / entry.entry_id / "run-1").mkdir(parents=True)
+    (share_root / "weather_maps").mkdir()
+
+    coordinator = GribOverlayCoordinator(hass, entry)
+    assert coordinator.storage_dir == share_root / entry.entry_id
+    await coordinator._async_migrate_legacy_storage()
+
+    assert (share_root / entry.entry_id / "run-1").exists()
+    assert (share_root / "weather_maps").exists()
+
+
+async def test_another_entry_using_share_protects_it(hass, tmp_path, monkeypatch) -> None:
+    share_root = tmp_path / "share" / "grib_overlay"
+    entry, _ = _share_entry(hass, tmp_path, monkeypatch)
+    other = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_SOURCE: "dwd", CONF_API_KEY: "", CONF_DATASET: "ewam", CONF_PARAMETERS: ["wave_height"]},
+        options={CONF_STORAGE_PATH: str(share_root)},
+    )
+    other.add_to_hass(hass)
+    (share_root / other.entry_id / "run-1").mkdir(parents=True)
+
+    coordinator = GribOverlayCoordinator(hass, entry)
+    await coordinator._async_migrate_legacy_storage()
+
+    assert (share_root / other.entry_id / "run-1").exists()
+
+
+async def test_share_cleanup_waits_for_a_backup(hass, tmp_path, monkeypatch) -> None:
+    entry, share_root = _share_entry(hass, tmp_path, monkeypatch)
+    (share_root / entry.entry_id / "run-1").mkdir(parents=True)
+    coordinator = GribOverlayCoordinator(hass, entry)
+
+    GribOverlayCoordinator.set_backup_active(True)
+    await coordinator._async_migrate_legacy_storage()
+    assert share_root.exists() and coordinator._legacy_migrated is False
+
+    GribOverlayCoordinator.set_backup_active(False)
+    await coordinator._async_migrate_legacy_storage()
+    assert not share_root.exists()
