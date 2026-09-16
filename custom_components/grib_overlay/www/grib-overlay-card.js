@@ -202,6 +202,15 @@ const GRIB_TEXT = {
     compareCardName: "GRIB Weather Overlay — modelvergelijking",
     compareCardDescription:
       "Vergelijk wat verschillende GRIB-bronnen op één punt voorspellen (lijngrafiek + tabel).",
+    // map layers
+    layerOsm: "OpenStreetMap",
+    layerCustom: "Eigen kaart",
+    layerEmodnet: "EMODnet-dieptekaart",
+    layerSeamarks: "Zeetekens",
+    layerSport: "Sport",
+    layerDepth: "Dieptelijnen",
+    layerSoundings: "Dieptemetingen",
+    layerGebco: "GEBCO-diepte",
   },
   en: {
     singleTime: "Single time",
@@ -311,6 +320,15 @@ const GRIB_TEXT = {
     compareCardName: "GRIB Weather Overlay — model comparison",
     compareCardDescription:
       "Compare what different GRIB sources predict at one point (line chart + table).",
+    // map layers
+    layerOsm: "OpenStreetMap",
+    layerCustom: "Custom map",
+    layerEmodnet: "EMODnet bathymetry",
+    layerSeamarks: "Seamarks",
+    layerSport: "Sport",
+    layerDepth: "Depth contours",
+    layerSoundings: "Depth soundings",
+    layerGebco: "GEBCO depth",
   },
 };
 
@@ -424,7 +442,9 @@ function loadScript(url, isReady) {
   });
 }
 
-// The base map of both cards: OpenStreetMap, with OpenSeaMap's seamarks on top.
+// The map layers of both cards: a base map (OpenStreetMap, or EMODnet's
+// bathymetry) and nautical overlays as on map.openseamap.org, switched with a
+// layer control. The choice is remembered per browser.
 //
 // OpenStreetMap's volunteer-run tile servers only serve apps that follow their
 // tile policy (operations.osmfoundation.org/policies/tiles), and since
@@ -443,9 +463,23 @@ function loadScript(url, isReady) {
 const OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const HA_MAP_TILES_URL = "/api/map_tiles/raster/{z}/{x}/{y}.png?token={token}";
 const OPENSEAMAP_TILE_URL = "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png";
+const OPENSEAMAP_SPORT_URL = "https://tiles.openseamap.org/sport/{z}/{x}/{y}.png";
+// Crowd-sourced soundings and the contours derived from them (beta, sparse).
+const OPENSEAMAP_DEPTH_WMS = "https://depth.openseamap.org/geoserver/openseamap/wms";
+// GEBCO 2021 through OpenSeaMap's GeoWebCache: it only answers requests on its
+// tile grid, which Leaflet's 256 px Web-Mercator tiles are.
+const OPENSEAMAP_GEBCO_WMS = "https://geoserver.openseamap.org/geoserver/gwc/service/wms";
+const EMODNET_TILE_URL =
+  "https://tiles.emodnet-bathymetry.eu/2020/baselayer/web_mercator/{z}/{x}/{y}.png";
 const TILE_REFERRER_POLICY = "strict-origin-when-cross-origin";
 const OSM_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
+const OPENSEAMAP_ATTRIBUTION =
+  '&copy; <a href="https://www.openseamap.org" target="_blank" rel="noopener">OpenSeaMap</a> contributors';
+const GEBCO_ATTRIBUTION =
+  '<a href="https://www.gebco.net" target="_blank" rel="noopener">GEBCO</a> 2021 Grid';
+const EMODNET_ATTRIBUTION =
+  '&copy; <a href="https://emodnet.ec.europa.eu/en/bathymetry" target="_blank" rel="noopener">EMODnet Bathymetry</a>';
 // Core rotates the map-tiles token every 30 minutes and accepts the previous
 // one too; renewing every 20 leaves room for a slow round trip (as the
 // frontend does).
@@ -507,27 +541,20 @@ function gribWatchProxyLayer(layer) {
   }, 60 * 1000);
 }
 
-// `tile_url` (+ `tile_attribution`) in the card config points the base map at a
-// tile server of your own instead.
-async function addBaseLayers(map, config, getHass) {
+// The OpenStreetMap base, filled in once we know whether Home Assistant's tile
+// proxy is there. `tile_url` (+ `tile_attribution`) in the card config puts a
+// tile server of your own in its place.
+async function gribFillOsmBase(group, cfg, getHass) {
   const L = window.L;
-  // Explicit z-order: the base layer may arrive after the seamarks (token).
-  L.tileLayer(OPENSEAMAP_TILE_URL, {
-    attribution:
-      '&copy; <a href="https://www.openseamap.org" target="_blank" rel="noopener">OpenSeaMap</a> contributors',
-    maxZoom: 18,
-    zIndex: 2,
-    referrerPolicy: TILE_REFERRER_POLICY,
-  }).addTo(map);
-
-  const cfg = config || {};
   if (cfg.tile_url) {
-    L.tileLayer(String(cfg.tile_url), {
-      attribution: cfg.tile_attribution ? String(cfg.tile_attribution) : OSM_ATTRIBUTION,
-      maxZoom: 19,
-      zIndex: 1,
-      referrerPolicy: TILE_REFERRER_POLICY,
-    }).addTo(map);
+    group.addLayer(
+      L.tileLayer(String(cfg.tile_url), {
+        attribution: cfg.tile_attribution ? String(cfg.tile_attribution) : OSM_ATTRIBUTION,
+        maxZoom: 19,
+        zIndex: 1,
+        referrerPolicy: TILE_REFERRER_POLICY,
+      })
+    );
     return;
   }
 
@@ -551,17 +578,177 @@ async function addBaseLayers(map, config, getHass) {
     layer._gribTokenAt = Date.now();
     layer._gribGetHass = getHass;
     gribWatchProxyLayer(layer);
-    layer.addTo(map);
+    group.addLayer(layer);
     return;
   }
 
-  L.tileLayer(OSM_TILE_URL, {
-    attribution: OSM_ATTRIBUTION,
-    maxZoom: 19,
-    zIndex: 1,
-    referrerPolicy: TILE_REFERRER_POLICY,
-  }).addTo(map);
+  group.addLayer(
+    L.tileLayer(OSM_TILE_URL, {
+      attribution: OSM_ATTRIBUTION,
+      maxZoom: 19,
+      zIndex: 1,
+      referrerPolicy: TILE_REFERRER_POLICY,
+    })
+  );
 }
+
+function gribWms(url, layers, attribution, extra) {
+  return window.L.tileLayer.wms(url, {
+    layers,
+    format: "image/png",
+    transparent: true,
+    attribution,
+    referrerPolicy: TILE_REFERRER_POLICY,
+    ...extra,
+  });
+}
+
+// Base maps and overlays by the id used in the card config (`base_map`,
+// `map_layers`) and in the remembered choice. Overlays are listed bottom to top.
+const MAP_BASES = ["osm", "emodnet"];
+const MAP_OVERLAYS = [
+  {
+    key: "gebco",
+    label: "layerGebco",
+    make: () =>
+      gribWms(OPENSEAMAP_GEBCO_WMS, "gebco2021:gebco_2021", GEBCO_ATTRIBUTION, {
+        version: "1.1.1",
+        opacity: 0.7,
+      }),
+  },
+  {
+    key: "soundings",
+    label: "layerSoundings",
+    make: () =>
+      gribWms(OPENSEAMAP_DEPTH_WMS, "openseamap:tracks_10m", OPENSEAMAP_ATTRIBUTION, {
+        version: "1.1.0",
+      }),
+  },
+  {
+    key: "depth",
+    label: "layerDepth",
+    make: () =>
+      gribWms(OPENSEAMAP_DEPTH_WMS, "openseamap:contour2,openseamap:contour", OPENSEAMAP_ATTRIBUTION, {
+        version: "1.1.0",
+      }),
+  },
+  {
+    key: "sport",
+    label: "layerSport",
+    make: () =>
+      window.L.tileLayer(OPENSEAMAP_SPORT_URL, {
+        attribution: OPENSEAMAP_ATTRIBUTION,
+        maxZoom: 18,
+        referrerPolicy: TILE_REFERRER_POLICY,
+      }),
+  },
+  {
+    key: "seamarks",
+    label: "layerSeamarks",
+    make: () =>
+      window.L.tileLayer(OPENSEAMAP_TILE_URL, {
+        attribution: OPENSEAMAP_ATTRIBUTION,
+        maxZoom: 18,
+        referrerPolicy: TILE_REFERRER_POLICY,
+      }),
+  },
+];
+const MAP_LAYERS_DEFAULT = ["seamarks"];
+const MAP_LAYERS_KEY = "grib-overlay-map-layers";
+
+// A list in YAML, or a comma/space separated string; unknown ids dropped.
+function gribLayerList(value) {
+  const raw = Array.isArray(value) ? value : String(value || "").split(/[\s,]+/);
+  const known = new Set(MAP_OVERLAYS.map((d) => d.key));
+  return raw.map((v) => String(v).trim().toLowerCase()).filter((v) => known.has(v));
+}
+
+// The layer choice the viewer made last (on either card), if any.
+function gribReadMapLayers() {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(MAP_LAYERS_KEY) || "null");
+    if (stored && MAP_BASES.includes(stored.base) && Array.isArray(stored.overlays)) {
+      return { base: stored.base, overlays: gribLayerList(stored.overlays) };
+    }
+  } catch (err) {
+    // private mode / blocked storage: fall back to the card config
+  }
+  return null;
+}
+
+function gribWriteMapLayers(choice) {
+  try {
+    window.localStorage.setItem(MAP_LAYERS_KEY, JSON.stringify(choice));
+  } catch (err) {
+    // not remembered, that's all
+  }
+}
+
+// What a card starts with: the remembered choice, else the card config.
+function gribInitialMapLayers(cfg) {
+  const stored = gribReadMapLayers();
+  if (stored) return stored;
+  const base = String(cfg.base_map || "osm").trim().toLowerCase();
+  return {
+    base: MAP_BASES.includes(base) ? base : "osm",
+    overlays: cfg.map_layers == null ? MAP_LAYERS_DEFAULT : gribLayerList(cfg.map_layers),
+  };
+}
+
+function addBaseLayers(map, config, getHass) {
+  const L = window.L;
+  const cfg = config || {};
+
+  const bases = {
+    osm: L.layerGroup(),
+    emodnet: L.tileLayer(EMODNET_TILE_URL, {
+      attribution: EMODNET_ATTRIBUTION,
+      maxNativeZoom: 14,
+      maxZoom: 19,
+      zIndex: 1,
+      referrerPolicy: TILE_REFERRER_POLICY,
+    }),
+  };
+  const baseLabels = {
+    osm: gribT(cfg.tile_url ? "layerCustom" : "layerOsm"),
+    emodnet: gribT("layerEmodnet"),
+  };
+  const overlays = {};
+  // autoZIndex off: the zIndex values set here are the stacking order.
+  const control = L.control.layers(null, null, { position: "topright", autoZIndex: false });
+  for (const key of MAP_BASES) control.addBaseLayer(bases[key], baseLabels[key]);
+  MAP_OVERLAYS.forEach((def, i) => {
+    overlays[def.key] = def.make().setZIndex(2 + i);
+    control.addOverlay(overlays[def.key], gribT(def.label));
+  });
+
+  const choice = gribInitialMapLayers(cfg);
+  bases[choice.base].addTo(map);
+  for (const key of choice.overlays) overlays[key].addTo(map);
+  control.addTo(map);
+  // Only a change made in the control is remembered, not the initial set-up.
+  map.on("baselayerchange overlayadd overlayremove", () =>
+    gribWriteMapLayers({
+      base: MAP_BASES.find((key) => map.hasLayer(bases[key])) || "osm",
+      overlays: MAP_OVERLAYS.map((d) => d.key).filter((key) => map.hasLayer(overlays[key])),
+    })
+  );
+
+  gribFillOsmBase(bases.osm, cfg, getHass);
+}
+
+// Leaflet's layer-control icon is a PNG next to leaflet.css, which isn't
+// shipped; draw it inline. The control is white, so keep its text dark even
+// under a dark Home Assistant theme.
+const MAP_CONTROL_CSS = `
+  .leaflet-control-layers-toggle,
+  .leaflet-retina .leaflet-control-layers-toggle {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23333' d='M12 3 2 8l10 5 10-5zM4.2 11.4 2 12.5l10 5 10-5-2.2-1.1-7.8 3.9zm0 4.5L2 17l10 5 10-5-2.2-1.1-7.8 3.9z'/%3E%3C/svg%3E");
+    background-size: 24px 24px;
+  }
+  .leaflet-control-layers { color: #222; }
+  .leaflet-control-layers-expanded { max-height: 70%; overflow-y: auto; }
+`;
 
 let leafletLoadingPromise = null;
 function loadLeaflet() {
@@ -1407,6 +1594,9 @@ class GribOverlayCard extends HTMLElement {
       link.href = href;
       root.appendChild(link);
     }
+    const mapControlStyle = document.createElement("style");
+    mapControlStyle.textContent = MAP_CONTROL_CSS;
+    root.appendChild(mapControlStyle);
 
     const style = document.createElement("style");
     style.textContent = `
@@ -5216,6 +5406,9 @@ class GribCompareCard extends HTMLElement {
     link.rel = "stylesheet";
     link.href = LEAFLET_CSS_URL;
     root.appendChild(link);
+    const mapControlStyle = document.createElement("style");
+    mapControlStyle.textContent = MAP_CONTROL_CSS;
+    root.appendChild(mapControlStyle);
     const style = document.createElement("style");
     style.textContent = `
       :host { display: block; height: 100%; }

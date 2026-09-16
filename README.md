@@ -38,6 +38,9 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 - **Zeestroming** (BSH): oppervlakte-stroming (snelheid + richting) voor de
   Noordzee als kleurlaag met deeltjes/pijlen — zoals wind, maar dan het water.
   15-minuten-resolutie, dus fijne getijdetails.
+- **Zeekaartlagen** zoals op map.openseamap.org: zeetekens, sport, dieptelijnen,
+  dieptemetingen, GEBCO-diepte en een EMODnet-dieptekaart als ondergrond, via een
+  lagenknop op de kaart.
 - Eén-tijdstip-slider én een animatiemodus (begin, eind, stap, afspeelsnelheid).
 - **Windy.com-stijl geanimeerde deeltjes voor wind** (via de meegeleverde
   `leaflet-velocity`), naast de gekleurde raster-overlay. Kies "Wind (deeltjes)"
@@ -579,7 +582,9 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 | `max_pressure_centres` | geheel getal | `4` | max. aantal H én L |
 | `center` | `[lat, lon]` | `[52.1, 5.3]` | startpositie van de kaart |
 | `zoom` | getal | `7` | start-zoomniveau |
-| `tile_url` | tekst | (leeg) | eigen tegelserver voor de achtergrondkaart, als Leaflet-sjabloon (`https://…/{z}/{x}/{y}.png`). Leeg = OpenStreetMap, zie [Achtergrondkaart](#achtergrondkaart) |
+| `base_map` | tekst | `osm` | startondergrond: `osm` (OpenStreetMap) of `emodnet` (EMODnet-dieptekaart), zie [Kaartlagen](#kaartlagen) |
+| `map_layers` | lijst of tekst | `[seamarks]` | lagen die aan staan: `seamarks`, `sport`, `depth`, `soundings`, `gebco` |
+| `tile_url` | tekst | (leeg) | eigen tegelserver in plaats van OpenStreetMap, als Leaflet-sjabloon (`https://…/{z}/{x}/{y}.png`) |
 | `tile_attribution` | tekst (HTML) | OpenStreetMap | bronvermelding bij `tile_url` |
 | `columns` | `full` of getal | `full` | breedte in een Secties-dashboard |
 | `rows` | getal | — | hoogte in grid-rijen (masonry) / begingrootte |
@@ -604,7 +609,7 @@ chips, “Alle rijen tonen”) geldt tijdelijk, voor dat geopende venster.
 | `parameter` | tekst | (eerste) | startparameter die vergeleken wordt (union van alle bronnen) |
 | `center` | `[lat, lon]` | `[52.1, 5.3]` | startpositie van de mini-kaart |
 | `zoom` | getal | `7` | start-zoomniveau van de mini-kaart |
-| `tile_url`, `tile_attribution` | tekst | (leeg) | eigen achtergrondkaart, als bij de overlay-card |
+| `base_map`, `map_layers`, `tile_url`, `tile_attribution` | | | kaartlagen, als bij de overlay-card |
 | `entries` (of `models`) | lijst of tekst | — | alleen deze bronnen vergelijken; match op `source`, datasetsleutel/-naam, titel of entry-id. Leeg = alle bronnen die de parameter hebben |
 | `meteogram_resolution` | tekst | `uur` | kolom-tijdstap van de tabel: `kwartier`, `uur`, `3uur`, `dag` |
 | `wind_unit`, `visibility_unit`, `direction_unit` | tekst | zie hieronder | zelfde eenheden-opties als de overlay-card |
@@ -623,9 +628,35 @@ chips, “Alle rijen tonen”) geldt tijdelijk, voor dat geopende venster.
 Eenheden zijn puur een weergavekeuze in de card (de onderliggende data en de
 kleurschaal veranderen niet; alleen de legenda-getallen en labels).
 
-### Achtergrondkaart
+### Kaartlagen
 
-Beide cards tonen OpenStreetMap met de zeetekens van OpenSeaMap erover.
+Rechtsboven op beide kaarten zit een **lagenknop**, met dezelfde zeekaartlagen
+als [map.openseamap.org](https://map.openseamap.org):
+
+| Laag | `id` | Wat | Bron |
+| --- | --- | --- | --- |
+| OpenStreetMap | `osm` | ondergrond (standaard) | OpenStreetMap |
+| EMODnet-dieptekaart | `emodnet` | ondergrond: reliëf van land en zeebodem, Europese zeeën | EMODnet Bathymetry |
+| Zeetekens | `seamarks` | boeien, bakens, lichten, vaargeulen (standaard aan) | OpenSeaMap |
+| Sport | `sport` | jachthavens, surf-, duik- en zeilplekken | OpenSeaMap |
+| Dieptelijnen | `depth` | dieptecontouren uit dieptemetingen van gebruikers (beta, niet overal) | OpenSeaMap |
+| Dieptemetingen | `soundings` | de gemeten diepte langs gevaren routes, als gekleurde stippen | OpenSeaMap |
+| GEBCO-diepte | `gebco` | wereldwijde diepte-inkleuring van de zee, half doorzichtig | GEBCO 2021 via OpenSeaMap |
+
+Met `base_map` en `map_layers` kies je waarmee een card start. Wat je daarna in
+de lagenknop aanklikt, onthoudt de browser voor beide cards; dat gaat dan voor
+op de card-instellingen.
+
+```yaml
+type: custom:grib-overlay-card
+base_map: emodnet
+map_layers: [seamarks, soundings, gebco]
+```
+
+Dit zijn hulplagen, geen officiële zeekaart: gebruik ze niet voor navigatie.
+
+#### OpenStreetMap en "Access blocked"
+
 OpenStreetMap draait op vrijwilligersservers en blokkeert sinds september 2026
 apps die zich niet aan het [tegelbeleid](https://operations.osmfoundation.org/policies/tiles/)
 houden: je ziet dan tegels met **"Access blocked"**. Daarom:
@@ -637,7 +668,8 @@ houden: je ziet dan tegels met **"Access blocked"**. Daarom:
 - **Oudere Home Assistant:** de card gaat rechtstreeks naar
   `https://tile.openstreetmap.org` en stuurt daarbij de verplichte `Referer` mee
   (alleen het adres van je Home Assistant, niet het dashboardpad).
-- **Eigen tegelserver:** zet `tile_url` (en `tile_attribution`) in de card.
+- **Eigen tegelserver:** zet `tile_url` (en `tile_attribution`) in de card;
+  die vervangt OpenStreetMap in de lagenknop.
 
 ## Sleutels & problemen oplossen
 
@@ -668,8 +700,8 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
   controleren dát je notificatiesleutel goed staat in plaats van te moeten raden.
 - **`KNMI EDR /locations HTTP 401/403`** — de **observaties-sleutel**. Alleen de
   meetstations werken dan niet; de rest van de kaart draait door.
-- **Kaarttegels met "Access blocked"** — de achtergrondkaart; zie
-  [Achtergrondkaart](#achtergrondkaart). Werk bij naar 0.29.1 of nieuwer en
+- **Kaarttegels met "Access blocked"** — de ondergrond; zie
+  [Kaartlagen](#kaartlagen). Werk bij naar 0.29.1 of nieuwer en
   ververs het dashboard (de browser bewaart de geblokkeerde tegels even).
 
 Meer detail nodig? Zet in `configuration.yaml`:
@@ -889,6 +921,9 @@ changing the map card or the rest of the backend):
 - **Sea current** (BSH): surface current (speed + direction) for the North Sea
   as a colour layer with particles/arrows — like wind, but for the water. At
   15-minute resolution, so fine tidal detail.
+- **Nautical chart layers** as on map.openseamap.org: seamarks, sport, depth
+  contours, depth soundings, GEBCO depth and an EMODnet bathymetry base map, via a
+  layer button on the map.
 - A single-time slider and an animation mode (start, end, step, playback speed).
 - **Windy.com-style animated wind particles** (via the bundled `leaflet-velocity`),
   alongside the coloured raster overlay. Choose "Wind (particles)" on the map for
@@ -1419,7 +1454,9 @@ include `swell_direction` too, or the swell rows have no arrows.
 | `max_pressure_centres` | integer | `4` | max. number of H and L |
 | `center` | `[lat, lon]` | `[52.1, 5.3]` | initial position of the map |
 | `zoom` | number | `7` | initial zoom level |
-| `tile_url` | text | (empty) | your own tile server for the base map, as a Leaflet template (`https://…/{z}/{x}/{y}.png`). Empty = OpenStreetMap, see [Base map](#base-map) |
+| `base_map` | text | `osm` | initial base map: `osm` (OpenStreetMap) or `emodnet` (EMODnet bathymetry), see [Map layers](#map-layers) |
+| `map_layers` | list or text | `[seamarks]` | layers switched on: `seamarks`, `sport`, `depth`, `soundings`, `gebco` |
+| `tile_url` | text | (empty) | your own tile server instead of OpenStreetMap, as a Leaflet template (`https://…/{z}/{x}/{y}.png`) |
 | `tile_attribution` | text (HTML) | OpenStreetMap | attribution for `tile_url` |
 | `columns` | `full` or number | `full` | width in a Sections dashboard |
 | `rows` | number | — | height in grid rows (masonry) / initial size |
@@ -1444,7 +1481,7 @@ applies temporarily, for that opened window.
 | `parameter` | text | (first) | initial parameter being compared (union of all sources) |
 | `center` | `[lat, lon]` | `[52.1, 5.3]` | initial position of the mini-map |
 | `zoom` | number | `7` | initial zoom level of the mini-map |
-| `tile_url`, `tile_attribution` | text | (empty) | your own base map, as for the overlay card |
+| `base_map`, `map_layers`, `tile_url`, `tile_attribution` | | | map layers, as for the overlay card |
 | `entries` (or `models`) | list or text | — | compare only these sources; match on `source`, dataset key/name, title or entry-id. Empty = all sources that have the parameter |
 | `meteogram_resolution` | text | `uur` | column time step of the table: `kwartier`, `uur`, `3uur`, `dag` |
 | `wind_unit`, `visibility_unit`, `direction_unit` | text | see below | same unit options as the overlay card |
@@ -1463,11 +1500,37 @@ applies temporarily, for that opened window.
 Units are purely a display choice in the card (the underlying data and the colour
 scale do not change; only the legend numbers and labels).
 
-### Base map
+### Map layers
 
-Both cards show OpenStreetMap with OpenSeaMap's seamarks on top. OpenStreetMap
-runs on volunteer servers and, since September 2026, blocks apps that don't
-follow its [tile usage policy](https://operations.osmfoundation.org/policies/tiles/):
+Both maps have a **layer button** in the top-right corner, with the same
+nautical layers as [map.openseamap.org](https://map.openseamap.org):
+
+| Layer | `id` | What | Source |
+| --- | --- | --- | --- |
+| OpenStreetMap | `osm` | base map (default) | OpenStreetMap |
+| EMODnet bathymetry | `emodnet` | base map: relief of land and seabed, European seas | EMODnet Bathymetry |
+| Seamarks | `seamarks` | buoys, beacons, lights, fairways (on by default) | OpenSeaMap |
+| Sport | `sport` | marinas, surfing, diving and sailing spots | OpenSeaMap |
+| Depth contours | `depth` | depth contours from users' soundings (beta, not everywhere) | OpenSeaMap |
+| Depth soundings | `soundings` | measured depth along sailed tracks, as coloured dots | OpenSeaMap |
+| GEBCO depth | `gebco` | worldwide depth shading of the sea, semi-transparent | GEBCO 2021 via OpenSeaMap |
+
+`base_map` and `map_layers` choose what a card starts with. Whatever you click in
+the layer button afterwards is remembered by the browser for both cards, and then
+takes precedence over the card settings.
+
+```yaml
+type: custom:grib-overlay-card
+base_map: emodnet
+map_layers: [seamarks, soundings, gebco]
+```
+
+These are aids, not an official nautical chart: do not use them for navigation.
+
+#### OpenStreetMap and "Access blocked"
+
+OpenStreetMap runs on volunteer servers and, since September 2026, blocks apps that
+don't follow its [tile usage policy](https://operations.osmfoundation.org/policies/tiles/):
 you then see tiles saying **"Access blocked"**. So:
 
 - **Home Assistant 2026.9 and newer:** the tiles come through Home Assistant
@@ -1477,7 +1540,8 @@ you then see tiles saying **"Access blocked"**. So:
 - **Older Home Assistant:** the card goes to `https://tile.openstreetmap.org`
   directly and sends the required `Referer` (only your Home Assistant's address,
   not the dashboard path).
-- **Your own tile server:** set `tile_url` (and `tile_attribution`) on the card.
+- **Your own tile server:** set `tile_url` (and `tile_attribution`) on the card;
+  it replaces OpenStreetMap in the layer button.
 
 ## Keys & troubleshooting
 
@@ -1507,7 +1571,7 @@ What you will see in the log (Settings → System → Logs):
   confirm the notification key is right instead of guessing.
 - **`KNMI EDR /locations HTTP 401/403`** — the **observations key**. Only the
   measurement stations stop working; the rest of the map carries on.
-- **Map tiles saying "Access blocked"** — the base map; see [Base map](#base-map).
+- **Map tiles saying "Access blocked"** — the base map; see [Map layers](#map-layers).
   Update to 0.29.1 or newer and reload the dashboard (the browser keeps the
   blocked tiles for a while).
 
