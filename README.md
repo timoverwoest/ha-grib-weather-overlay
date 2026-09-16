@@ -579,6 +579,8 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 | `max_pressure_centres` | geheel getal | `4` | max. aantal H én L |
 | `center` | `[lat, lon]` | `[52.1, 5.3]` | startpositie van de kaart |
 | `zoom` | getal | `7` | start-zoomniveau |
+| `tile_url` | tekst | (leeg) | eigen tegelserver voor de achtergrondkaart, als Leaflet-sjabloon (`https://…/{z}/{x}/{y}.png`). Leeg = OpenStreetMap, zie [Achtergrondkaart](#achtergrondkaart) |
+| `tile_attribution` | tekst (HTML) | OpenStreetMap | bronvermelding bij `tile_url` |
 | `columns` | `full` of getal | `full` | breedte in een Secties-dashboard |
 | `rows` | getal | — | hoogte in grid-rijen (masonry) / begingrootte |
 | `grid_options` | object | — | HA-eigen `{rows, columns}` (wint van `rows`/`columns`) |
@@ -602,6 +604,7 @@ chips, “Alle rijen tonen”) geldt tijdelijk, voor dat geopende venster.
 | `parameter` | tekst | (eerste) | startparameter die vergeleken wordt (union van alle bronnen) |
 | `center` | `[lat, lon]` | `[52.1, 5.3]` | startpositie van de mini-kaart |
 | `zoom` | getal | `7` | start-zoomniveau van de mini-kaart |
+| `tile_url`, `tile_attribution` | tekst | (leeg) | eigen achtergrondkaart, als bij de overlay-card |
 | `entries` (of `models`) | lijst of tekst | — | alleen deze bronnen vergelijken; match op `source`, datasetsleutel/-naam, titel of entry-id. Leeg = alle bronnen die de parameter hebben |
 | `meteogram_resolution` | tekst | `uur` | kolom-tijdstap van de tabel: `kwartier`, `uur`, `3uur`, `dag` |
 | `wind_unit`, `visibility_unit`, `direction_unit` | tekst | zie hieronder | zelfde eenheden-opties als de overlay-card |
@@ -619,6 +622,22 @@ chips, “Alle rijen tonen”) geldt tijdelijk, voor dat geopende venster.
 
 Eenheden zijn puur een weergavekeuze in de card (de onderliggende data en de
 kleurschaal veranderen niet; alleen de legenda-getallen en labels).
+
+### Achtergrondkaart
+
+Beide cards tonen OpenStreetMap met de zeetekens van OpenSeaMap erover.
+OpenStreetMap draait op vrijwilligersservers en blokkeert sinds september 2026
+apps die zich niet aan het [tegelbeleid](https://operations.osmfoundation.org/policies/tiles/)
+houden: je ziet dan tegels met **"Access blocked"**. Daarom:
+
+- **Home Assistant 2026.9 en nieuwer:** de tegels komen via Home Assistant zelf
+  (`/api/map_tiles`, net als bij de eigen kaarten van Home Assistant). Home
+  Assistant haalt ze op onder zijn eigen naam en bewaart ze een week; de card
+  vraagt daarvoor een kortlevend token op en vernieuwt dat vanzelf.
+- **Oudere Home Assistant:** de card gaat rechtstreeks naar
+  `https://tile.openstreetmap.org` en stuurt daarbij de verplichte `Referer` mee
+  (alleen het adres van je Home Assistant, niet het dashboardpad).
+- **Eigen tegelserver:** zet `tile_url` (en `tile_attribution`) in de card.
 
 ## Sleutels & problemen oplossen
 
@@ -649,6 +668,9 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
   controleren dát je notificatiesleutel goed staat in plaats van te moeten raden.
 - **`KNMI EDR /locations HTTP 401/403`** — de **observaties-sleutel**. Alleen de
   meetstations werken dan niet; de rest van de kaart draait door.
+- **Kaarttegels met "Access blocked"** — de achtergrondkaart; zie
+  [Achtergrondkaart](#achtergrondkaart). Werk bij naar 0.29.1 of nieuwer en
+  ververs het dashboard (de browser bewaart de geblokkeerde tegels even).
 
 Meer detail nodig? Zet in `configuration.yaml`:
 
@@ -1397,6 +1419,8 @@ include `swell_direction` too, or the swell rows have no arrows.
 | `max_pressure_centres` | integer | `4` | max. number of H and L |
 | `center` | `[lat, lon]` | `[52.1, 5.3]` | initial position of the map |
 | `zoom` | number | `7` | initial zoom level |
+| `tile_url` | text | (empty) | your own tile server for the base map, as a Leaflet template (`https://…/{z}/{x}/{y}.png`). Empty = OpenStreetMap, see [Base map](#base-map) |
+| `tile_attribution` | text (HTML) | OpenStreetMap | attribution for `tile_url` |
 | `columns` | `full` or number | `full` | width in a Sections dashboard |
 | `rows` | number | — | height in grid rows (masonry) / initial size |
 | `grid_options` | object | — | HA-native `{rows, columns}` (wins over `rows`/`columns`) |
@@ -1420,6 +1444,7 @@ applies temporarily, for that opened window.
 | `parameter` | text | (first) | initial parameter being compared (union of all sources) |
 | `center` | `[lat, lon]` | `[52.1, 5.3]` | initial position of the mini-map |
 | `zoom` | number | `7` | initial zoom level of the mini-map |
+| `tile_url`, `tile_attribution` | text | (empty) | your own base map, as for the overlay card |
 | `entries` (or `models`) | list or text | — | compare only these sources; match on `source`, dataset key/name, title or entry-id. Empty = all sources that have the parameter |
 | `meteogram_resolution` | text | `uur` | column time step of the table: `kwartier`, `uur`, `3uur`, `dag` |
 | `wind_unit`, `visibility_unit`, `direction_unit` | text | see below | same unit options as the overlay card |
@@ -1437,6 +1462,22 @@ applies temporarily, for that opened window.
 
 Units are purely a display choice in the card (the underlying data and the colour
 scale do not change; only the legend numbers and labels).
+
+### Base map
+
+Both cards show OpenStreetMap with OpenSeaMap's seamarks on top. OpenStreetMap
+runs on volunteer servers and, since September 2026, blocks apps that don't
+follow its [tile usage policy](https://operations.osmfoundation.org/policies/tiles/):
+you then see tiles saying **"Access blocked"**. So:
+
+- **Home Assistant 2026.9 and newer:** the tiles come through Home Assistant
+  itself (`/api/map_tiles`, like Home Assistant's own maps). Home Assistant
+  fetches them under its own name and keeps them for a week; the card asks for a
+  short-lived token for that and renews it by itself.
+- **Older Home Assistant:** the card goes to `https://tile.openstreetmap.org`
+  directly and sends the required `Referer` (only your Home Assistant's address,
+  not the dashboard path).
+- **Your own tile server:** set `tile_url` (and `tile_attribution`) on the card.
 
 ## Keys & troubleshooting
 
@@ -1466,6 +1507,9 @@ What you will see in the log (Settings → System → Logs):
   confirm the notification key is right instead of guessing.
 - **`KNMI EDR /locations HTTP 401/403`** — the **observations key**. Only the
   measurement stations stop working; the rest of the map carries on.
+- **Map tiles saying "Access blocked"** — the base map; see [Base map](#base-map).
+  Update to 0.29.1 or newer and reload the dashboard (the browser keeps the
+  blocked tiles for a while).
 
 Need more detail? Add to `configuration.yaml`:
 

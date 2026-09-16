@@ -440,6 +440,15 @@ class Handler(BaseHTTPRequestHandler):
             lon = float(q.get("lon", [4.5])[0])
             radius = float(q.get("radius", [10])[0])
             self._json({"stations": _stations_near(param, lat, lon, radius)})
+        elif parts[:3] == ["api", "map_tiles", "raster"]:
+            # Stand-in for Home Assistant's tile proxy: a placeholder image for a
+            # live mock token, 401 for the expired one (as core does for a stale token).
+            token = parse_qs(parsed.query).get("token", [""])[0]
+            if not token.startswith("mock-") or token == "mock-expired":
+                self.send_response(401)
+                self.end_headers()
+                return
+            self._file(OUTPUT_DIR / "cloud_cover.png", "image/png")
         elif parts[:3] == ["api", "grib_overlay", "point"]:
             # /api/grib_overlay/point/{entry_id}/{parameter_key}?lat=&lon=
             entry = ENTRIES.get(parts[3], ENTRIES[ENTRY_ID])

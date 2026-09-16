@@ -2,6 +2,9 @@
 <html lang="nl">
 <head>
 <meta charset="utf-8" />
+<!-- Same as Home Assistant's page: no Referer on cross-origin requests unless an
+     element asks for one (the tile layers do; OpenStreetMap requires it). -->
+<meta name="referrer" content="same-origin" />
 <title>grib-overlay-card dev harness</title>
 <style>
   body { font-family: sans-serif; background: #eee; margin: 0; padding: 24px; }
@@ -40,11 +43,26 @@
   // ?lang=en / ?lang=nl mimics the Home Assistant user's profile language,
   // which the cards read from hass.locale.language. Defaults to Dutch, like
   // this harness page itself.
-  const devLang = new URLSearchParams(location.search).get("lang") || "nl";
+  const devParams = new URLSearchParams(location.search);
+  const devLang = devParams.get("lang") || "nl";
+  // ?map_tiles=1 imitates Home Assistant 2026.9+'s tile proxy (core map_tiles):
+  // the first token handed out is already expired, so the renewal is exercised.
+  // Without it the harness behaves like an older Home Assistant (direct OSM).
+  const mapTiles = devParams.get("map_tiles") === "1";
+  let tokenCount = 0;
+  const baseMap = {};
   document.documentElement.lang = devLang;
   const hass = {
     locale: { language: devLang },
     language: devLang,
+    callWS: async (msg) => {
+      if (msg.type === "map_tiles/access_token" && mapTiles) {
+        tokenCount += 1;
+        return { token: tokenCount === 1 ? "mock-expired" : `mock-${tokenCount}` };
+      }
+      throw { code: "unknown_command", message: `Unknown command ${msg.type}` };
+    },
+    hassUrl: (path = "") => new URL(path, location.origin).toString(),
     callApi: async (method, path) => {
       const resp = await fetch("/api/" + path, { method });
       if (!resp.ok) throw new Error(`${method} /api/${path} -> ${resp.status}`);
@@ -52,11 +70,11 @@
     },
   };
   const card = document.getElementById("card");
-  card.setConfig({ type: "custom:grib-overlay-card" });
+  card.setConfig({ type: "custom:grib-overlay-card", ...baseMap });
   card.hass = hass;
 
   const compare = document.getElementById("compare");
-  compare.setConfig({ type: "custom:grib-overlay-compare-card", center: [52.4, 4.5], zoom: 8 });
+  compare.setConfig({ type: "custom:grib-overlay-compare-card", center: [52.4, 4.5], zoom: 8, ...baseMap });
   compare.hass = hass;
 </script>
 </body>

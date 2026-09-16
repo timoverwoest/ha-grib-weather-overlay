@@ -424,6 +424,145 @@ function loadScript(url, isReady) {
   });
 }
 
+// The base map of both cards: OpenStreetMap, with OpenSeaMap's seamarks on top.
+//
+// OpenStreetMap's volunteer-run tile servers only serve apps that follow their
+// tile policy (operations.osmfoundation.org/policies/tiles), and since
+// September 2026 they answer the rest with an "Access blocked" tile.
+//
+// Home Assistant 2026.9+ fetches those tiles itself (core `map_tiles`): the
+// server identifies itself upstream as HomeAssistant/<version>, caches tiles
+// for a week, and hands the browser a short-lived token over the websocket.
+// That is how Home Assistant's own maps comply, and what these cards use.
+//
+// Older Home Assistant (and the dev harness) go to OpenStreetMap directly,
+// which the policy allows at exactly OSM_TILE_URL with a Referer. Home
+// Assistant's page carries <meta name="referrer" content="same-origin">, which
+// strips the Referer from cross-origin requests; the layer's own
+// referrerPolicy overrides that per tile and sends just the origin.
+const OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const HA_MAP_TILES_URL = "/api/map_tiles/raster/{z}/{x}/{y}.png?token={token}";
+const OPENSEAMAP_TILE_URL = "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png";
+const TILE_REFERRER_POLICY = "strict-origin-when-cross-origin";
+const OSM_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
+// Core rotates the map-tiles token every 30 minutes and accepts the previous
+// one too; renewing every 20 leaves room for a slow round trip (as the
+// frontend does).
+const MAP_TILES_TOKEN_MAX_AGE_MS = 20 * 60 * 1000;
+
+async function gribMapTilesToken(hass) {
+  if (!hass || typeof hass.callWS !== "function") return null;
+  try {
+    const result = await hass.callWS({ type: "map_tiles/access_token" });
+    return (result && result.token) || null;
+  } catch (err) {
+    return null; // no map_tiles in this Home Assistant
+  }
+}
+
+// Proxy layers still in use, renewed from one timer. WeakRefs, so a card that is
+// thrown away takes its layer with it.
+const gribProxyLayers = new Set();
+let gribTokenTimer = null;
+
+async function gribRenewToken(layer, redraw) {
+  if (layer._gribRenewing) return;
+  if (redraw) {
+    // A burst of failing tiles must not become a burst of websocket calls:
+    // one retry per 10 seconds.
+    if (Date.now() - (layer._gribRetriedAt || 0) < 10000) return;
+    layer._gribRetriedAt = Date.now();
+  }
+  layer._gribRenewing = true;
+  try {
+    const token = await gribMapTilesToken(layer._gribGetHass());
+    if (token) {
+      const changed = token !== layer.options.token;
+      layer.options.token = token; // Leaflet fills {token} from the layer options
+      layer._gribTokenAt = Date.now();
+      if (changed && redraw && layer._map) layer.redraw();
+    }
+  } finally {
+    layer._gribRenewing = false;
+  }
+}
+
+function gribWatchProxyLayer(layer) {
+  gribProxyLayers.add(new WeakRef(layer));
+  // A token that expired while the dashboard was in the background shows up
+  // as failing tiles: renew and draw them again.
+  layer.on("tileerror", () => gribRenewToken(layer, true));
+  if (gribTokenTimer) return;
+  gribTokenTimer = setInterval(() => {
+    for (const ref of [...gribProxyLayers]) {
+      const alive = ref.deref();
+      if (!alive) gribProxyLayers.delete(ref);
+      else if (Date.now() - alive._gribTokenAt >= MAP_TILES_TOKEN_MAX_AGE_MS) gribRenewToken(alive, false);
+    }
+    if (!gribProxyLayers.size) {
+      clearInterval(gribTokenTimer);
+      gribTokenTimer = null;
+    }
+  }, 60 * 1000);
+}
+
+// `tile_url` (+ `tile_attribution`) in the card config points the base map at a
+// tile server of your own instead.
+async function addBaseLayers(map, config, getHass) {
+  const L = window.L;
+  // Explicit z-order: the base layer may arrive after the seamarks (token).
+  L.tileLayer(OPENSEAMAP_TILE_URL, {
+    attribution:
+      '&copy; <a href="https://www.openseamap.org" target="_blank" rel="noopener">OpenSeaMap</a> contributors',
+    maxZoom: 18,
+    zIndex: 2,
+    referrerPolicy: TILE_REFERRER_POLICY,
+  }).addTo(map);
+
+  const cfg = config || {};
+  if (cfg.tile_url) {
+    L.tileLayer(String(cfg.tile_url), {
+      attribution: cfg.tile_attribution ? String(cfg.tile_attribution) : OSM_ATTRIBUTION,
+      maxZoom: 19,
+      zIndex: 1,
+      referrerPolicy: TILE_REFERRER_POLICY,
+    }).addTo(map);
+    return;
+  }
+
+  const hass = getHass();
+  const token = await gribMapTilesToken(hass);
+  if (token) {
+    let base = "";
+    try {
+      // Absolute, for a dashboard served from another host (Cast). Not
+      // hassUrl(template): URL() would percent-encode the {z}/{x}/{y} placeholders.
+      if (typeof hass.hassUrl === "function") base = hass.hassUrl("").replace(/\/+$/, "");
+    } catch (err) {
+      base = ""; // same origin, which is where dashboards normally live
+    }
+    const layer = L.tileLayer(base + HA_MAP_TILES_URL, {
+      attribution: OSM_ATTRIBUTION,
+      maxZoom: 19,
+      zIndex: 1,
+      token,
+    });
+    layer._gribTokenAt = Date.now();
+    layer._gribGetHass = getHass;
+    gribWatchProxyLayer(layer);
+    layer.addTo(map);
+    return;
+  }
+
+  L.tileLayer(OSM_TILE_URL, {
+    attribution: OSM_ATTRIBUTION,
+    maxZoom: 19,
+    zIndex: 1,
+    referrerPolicy: TILE_REFERRER_POLICY,
+  }).addTo(map);
+}
+
 let leafletLoadingPromise = null;
 function loadLeaflet() {
   if (!leafletLoadingPromise) {
@@ -1597,14 +1736,7 @@ class GribOverlayCard extends HTMLElement {
     const overlayPane = this._map.getPane("gribOverlay");
     overlayPane.style.zIndex = "450";
     overlayPane.style.pointerEvents = "none"; // clicks fall through to the map
-    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
-      maxZoom: 19,
-    }).addTo(this._map);
-    window.L.tileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenSeaMap contributors",
-      maxZoom: 18,
-    }).addTo(this._map);
+    addBaseLayers(this._map, this._config, () => this._hass);
 
     // Hover shows the value at the cursor; tap/click pins it in a popup; hold /
     // right-click opens a meteogram at that point.
@@ -5351,14 +5483,7 @@ class GribCompareCard extends HTMLElement {
       : this._config.center || [52.1, 5.3];
     this._point = { lat: center[0], lng: center[1] };
     this._map = window.L.map(this._els.mapDiv, { center, zoom: this._config.zoom || 7 });
-    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
-      maxZoom: 19,
-    }).addTo(this._map);
-    window.L.tileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenSeaMap contributors",
-      maxZoom: 18,
-    }).addTo(this._map);
+    addBaseLayers(this._map, this._config, () => this._hass);
     // A CSS dot (divIcon) instead of Leaflet's default PNG marker, whose image
     // assets aren't served here.
     const icon = window.L.divIcon({
