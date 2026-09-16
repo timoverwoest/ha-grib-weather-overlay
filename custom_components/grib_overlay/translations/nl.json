@@ -41,6 +41,7 @@
       "init": {
         "title": "GRIB Weather Overlay-opties",
         "data": {
+          "parameters": "Parameters",
           "forecast_horizon_hours": "Voorspellingshorizon (uren)",
           "retain_runs": "Aantal forecast-runs om gecached te houden",
           "update_interval_minutes": "Poll-interval (minuten)",
@@ -51,6 +52,7 @@
           "color_scales": "Eigen kleurschalen (optioneel)"
         },
         "data_description": {
+          "parameters": "Welke parameters van deze dataset gedownload en getoond worden. Een parameter die je aanzet verschijnt zodra de huidige voorspellingsrun opnieuw is verwerkt (dat begint direct na opslaan).",
           "notification_api_key": "Optioneel: een aparte KNMI **Notification Service**-sleutel (developer.dataplatform.knmi.nl → Notification Service) voor directe push-updates van nieuwe runs. Dit is NIET je Open Data-sleutel: die weigert de broker met 'Not authorized'. Leeg laten = periodiek pollen — verder verandert er niets.",
           "observations_api_key": "Optioneel: een KNMI Open Data-sleutel mét toegang tot de dataset '10-minute-in-situ-meteorological-observations', gebruikt om stationswaarnemingen te downloaden. Je HARMONIE-sleutel heeft daar vaak géén toegang toe (KNMI geeft 403). Leeg laten = de HARMONIE-sleutel hergebruiken.",
           "alias": "Optionele korte naam die als compact label van deze bron wordt getoond in de vergelijking en het meteogram, bv. `KNMI NL`. Leeg laten = automatisch afgeleid uit de bron (bronnen van dezelfde soort worden automatisch onderscheiden).",
@@ -58,6 +60,9 @@
           "color_scales": "Eén parameter per regel, bv. `wind_10m: 0:#2c7fb8, 8:#7fcdbb, 12:#ffffb2, 16:#fd8d3c, 24:#bd0026`. Waarden staan in de eigen eenheid van de parameter (m/s, °C, hPa, mm, m). Jouw parameters: {parameters}. Leeg laten = de ingebouwde kleuren. Wijzigen rendert de huidige run opnieuw."
         }
       }
+    },
+    "error": {
+      "no_parameters_selected": "Kies minstens één parameter."
     }
   }
 }

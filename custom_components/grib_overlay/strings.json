@@ -41,6 +41,7 @@
       "init": {
         "title": "GRIB Weather Overlay options",
         "data": {
+          "parameters": "Parameters",
           "forecast_horizon_hours": "Forecast horizon (hours)",
           "retain_runs": "Number of forecast runs to keep cached",
           "update_interval_minutes": "Polling interval (minutes)",
@@ -51,6 +52,7 @@
           "color_scales": "Custom colour scales (optional)"
         },
         "data_description": {
+          "parameters": "Which parameters of this dataset to download and show. A parameter you switch on appears after the current forecast run has been processed again (that starts right after saving).",
           "notification_api_key": "Optional: a separate KNMI **Notification Service** key (developer.dataplatform.knmi.nl → Notification Service) for instant push updates of new forecast runs. This is NOT your Open Data key: the broker refuses that with 'Not authorized'. Leave empty to rely on periodic polling — nothing else changes.",
           "observations_api_key": "Optional: a KNMI Open Data key with access to the '10-minute-in-situ-meteorological-observations' dataset, used to download station observations. Your HARMONIE key is often not authorised for it (KNMI returns 403). Leave empty to reuse the HARMONIE key.",
           "alias": "Optional short name shown as this source's compact label in the comparison and meteogram views, e.g. `KNMI NL`. Leave empty to derive it automatically from the source (same-source entries are disambiguated automatically).",
@@ -58,6 +60,9 @@
           "color_scales": "One parameter per line, e.g. `wind_10m: 0:#2c7fb8, 8:#7fcdbb, 12:#ffffb2, 16:#fd8d3c, 24:#bd0026`. Values are in the parameter's own unit (m/s, °C, hPa, mm, m). Your parameters: {parameters}. Leave empty to use the built-in colours. Changing this re-renders the current run."
         }
       }
+    },
+    "error": {
+      "no_parameters_selected": "Select at least one parameter."
     }
   }
 }

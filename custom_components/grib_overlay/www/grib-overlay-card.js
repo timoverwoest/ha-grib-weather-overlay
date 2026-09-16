@@ -332,7 +332,16 @@ const GRIB_PARAM_NAMES = {
     wave_height: "Golfhoogte (significant)",
     wave_period: "Golfperiode (gemiddeld)",
     wave_direction: "Golfrichting (gemiddeld)",
+    swell_height: "Deining: hoogte",
+    swell_period: "Deining: periode (gemiddeld)",
+    swell_peak_period: "Deining: piekperiode",
+    swell_direction: "Deining: richting",
+    wind_wave_height: "Windgolven: hoogte",
+    wind_wave_period: "Windgolven: periode (gemiddeld)",
+    wind_wave_peak_period: "Windgolven: piekperiode",
+    wind_wave_direction: "Windgolven: richting",
     current: "Zeestroming (oppervlak)",
+    cape: "CAPE (onweersenergie)",
   },
   en: {
     wind_10m: "Wind (10 m)",
@@ -347,7 +356,16 @@ const GRIB_PARAM_NAMES = {
     wave_height: "Wave height (significant)",
     wave_period: "Wave period (mean)",
     wave_direction: "Wave direction (mean)",
+    swell_height: "Swell: height",
+    swell_period: "Swell: period (mean)",
+    swell_peak_period: "Swell: peak period",
+    swell_direction: "Swell: direction",
+    wind_wave_height: "Wind waves: height",
+    wind_wave_period: "Wind waves: period (mean)",
+    wind_wave_peak_period: "Wind waves: peak period",
+    wind_wave_direction: "Wind waves: direction",
     current: "Sea current (surface)",
+    cape: "CAPE (thunderstorm energy)",
   },
 };
 
@@ -359,6 +377,7 @@ const GRIB_DATASET_NAMES = {
     harmonie_arome_cy43_p1: "HARMONIE-AROME Cy43 - Netherlands, near-surface parameters",
     harmonie_arome_cy43_p3: "HARMONIE-AROME Cy43 - Europe (DINI), near-surface parameters",
     ewam: "DWD EWAM - European waves (North Sea, Atlantic Ocean, Mediterranean)",
+    icon_d2: "DWD ICON-D2 - weather model 2.2 km (Germany, Benelux, southern North Sea)",
     bsh_current_northsea: "BSH - North Sea currents (NL/BE/FR coast)",
   },
 };
@@ -367,6 +386,13 @@ const GRIB_DATASET_NAMES = {
 function gribDatasetName(dataset) {
   if (!dataset) return "";
   return (GRIB_DATASET_NAMES[gribLang] || {})[dataset.key] || dataset.name || dataset.key;
+}
+
+// The direction parameter of a wave-type family: swell_height / swell_period ->
+// swell_direction (same rule as the backend's direction_key_for). Null otherwise.
+function gribDirectionKeyFor(key) {
+  const m = /_(?:peak_period|period|height)$/.exec(String(key || ""));
+  return m ? `${key.slice(0, m.index)}_direction` : null;
 }
 
 // `param` is a backend parameter object ({key, name}); a bare key works too.
@@ -1929,6 +1955,8 @@ class GribOverlayCard extends HTMLElement {
   // -- wave direction arrows --------------------------------------------------
   // Waves store direction (deg) and height (m) as separate scalar parameters,
   // so the arrows are synthesised from those two fields (unlike wind's u/v).
+  // They come in families (wave_*, swell_*, wind_wave_*): the arrows follow the
+  // family of the selected parameter, so swell shows swell directions.
 
   _paramByUnit(unit) {
     const entry = this._currentEntry();
@@ -1936,7 +1964,21 @@ class GribOverlayCard extends HTMLElement {
   }
 
   _directionParam() {
-    return this._paramByUnit("°");
+    const entry = this._currentEntry();
+    if (!entry) return null;
+    const selected = this._els && this._els.paramSelect ? this._els.paramSelect.value : "";
+    const own = gribDirectionKeyFor(selected);
+    return (
+      entry.parameters.find((p) => p.key === own && p.unit === "°") ||
+      this._paramByUnit("°")
+    );
+  }
+
+  // The height that sizes the arrows of a direction parameter: its own family's.
+  _heightParamFor(dirParam) {
+    const entry = this._currentEntry();
+    const own = dirParam.key.replace(/_direction$/, "_height");
+    return (entry && entry.parameters.find((p) => p.key === own)) || this._paramByUnit("m");
   }
 
   _hasWaveVectors() {
@@ -1983,7 +2025,7 @@ class GribOverlayCard extends HTMLElement {
       this._removeVectors();
       return;
     }
-    const heightParam = this._paramByUnit("m");
+    const heightParam = this._heightParamFor(dirParam);
     const token = (this._windToken = (this._windToken || 0) + 1);
     let dirField;
     let magField = null;

@@ -18,8 +18,9 @@ from homeassistant.core import HomeAssistant
 
 from . import field_grid
 from . import observations
-from .const import CONF_ALIAS, CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_ALL_PATH, HTTP_POINT_PATH, HTTP_STATION_OBS_PATH, HTTP_STATIONS_PATH, HTTP_WIND_PATH
-from .coordinator import GribOverlayCoordinator
+from .const import CONF_ALIAS, CONF_DATASET, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_ALL_PATH, HTTP_POINT_PATH, HTTP_STATION_OBS_PATH, HTTP_STATIONS_PATH, HTTP_WIND_PATH
+from .coordinator import GribOverlayCoordinator, enabled_parameter_keys
+from .sources.base import direction_key_for
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,7 +35,8 @@ def _point_payload(coordinator: GribOverlayCoordinator, key: str, lat: float, lo
     Runs off the event loop (reads the cached per-frame field JSON files). The
     legend lets the card colour cells without a separate frames request, and a
     from-direction series is attached for wind (u/v) and for a scalar that has a
-    companion direction parameter (unit "°"), matching the single-point view.
+    companion direction parameter -- the one of its own family (swell_height ->
+    swell_direction), matching the single-point view.
     """
     frames = coordinator.frames.get(key, [])
     if not frames:
@@ -47,13 +49,12 @@ def _point_payload(coordinator: GribOverlayCoordinator, key: str, lat: float, lo
     has_direction = any(wind_path is not None for _, _, wind_path in entries)
 
     dir_by_time: dict[str, object] = {}
-    if unit != "°":
-        for other_key, comp_frames in coordinator.frames.items():
-            if other_key != key and comp_frames and comp_frames[0].legend.unit == "°":
-                dir_by_time = {
-                    f.valid_time.isoformat(): f.field_path for f in comp_frames if f.field_path
-                }
-                break
+    direction_key = direction_key_for(key) if unit != "°" else None
+    comp_frames = coordinator.frames.get(direction_key, []) if direction_key else []
+    if comp_frames and comp_frames[0].legend.unit == "°":
+        dir_by_time = {
+            f.valid_time.isoformat(): f.field_path for f in comp_frames if f.field_path
+        }
         if dir_by_time:
             has_direction = True
 
@@ -130,7 +131,7 @@ class GribOverlayEntriesView(HomeAssistantView):
             )
             if dataset is None:
                 continue
-            enabled = set(entry.data.get(CONF_PARAMETERS, []))
+            enabled = set(enabled_parameter_keys(entry))
             entries.append(
                 {
                     "entry_id": entry_id,

@@ -416,3 +416,58 @@ async def test_dutch_keeps_the_source_supplied_names(
         result["flow_id"], {CONF_DATASET: "harmonie_arome_cy43_p1"}
     )
     assert _choices(result, CONF_PARAMETERS)["wind_10m"].startswith("Wind (10m)")
+
+
+def _ewam_entry(hass: HomeAssistant) -> MockConfigEntry:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_SOURCE: "dwd",
+            CONF_API_KEY: "",
+            CONF_DATASET: "ewam",
+            CONF_PARAMETERS: ["wave_height", "wave_direction"],
+        },
+    )
+    entry.add_to_hass(hass)
+    return entry
+
+
+async def test_options_flow_can_switch_parameters_on(hass: HomeAssistant) -> None:
+    """New parameters (swell, wind waves) must be reachable without deleting and
+    re-adding the entry -- that would also throw away its other options."""
+    entry = _ewam_entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    choices = _choices(result, CONF_PARAMETERS)
+    assert {"swell_height", "swell_direction", "wind_wave_height"} <= set(choices)
+    marker = next(m for m in result["data_schema"].schema if m == CONF_PARAMETERS)
+    assert marker.default() == ["wave_height", "wave_direction"]  # current choice preselected
+
+    wanted = ["wave_height", "wave_direction", "swell_height", "swell_direction"]
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_PARAMETERS: wanted,
+            CONF_FORECAST_HORIZON_HOURS: 24,
+            CONF_RETAIN_RUNS: 2,
+            CONF_UPDATE_INTERVAL_MINUTES: 30,
+        },
+    )
+    assert result["type"] == "create_entry"
+    assert entry.options[CONF_PARAMETERS] == wanted
+
+
+async def test_options_flow_needs_at_least_one_parameter(hass: HomeAssistant) -> None:
+    entry = _ewam_entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_PARAMETERS: [],
+            CONF_FORECAST_HORIZON_HOURS: 24,
+            CONF_RETAIN_RUNS: 2,
+            CONF_UPDATE_INTERVAL_MINUTES: 30,
+        },
+    )
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "no_parameters_selected"}
+    assert CONF_PARAMETERS not in entry.options

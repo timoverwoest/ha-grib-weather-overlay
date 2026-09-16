@@ -63,6 +63,13 @@ from .sources.registry import get_source_class
 _LOGGER = logging.getLogger(__name__)
 
 
+def enabled_parameter_keys(entry: ConfigEntry) -> list[str]:
+    """The parameters this entry renders: the options' choice, else the setup's."""
+    if CONF_PARAMETERS in entry.options:
+        return list(entry.options[CONF_PARAMETERS])
+    return list(entry.data.get(CONF_PARAMETERS, []))
+
+
 @dataclass
 class Frame:
     parameter_key: str
@@ -418,7 +425,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         return {"run_filename": self._current_run_filename, "dataset": dataset.key}
 
     async def _process_new_run(self, dataset: GribDatasetInfo, filename: str) -> None:
-        enabled_keys = set(self.entry.data.get(CONF_PARAMETERS, []))
+        enabled_keys = set(enabled_parameter_keys(self.entry))
         parameters = [p for p in dataset.parameters if p.key in enabled_keys]
         if not parameters:
             _LOGGER.warning("No parameters enabled for %s, skipping run %s", dataset.key, filename)
@@ -446,9 +453,15 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                 await self.hass.async_add_executor_job(tar_path.unlink, True)
         else:
             # DWD/BSH: individual per-parameter/per-lead-time GRIB files.
-            member_paths = await self.source.async_download_run(
-                dataset, filename, raw_dir, [p.key for p in parameters], horizon_hours
-            )
+            try:
+                member_paths = await self.source.async_download_run(
+                    dataset, filename, raw_dir, [p.key for p in parameters], horizon_hours
+                )
+            except BaseException:
+                # e.g. a run that turned out to be still publishing: drop what
+                # did arrive, the next poll starts over.
+                await self.hass.async_add_executor_job(shutil.rmtree, raw_dir, True)
+                raise
 
         try:
             new_frames = await self.hass.async_add_executor_job(
@@ -506,6 +519,8 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         run_dir.mkdir(parents=True, exist_ok=True)
         new_frames: dict[str, list[Frame]] = {p.key: [] for p in parameters}
         run_time: datetime | None = None
+        # Last seen run-total per accumulated parameter (see _deaccumulate).
+        running_totals: dict[str, tuple[datetime, np.ndarray]] = {}
 
         for member_path in member_paths:
             try:
@@ -524,7 +539,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
             for parameter in parameters:
                 try:
-                    frame = self._process_parameter(parameter, member_path, run_dir)
+                    frame = self._process_parameter(
+                        parameter, member_path, run_dir, running_totals
+                    )
                 except (grib_decode.GribDecodeError, OSError) as err:
                     _LOGGER.debug(
                         "Parameter %s not in member %s: %s", parameter.key, member_path.name, err
@@ -538,8 +555,40 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         self._write_frames_manifest(run_dir, run_filename, new_frames)
         return new_frames
 
+    @staticmethod
+    def _deaccumulate(
+        field: grib_decode.DecodedField,
+        running_totals: dict[str, tuple[datetime, np.ndarray]],
+    ) -> grib_decode.DecodedField:
+        """Turn a total-since-run-start into the amount since the previous lead time.
+
+        Needs the parameter's lead times in ascending order (the source's
+        promise, see GribParameter.accumulated). The first lead time is only
+        usable when it is the run start or one hour after it; a later first
+        total spans several hours and would read as one very wet hour.
+        """
+        key = field.parameter_key
+        total = field.data
+        previous = running_totals.get(key)
+        running_totals[key] = (field.valid_time, total)
+        if previous is not None and previous[1].shape == total.shape:
+            amount = total - previous[1]
+        elif field.valid_time - field.run_time <= timedelta(hours=1):
+            amount = total
+        else:
+            raise grib_decode.GribDecodeError(
+                f"{key}: no earlier total to subtract for {field.valid_time:%Y-%m-%d %H:%M}"
+            )
+        # Packing rounding can leave a hair below zero where nothing fell.
+        field.data = np.maximum(amount, 0.0)
+        return field
+
     def _process_parameter(
-        self, parameter: GribParameter, grib_path: Path, run_dir: Path
+        self,
+        parameter: GribParameter,
+        grib_path: Path,
+        run_dir: Path,
+        running_totals: dict[str, tuple[datetime, np.ndarray]] | None = None,
     ) -> Frame:
         """Decode one parameter, render the PNG, and (for wind) save velocity JSON."""
         wind_path: Path | None = None
@@ -563,6 +612,10 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             )
         else:
             field = grib_decode.decode_parameter(grib_path, parameter)
+            if parameter.accumulated:
+                field = self._deaccumulate(
+                    field, running_totals if running_totals is not None else {}
+                )
 
         frame_obj, legend = render.render_field(
             field,
@@ -641,6 +694,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         """Blocking: rebuild frames for the newest run that has a valid manifest + PNGs."""
         if not self.storage_dir.exists():
             return None, {}
+        enabled = set(enabled_parameter_keys(self.entry))
         run_dirs = sorted((p for p in self.storage_dir.iterdir() if p.is_dir()), reverse=True)
         for run_dir in run_dirs:
             manifest_path = run_dir / self.MANIFEST_NAME
@@ -658,9 +712,17 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             # skip so the run is re-rendered with the new colours.
             if manifest.get("color_scales", "") != self._color_scales_signature():
                 continue
+            # A parameter switched on since this run was rendered isn't in it ->
+            # skip so the run is processed again, now including that parameter.
+            # (Every enabled parameter gets a key, even one that came out empty.)
+            cached = manifest.get("frames", {})
+            if not enabled <= set(cached):
+                continue
             frames: dict[str, list[Frame]] = {}
             valid = True
-            for key, flist in manifest.get("frames", {}).items():
+            for key, flist in cached.items():
+                if key not in enabled:
+                    continue  # switched off since: don't offer it
                 frames[key] = []
                 for fd in flist:
                     png_path = run_dir / fd["png"]

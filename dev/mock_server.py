@@ -68,11 +68,19 @@ LEGENDS = {
         {"offset": 0.0, "color": "#d73027"}, {"offset": 0.5, "color": "#3cb4c8"},
         {"offset": 1.0, "color": "#d73027"},
     ]},
+    "cape": {"unit": "J/kg", "min_value": 0, "max_value": 2000, "stops": [
+        {"offset": 0.0, "color": "#f0f0f0"}, {"offset": 0.3, "color": "#fdbe5a"},
+        {"offset": 0.55, "color": "#f06e32"}, {"offset": 1.0, "color": "#821478"},
+    ]},
     "current": {"unit": "m/s", "min_value": 0, "max_value": 2, "stops": [
         {"offset": 0.0, "color": "#deebf7"}, {"offset": 0.5, "color": "#4292c6"},
         {"offset": 1.0, "color": "#084594"},
     ]},
 }
+
+# Swell shares the wave legends (same colour scales in render.py).
+LEGENDS["swell_height"] = LEGENDS["wave_height"]
+LEGENDS["swell_direction"] = LEGENDS["wave_direction"]
 
 ENTRY_ID = "mock_entry_1"
 PARAMETERS = [
@@ -83,6 +91,8 @@ PARAMETERS = [
     {"key": "pressure_msl", "name": "Luchtdruk (zeeniveau)", "unit": "hPa", "colormap": "pressure"},
     {"key": "wave_height", "name": "Golfhoogte (significant)", "unit": "m", "colormap": "wave"},
     {"key": "wave_direction", "name": "Golfrichting", "unit": "°", "colormap": "direction"},
+    {"key": "swell_height", "name": "Deining: hoogte", "unit": "m", "colormap": "wave"},
+    {"key": "swell_direction", "name": "Deining: richting", "unit": "°", "colormap": "direction"},
 ]
 
 # A second source with its own (coarser, 2-hourly) time axis, so the detailed
@@ -93,6 +103,7 @@ PARAMETERS_DWD = [
     {"key": "temperature_2m", "name": "Temperatuur (2m)", "unit": "°C", "colormap": "temperature"},
     {"key": "precipitation", "name": "Neerslag", "unit": "mm", "colormap": "precipitation"},
     {"key": "pressure_msl", "name": "Luchtdruk (zeeniveau)", "unit": "hPa", "colormap": "pressure"},
+    {"key": "cape", "name": "CAPE (onweersenergie)", "unit": "J/kg", "colormap": "cape"},
 ]
 
 # entry_id -> config. Each entry may carry its own frame_count/step so the shared
@@ -113,12 +124,12 @@ ENTRIES = {
     },
     "mock_entry_2": {
         "entry_id": "mock_entry_2",
-        "title": "DWD - ICON-EU (mock)",
+        "title": "DWD - ICON-D2 (mock)",
         "source": "dwd",
         "dataset": {
-            "key": "icon_eu",
-            "name": "ICON-EU - Europa",
-            "bounds": [40.0, -10.0, 62.0, 20.0],
+            "key": "icon_d2",
+            "name": "DWD ICON-D2 - weermodel 2,2 km (Duitsland, Benelux, zuidelijke Noordzee)",
+            "bounds": [43.18, -3.94, 58.08, 20.34],
         },
         "parameters": PARAMETERS_DWD,
         "frame_count": 5,
@@ -199,7 +210,7 @@ def _point_payload(entry: dict, parameter_key: str, lat: float) -> dict:
     legend = LEGENDS.get(parameter_key, {})
     lo = legend.get("min_value", 0)
     hi = legend.get("max_value", 20)
-    has_dir = parameter_key in ("wind_10m", "wind_gust_10m", "wave_height")
+    has_dir = parameter_key in ("wind_10m", "wind_gust_10m", "wave_height", "swell_height")
     out_of_range = entry.get("out_of_range", False)  # null samples (point off-grid)
     # A deterministic per-entry phase shift so every model draws a distinct line.
     phase = 0.0 if entry["entry_id"] == ENTRY_ID else (sum(ord(c) for c in entry["entry_id"]) % 7) * 0.4
@@ -379,14 +390,27 @@ class Handler(BaseHTTPRequestHandler):
         elif parts[:3] == ["api", "grib_overlay", "frame"]:
             # /api/grib_overlay/frame/{entry_id}/{parameter_key}/{frame_id}.png
             parameter_key = parts[4]
-            self._file(OUTPUT_DIR / f"{parameter_key}.png", "image/png")
+            png = OUTPUT_DIR / f"{parameter_key}.png"
+            if not png.exists():  # no preview render for this one; reuse a lookalike
+                png = OUTPUT_DIR / ("precipitation.png" if "swell" in parameter_key else "temperature_2m.png")
+            self._file(png, "image/png")
         elif parts[:3] == ["api", "grib_overlay", "wind"]:
             # /api/grib_overlay/wind/{entry_id}/{parameter_key}/{frame_id}.json
             self._file(DEV_DIR / "wind_sample.json", "application/json")
         elif parts[:3] == ["api", "grib_overlay", "field"]:
             # /api/grib_overlay/field/{entry_id}/{parameter_key}/{frame_id}.json
             parameter_key = parts[4]
-            if parameter_key == "pressure_msl":
+            if parameter_key in ("swell_height", "swell_direction"):
+                # Derived from the wave fields so the swell arrows visibly differ:
+                # lower, and turned 90 degrees.
+                base = "wave_height" if parameter_key == "swell_height" else "wave_direction"
+                field = json.loads((DEV_DIR / f"field_{base}.json").read_text())
+                if parameter_key == "swell_height":
+                    field["data"] = [None if v is None else round(v * 0.6, 2) for v in field["data"]]
+                else:
+                    field["data"] = [None if v is None else (v + 90) % 360 for v in field["data"]]
+                self._json(field)
+            elif parameter_key == "pressure_msl":
                 # Synthetic MSL-pressure field (a low + a high) so the isobars
                 # render mode has something to contour in the dev harness.
                 self._json(_synth_pressure_field())

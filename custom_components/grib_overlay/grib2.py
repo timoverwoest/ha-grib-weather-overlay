@@ -1,4 +1,4 @@
-"""Minimal, dependency-free GRIB2 decoder for DWD wave-model (EWAM) files.
+"""Minimal, dependency-free GRIB2 decoder for DWD Open Data (EWAM, ICON-D2) files.
 
 The GRIB1 decoder in grib1.py covers KNMI's HARMONIE files; DWD's Open Data wave
 model (EWAM) is GRIB2 instead. Rather than pull in the fragile eccodes binary
@@ -8,7 +8,9 @@ corner of GRIB2 that EWAM actually uses, with numpy alone.
 Scope (verified against real EWAM files from opendata.dwd.de):
 - GRIB edition 2.
 - Section 3 (Grid Definition): regular lat/lon, grid definition template 3.0.
-- Section 4 (Product Definition): template 4.0 (analysis/forecast at a level).
+- Section 4 (Product Definition): template 4.0 (analysis/forecast at a level)
+  and 4.8 (a statistic over an interval -- ICON-D2's precipitation total and
+  maximum gust), which is labelled with the end of its interval.
 - Section 5 (Data Representation): grid-point *simple* packing, template 5.0
   (reference value is IEEE-754 float32, plus binary and decimal scale factors).
   EWAM uses this -- crucially NOT CCSDS/AEC (5.42) or JPEG2000 (5.40), which
@@ -21,8 +23,9 @@ rather than silently mis-decode it. Blocking/CPU-bound; run via an executor.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from functools import cached_property
 
 import numpy as np
 
@@ -53,11 +56,22 @@ class Grib2Message:
     lat2: float
     lon2: float
     scan_mode: int
-    # Decoded data, flat, in the message's own scan order; NaN where missing.
-    values: np.ndarray
     # Regular grids only -> never rotated; kept so callers can treat Grib1/Grib2
     # messages uniformly (see grib_decode.py).
     rotation: tuple[float, float, float] | None = None
+    # Template 4.8 only: the end of the statistical interval (the time the value
+    # is valid for). None for an instantaneous field.
+    end_time: datetime | None = None
+    # The packed data section, unpacked on first use of ``values``. Files are
+    # scanned message by message for the one parameter wanted (a DWD file is
+    # tried against every enabled parameter), so only a match is worth the
+    # unpacking -- on ICON-D2's 900k-point grid that was most of the run time.
+    _packed: dict = field(default_factory=dict, repr=False, compare=False)
+
+    @cached_property
+    def values(self) -> np.ndarray:
+        """Decoded data, flat, in the message's own scan order; NaN where missing."""
+        return _unpack(self.ni * self.nj, **self._packed)
 
     def matches(self, filt: dict) -> bool:
         """True if every (key, value) in ``filt`` matches. Keys are GRIB2 fields:
@@ -160,6 +174,12 @@ def _parse_message(msg: bytes) -> Grib2Message:
                 type_of_level=s[22],
                 level=_sign_mag(_u(s[24:28]), 32) / (10.0 ** s[23]) if s[23] != 255 else 0.0,
             )
+            if pdt == 8:
+                # Octets 35-41: end of the overall time interval. forecast_time is
+                # its *start* (0 for a total since the run began).
+                rec["end_time"] = datetime(
+                    _u(s[34:36]), s[36], s[37], s[38], s[39], s[40], tzinfo=timezone.utc
+                )
         elif secnum == 5:
             drt = _u(s[9:11])
             if drt != 0:
@@ -172,7 +192,7 @@ def _parse_message(msg: bytes) -> Grib2Message:
         elif secnum == 6:
             indicator = s[5]
             if indicator == 0:
-                bitmap = np.unpackbits(np.frombuffer(s[6:], dtype=np.uint8))
+                bitmap = s[6:]
             elif indicator != 255:
                 raise Grib2Error("predefined bitmaps are not supported")
         elif secnum == 7:
@@ -183,15 +203,55 @@ def _parse_message(msg: bytes) -> Grib2Message:
     return _finish(rec, npoints, bitmap)
 
 
-def _finish(rec: dict, npoints: int | None, bitmap) -> Grib2Message:
-    ni, nj = rec["ni"], rec["nj"]
-    total = ni * nj
-    ref, bin_scale, dec_scale, bits = (
-        rec.pop("_ref"), rec.pop("_bin_scale"), rec.pop("_dec_scale"), rec.pop("_bits")
-    )
-    data_bytes = rec.pop("_data")
+def _finish(rec: dict, npoints: int | None, bitmap: bytes | None) -> Grib2Message:
+    rec["_packed"] = {
+        "npoints": npoints,
+        "bitmap": bitmap,
+        "ref": rec.pop("_ref"),
+        "bin_scale": rec.pop("_bin_scale"),
+        "dec_scale": rec.pop("_dec_scale"),
+        "bits": rec.pop("_bits"),
+        "data_bytes": rec.pop("_data"),
+    }
+    return Grib2Message(**rec)
+
+
+_WHOLE_BYTES = {8: ">u1", 16: ">u2", 32: ">u4"}
+
+
+def _unpack_bits(data: bytes, count: int, bits: int) -> np.ndarray:
+    """``count`` big-endian unsigned integers of ``bits`` bits each, packed end to end.
+
+    Reads, for every value, the 8 bytes starting at its first byte as one
+    64-bit word and shifts the value out of it -- a few arrays of ``count``
+    words, instead of one row of ``bits`` bits per value (~200 MB for a single
+    ICON-D2 field).
+    """
+    if bits in _WHOLE_BYTES:
+        return np.frombuffer(data, dtype=_WHOLE_BYTES[bits], count=count).astype(np.uint64)
+    if bits > 57:  # the value would not fit in one 8-byte window
+        raise Grib2Error(f"unsupported bits per value: {bits}")
+    buf = np.frombuffer(bytes(data) + bytes(8), dtype=np.uint8)
+    start = np.arange(count, dtype=np.int64) * bits
+    windows = np.lib.stride_tricks.sliding_window_view(buf, 8)[start >> 3]
+    words = np.ascontiguousarray(windows).view(">u8").ravel().astype(np.uint64)
+    return (words << (start & 7).astype(np.uint64)) >> np.uint64(64 - bits)
+
+
+def _unpack(
+    total: int,
+    *,
+    npoints: int | None,
+    bitmap: bytes | None,
+    ref: float,
+    bin_scale: int,
+    dec_scale: int,
+    bits: int,
+    data_bytes: bytes,
+) -> np.ndarray:
+    """Simple packing (template 5.0) -> float64 values, NaN where the bitmap says missing."""
     if bitmap is not None:
-        bitmap = bitmap[:total].astype(bool)
+        bitmap = np.unpackbits(np.frombuffer(bitmap, dtype=np.uint8))[:total].astype(bool)
         n_present = int(bitmap.sum())
     else:
         n_present = npoints if npoints is not None else total
@@ -200,20 +260,14 @@ def _finish(rec: dict, npoints: int | None, bitmap) -> Grib2Message:
     if bits == 0:
         present = np.full(n_present, ref / dec, dtype=np.float64)
     else:
-        packed = np.frombuffer(data_bytes, dtype=np.uint8)
-        raw_bits = np.unpackbits(packed)[: n_present * bits].reshape(n_present, bits)
-        weights = (1 << np.arange(bits - 1, -1, -1)).astype(np.uint64)
-        raw = (raw_bits.astype(np.uint64) * weights).sum(axis=1)
+        raw = _unpack_bits(data_bytes, n_present, bits)
         present = (ref + raw.astype(np.float64) * (2.0 ** bin_scale)) / dec
 
     if bitmap is not None:
         values = np.full(total, MISSING, dtype=np.float64)
         values[bitmap] = present
-    else:
-        values = present
-
-    rec["values"] = values
-    return Grib2Message(**rec)
+        return values
+    return present
 
 
 def to_grid(message: Grib2Message) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -252,6 +306,10 @@ _TIME_UNIT_HOURS = {0: 1 / 60, 1: 1, 2: 24, 10: 3, 11: 6, 12: 12, 13: 0.25}
 def message_times(message: Grib2Message) -> tuple[datetime, datetime]:
     """(valid_time, run_time) for a Grib2Message."""
     run_time = message.reference_time
+    if message.end_time is not None:
+        # An interval product (accumulation, maximum) is valid at the end of its
+        # interval -- as ecCodes reports it, and as GRIB1's P2 is read.
+        return message.end_time, run_time
     unit_hours = _TIME_UNIT_HOURS.get(message.unit_of_time_range, 1)
     valid_time = run_time + timedelta(hours=message.forecast_time * unit_hours)
     return valid_time, run_time

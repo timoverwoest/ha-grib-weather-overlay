@@ -154,13 +154,27 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class GribOverlayOptionsFlow(config_entries.OptionsFlow):
-    """Lets the user tweak retention, forecast horizon and polling interval later."""
+    """Lets the user change the parameters, retention, horizon, polling and more later."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         self._config_entry = config_entry
 
+    async def _dataset(self) -> GribDatasetInfo | None:
+        """The entry's dataset, for its parameter list (a static catalogue: no network)."""
+        data = self._config_entry.data
+        try:
+            source_cls = get_source_class(data[CONF_SOURCE])
+        except (KeyError, ValueError):
+            return None
+        source = source_cls(async_get_clientsession(self.hass), data.get(CONF_API_KEY, ""))
+        datasets = await source.async_list_datasets()
+        return next((d for d in datasets if d.key == data.get(CONF_DATASET)), None)
+
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        if user_input is not None:
+        errors: dict[str, str] = {}
+        if user_input is not None and CONF_PARAMETERS in user_input and not user_input[CONF_PARAMETERS]:
+            errors["base"] = "no_parameters_selected"
+        elif user_input is not None:
             # Normalise the notification key: strip, and drop it entirely when
             # blank so it doesn't shadow the entry-data value with an empty one.
             notification_key = (user_input.get(CONF_NOTIFICATION_API_KEY) or "").strip()
@@ -200,8 +214,25 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
         current_notification_key = options.get(
             CONF_NOTIFICATION_API_KEY, data.get(CONF_NOTIFICATION_API_KEY, "")
         )
+        # The parameters chosen at setup can be changed here too (options win
+        # over the setup's choice); a newly enabled one gets rendered by
+        # re-processing the current run after the reload.
+        enabled = list(options.get(CONF_PARAMETERS, data.get(CONF_PARAMETERS, [])))
+        dataset = await self._dataset()
+        parameter_field: dict = {}
+        if dataset is not None:
+            lang = labels.language(self.hass)
+            choices = {
+                p.key: f"{labels.parameter_name(lang, p)} ({p.unit})" for p in dataset.parameters
+            }
+            parameter_field = {
+                vol.Required(
+                    CONF_PARAMETERS, default=[k for k in enabled if k in choices]
+                ): cv.multi_select(choices),
+            }
         schema = vol.Schema(
             {
+                **parameter_field,
                 vol.Required(
                     CONF_FORECAST_HORIZON_HOURS,
                     default=options.get(CONF_FORECAST_HORIZON_HOURS, DEFAULT_FORECAST_HORIZON_HOURS),
@@ -261,9 +292,9 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 ),
             }
         )
-        enabled = ", ".join(data.get(CONF_PARAMETERS, []))
         return self.async_show_form(
             step_id="init",
             data_schema=schema,
-            description_placeholders={"parameters": enabled or "-"},
+            errors=errors,
+            description_placeholders={"parameters": ", ".join(enabled) or "-"},
         )

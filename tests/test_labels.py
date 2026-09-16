@@ -52,10 +52,11 @@ def test_dataset_names_translate_and_fall_back() -> None:
 
 
 def test_source_names_translate_and_fall_back() -> None:
-    assert labels.source_name("nl", "DWD Open Data (golven)") == "DWD Open Data (golven)"
-    assert labels.source_name("en", "DWD Open Data (golven)") == "DWD Open Data (waves)"
-    # KNMI's name is language-neutral and must be left alone.
+    assert labels.source_name("nl", "BSH (zeestroming Noordzee)") == "BSH (zeestroming Noordzee)"
+    assert labels.source_name("en", "BSH (zeestroming Noordzee)") == "BSH (North Sea currents)"
+    # KNMI's and DWD's names are language-neutral and must be left alone.
     assert labels.source_name("en", "KNMI Data Platform") == "KNMI Data Platform"
+    assert labels.source_name("en", "DWD Open Data") == "DWD Open Data"
 
 
 def test_every_english_name_covers_a_real_key() -> None:

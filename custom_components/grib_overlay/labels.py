@@ -32,18 +32,27 @@ PARAMETER_NAMES_EN: dict[str, str] = {
     "wave_height": "Wave height (significant)",
     "wave_period": "Wave period (mean)",
     "wave_direction": "Wave direction (mean)",
+    "swell_height": "Swell: height",
+    "swell_period": "Swell: period (mean)",
+    "swell_peak_period": "Swell: peak period",
+    "swell_direction": "Swell: direction",
+    "wind_wave_height": "Wind waves: height",
+    "wind_wave_period": "Wind waves: period (mean)",
+    "wind_wave_peak_period": "Wind waves: peak period",
+    "wind_wave_direction": "Wind waves: direction",
     "current": "Sea current (surface)",
+    "cape": "CAPE (thunderstorm energy)",
 }
 
 DATASET_NAMES_EN: dict[str, str] = {
     "harmonie_arome_cy43_p1": "HARMONIE-AROME Cy43 - Netherlands, near-surface parameters",
     "harmonie_arome_cy43_p3": "HARMONIE-AROME Cy43 - Europe (DINI), near-surface parameters",
     "ewam": "DWD EWAM - European waves (North Sea, Atlantic Ocean, Mediterranean)",
+    "icon_d2": "DWD ICON-D2 - weather model 2.2 km (Germany, Benelux, southern North Sea)",
     "bsh_current_northsea": "BSH - North Sea currents (NL/BE/FR coast)",
 }
 
 SOURCE_NAMES_EN: dict[str, str] = {
-    "DWD Open Data (golven)": "DWD Open Data (waves)",
     "BSH (zeestroming Noordzee)": "BSH (North Sea currents)",
 }
 

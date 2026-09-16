@@ -13,7 +13,8 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 - [KNMI Data Platform](https://dataplatform.knmi.nl/) — HARMONIE-AROME
   (Nederland en Europa/DINI), GRIB1. Vereist een gratis Open Data-sleutel.
 - [DWD Open Data](https://opendata.dwd.de/) — het **EWAM golfmodel** voor de
-  Europese zeeën (significante golfhoogte, gemiddelde golfrichting en -periode),
+  Europese zeeën (golfhoogte, deining en windgolven, met richting en periode) en
+  het **ICON-D2 weermodel** (2,2 km, heel Nederland en de zuidelijke Noordzee),
   GRIB2, **zonder sleutel**.
 - [BSH](https://www.bsh.de/) — **zeestroming** (oppervlakte-u/v) voor de hele
   Noordzee incl. de Nederlandse, Belgische en noord-Franse kust, 15-minuten-
@@ -27,6 +28,13 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 - **Golven** (DWD EWAM): significante golfhoogte, gemiddelde golfrichting en
   golfperiode als kleurlaag over de Europese zeeën — met meteogram en
   waarde-onder-de-muis, net als de andere parameters.
+- **Deining en windgolven** (DWD EWAM) apart: hoogte, richting, gemiddelde
+  periode en piekperiode van elk. De richtingspijlen volgen de gekozen soort:
+  kijk je naar deining, dan wijzen de pijlen de deiningsrichting aan.
+- **Tweede fijnmazig weermodel** (DWD ICON-D2, 2,2 km): dezelfde parameters als
+  KNMI HARMONIE plus **CAPE** (energie voor onweer), elke 3 uur een nieuwe run
+  tot +48 uur. Omdat de parameters dezelfde sleutels hebben, leg je beide
+  modellen direct naast elkaar in de modelvergelijking.
 - **Zeestroming** (BSH): oppervlakte-stroming (snelheid + richting) voor de
   Noordzee als kleurlaag met deeltjes/pijlen — zoals wind, maar dan het water.
   15-minuten-resolutie, dus fijne getijdetails.
@@ -154,7 +162,7 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 
 - Home Assistant OS of Supervised. Alle dependencies zijn pure-Python /
   universele wheels (`numpy`, `Pillow`, `paho-mqtt`); zowel GRIB1 (KNMI) als
-  GRIB2 (DWD EWAM, simple packing) worden door een meegeleverde eigen decoder
+  GRIB2 (DWD EWAM en ICON-D2, simple packing) worden door een meegeleverde eigen decoder
   gelezen, dus er is géén `eccodes`/`cfgrib`
   binaire library nodig (die heeft niet voor elke Python-versie/CPU een wheel
   en brak eerder de installatie).
@@ -186,14 +194,16 @@ worden zonder de kaart of de rest van de backend te wijzigen):
    [developer.dataplatform.knmi.nl](https://developer.dataplatform.knmi.nl) →
    Notification Service. Laat het leeg als je die niet hebt — dan pollt de
    integratie, en dat is de enige zichtbare consequentie. Plak er **niet** je
-   Open Data-sleutel in: die wordt geweigerd. Voor **DWD Open Data (golven)**
-   laat je de sleutel-velden leeg — DWD heeft geen sleutel nodig.
+   Open Data-sleutel in: die wordt geweigerd. Voor **DWD Open Data** laat je de
+   sleutel-velden leeg — DWD heeft geen sleutel nodig.
 3. Kies een dataset. KNMI: HARMONIE-AROME Cy43 **Nederland** (standaard) of
-   **Europa (DINI)**. DWD: **EWAM** (Europese golven). Wil je zowel weer als
-   golven, voeg dan twee integratie-instanties toe (één per bron); in de kaart
-   wissel je tussen instanties.
-4. Kies welke parameters bijgehouden moeten worden.
-5. Optioneel: pas via de integratie-opties de voorspellingshorizon (default
+   **Europa (DINI)**. DWD: **EWAM** (Europese golven) of **ICON-D2** (weermodel).
+   Wil je zowel weer als golven, voeg dan een integratie-instantie per dataset
+   toe; in de kaart wissel je tussen instanties.
+4. Kies welke parameters bijgehouden moeten worden. Dat kan later nog via
+   **Configureren** (zie stap 5): zo zet je bijvoorbeeld deining aan op een
+   bestaande EWAM-instantie, zonder die te verwijderen.
+5. Optioneel: pas via de integratie-opties de **parameters**, de voorspellingshorizon (default
    24 uur, max 60 uur — zo ver reikt de KNMI HARMONIE-voorspelling), het aantal
    bewaarde forecast-runs (default 2), het poll-interval (default 30 minuten) en
    **eigen kleurschalen per parameter** (zie hieronder) aan.
@@ -372,7 +382,8 @@ in de kaart zelf wisselen.
   (dikkere lijnen) en/of `particle_base_opacity` (raster verder dimmen).
 - `vectors` — pijltjes (richting + grootte), gekleurd naar windsnelheid met een
   contour; **alleen voor wind**.
-- `wavevectors` — pijltjes voor de golfrichting; **alleen voor golven**.
+- `wavevectors` — pijltjes voor de golfrichting; **alleen voor golven**. De
+  pijlen horen bij de gekozen soort: golven, deining of windgolven.
 
 Past de gekozen modus niet bij de parameter (bijv. `vectors` terwijl er geen
 wind is), dan valt de kaart automatisch terug op `raster`. De contourkleur van
@@ -443,7 +454,7 @@ hoofdlettergevoelig; gebruik ze exact zoals hieronder.
 | `source` | Naam | API-sleutel |
 | --- | --- | --- |
 | `knmi` | KNMI Data Platform | ja (Open Data-sleutel) |
-| `dwd` | DWD Open Data (golven) | nee |
+| `dwd` | DWD Open Data | nee |
 | `bsh` | BSH (zeestroming Noordzee) | nee |
 
 ### Datasets (`dataset`)
@@ -453,6 +464,7 @@ hoofdlettergevoelig; gebruik ze exact zoals hieronder.
 | `knmi` | `harmonie_arome_cy43_p1` | HARMONIE-AROME Cy43 — Nederland | regulier lat/lon | 60 u | 1 u |
 | `knmi` | `harmonie_arome_cy43_p3` | HARMONIE-AROME Cy43 — Europa (DINI) | rotated lat/lon | 60 u | 1 u |
 | `dwd` | `ewam` | DWD EWAM — Europese golven | regulier lat/lon | 78 u | 1 u |
+| `dwd` | `icon_d2` | DWD ICON-D2 — weermodel 2,2 km | regulier lat/lon | 48 u | 1 u |
 | `bsh` | `bsh_current_northsea` | BSH — Zeestroming Noordzee | regulier lat/lon | 48 u | 15 min |
 
 ### Parameters (`parameter` / `parameters`)
@@ -478,6 +490,35 @@ hoofdlettergevoelig; gebruik ze exact zoals hieronder.
 | `wave_height` | Golfhoogte (significant) | m | scalar |
 | `wave_period` | Golfperiode (gemiddeld) | s | scalar |
 | `wave_direction` | Golfrichting (gemiddeld) | ° | scalar |
+| `swell_height` | Deining: hoogte | m | scalar |
+| `swell_period` | Deining: periode (gemiddeld) | s | scalar |
+| `swell_peak_period` | Deining: piekperiode | s | scalar |
+| `swell_direction` | Deining: richting | ° | scalar |
+| `wind_wave_height` | Windgolven: hoogte | m | scalar |
+| `wind_wave_period` | Windgolven: periode (gemiddeld) | s | scalar |
+| `wind_wave_peak_period` | Windgolven: piekperiode | s | scalar |
+| `wind_wave_direction` | Windgolven: richting | ° | scalar |
+
+**DWD** (`icon_d2`) — dezelfde sleutels als KNMI, zodat de modelvergelijking ze
+naast elkaar zet:
+
+| `parameter` | Naam | Eenheid | Type |
+| --- | --- | --- | --- |
+| `wind_10m` | Wind (10m) | m/s | vector |
+| `wind_gust_10m` | Windstoten (10m) | m/s | scalar (alleen snelheid) |
+| `temperature_2m` | Temperatuur (2m) | °C | scalar |
+| `dewpoint_2m` | Dauwpunt (2m) | °C | scalar |
+| `humidity_2m` | Relatieve luchtvochtigheid (2m) | % | scalar |
+| `precipitation` | Neerslag (per uur) | mm | scalar |
+| `pressure_msl` | Luchtdruk (zeeniveau) | hPa | scalar |
+| `visibility` | Zicht | km | scalar |
+| `cloud_cover` | Bewolking | % | scalar |
+| `cape` | CAPE (onweersenergie) | J/kg | scalar |
+
+ICON-D2 levert neerslag als totaal sinds de start van de run; de integratie
+rekent dat om naar de hoeveelheid per uur, net als bij KNMI. Windstoten zijn bij
+ICON het maximum van het afgelopen uur, zonder eigen richting. Op het starttijdstip
+van een run (+0 u) bestaan die twee nog niet, dus die beelden ontbreken daar.
 
 **BSH** (`bsh_current_northsea`):
 
@@ -486,9 +527,12 @@ hoofdlettergevoelig; gebruik ze exact zoals hieronder.
 | `current` | Zeestroming (oppervlak) | m/s | vector |
 
 Het **type** bepaalt welke weergaven beschikbaar zijn: `vector`-parameters
-(`wind_10m`, `wind_gust_10m`, `current`) ondersteunen `particles`/`vectors`; een
-richting-parameter (eenheid °, dus `wave_direction`) schakelt `wavevectors` in;
-en `pressure_msl` (eenheid hPa) schakelt de isobaren-laag in.
+(`wind_10m`, KNMI's `wind_gust_10m`, `current`) ondersteunen `particles`/`vectors`;
+een richting-parameter (eenheid °, bv. `wave_direction`) schakelt `wavevectors`
+in; en `pressure_msl` (eenheid hPa) schakelt de isobaren-laag in. Een richting
+hoort bij de hoogte en periode met hetzelfde voorvoegsel: `swell_direction` bij
+`swell_height`, `swell_period` en `swell_peak_period`. Zet je deining aan, neem
+dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 
 ### Integratie: setup-velden (config-flow)
 
@@ -498,12 +542,13 @@ en `pressure_msl` (eenheid hPa) schakelt de isobaren-laag in.
 | `api_key` | KNMI Open Data-sleutel (leeg laten voor DWD/BSH) |
 | `notification_api_key` | optioneel; **aparte** KNMI Notification Service-sleutel (leeg, of je Open Data-sleutel = alleen pollen) |
 | `dataset` | een dataset-sleutel uit de tabel hierboven |
-| `parameters` | lijst van parameter-sleutels die je wilt bijhouden |
+| `parameters` | lijst van parameter-sleutels die je wilt bijhouden (later te wijzigen via de opties) |
 
 ### Integratie: opties (Configureren)
 
 | Sleutel | Type | Default | Bereik / vorm |
 | --- | --- | --- | --- |
+| `parameters` | lijst | de keuze bij het toevoegen | welke parameters van de dataset gedownload en getoond worden. Een parameter die je aanzet verschijnt zodra de huidige run opnieuw is verwerkt; dat begint direct na opslaan |
 | `forecast_horizon_hours` | getal (uren) | `24` | 1–60 |
 | `retain_runs` | geheel getal | `2` | 1–10 |
 | `update_interval_minutes` | geheel getal (min) | `30` | 5–180 |
@@ -719,10 +764,15 @@ Extra's:
   voorspellingshorizon niet hoger dan nodig.
 - De **ensemble**-variant `harmonie_arome_cy43_p4a` (EPS) wordt nog niet
   ondersteund; die vereist een keuze/aggregatie over de ensembleleden.
-- Van **DWD Open Data** wordt (voorlopig) alleen het **EWAM golfmodel**
-  ondersteund. EWAM gebruikt eenvoudige GRIB2-packing en is dus zonder binaire
-  library te lezen; andere DWD-modellen (bijv. ICON-EU) gebruiken vaak
-  CCSDS/AEC- of JPEG2000-compressie, wat wél zo'n library zou vereisen.
+- Van **DWD Open Data** worden het **EWAM golfmodel** en **ICON-D2** ondersteund.
+  Die gebruiken eenvoudige GRIB2-packing en zijn dus zonder binaire library te
+  lezen. ICON-EU, ECMWF en het kustgolfmodel CWAM niet: de eerste twee gebruiken
+  CCSDS/AEC-compressie (vereist zo'n library), en CWAM dekt alleen de Duitse Bocht.
+- **ICON-D2** is per parameter per uur een los bestand van ~1 MB. Met alle 10
+  parameters en de standaardhorizon van 24 uur is een run dus ~250 MB download
+  (48 uur: ~500 MB). Er komt elke 3 uur een nieuwe run, zo'n 80 minuten na de
+  runtijd; de integratie pakt een run pas op als die compleet op de server staat.
+  Zet alleen de parameters aan die je gebruikt, of verhoog het poll-interval.
 - **BSH-zeestroming** is 15-minuten-data: één BSH-bestand bevat een heel etmaal
   aan tijdstappen (96 per 24 u). De integratie splitst dat in losse tijdstappen,
   maar houd er rekening mee dat een langere voorspellingshorizon veel frames
@@ -791,8 +841,9 @@ changing the map card or the rest of the backend):
 - [KNMI Data Platform](https://dataplatform.knmi.nl/) — HARMONIE-AROME
   (Netherlands and Europe/DINI), GRIB1. Requires a free Open Data key.
 - [DWD Open Data](https://opendata.dwd.de/) — the **EWAM wave model** for the
-  European seas (significant wave height, mean wave direction and period), GRIB2,
-  **no key**.
+  European seas (wave height, swell and wind waves, with direction and period) and
+  the **ICON-D2 weather model** (2.2 km, all of the Netherlands and the southern
+  North Sea), GRIB2, **no key**.
 - [BSH](https://www.bsh.de/) — **sea current** (surface u/v) for the whole North
   Sea including the Dutch, Belgian and northern French coast, 15-minute steps,
   GRIB1, **no key** (open FTP).
@@ -805,6 +856,13 @@ changing the map card or the rest of the backend):
 - **Waves** (DWD EWAM): significant wave height, mean wave direction and wave
   period as a colour layer over the European seas — with a meteogram and a
   value-under-the-cursor, just like the other parameters.
+- **Swell and wind waves** (DWD EWAM) separately: height, direction, mean period
+  and peak period of each. The direction arrows follow the selected kind: when
+  you look at swell, the arrows show the swell direction.
+- **A second high-resolution weather model** (DWD ICON-D2, 2.2 km): the same
+  parameters as KNMI HARMONIE plus **CAPE** (energy for thunderstorms), a new run
+  every 3 hours out to +48 hours. The parameters share their keys, so the model
+  comparison lines both models up directly.
 - **Sea current** (BSH): surface current (speed + direction) for the North Sea
   as a colour layer with particles/arrows — like wind, but for the water. At
   15-minute resolution, so fine tidal detail.
@@ -926,8 +984,8 @@ changing the map card or the rest of the backend):
 ## Requirements
 
 - Home Assistant OS or Supervised. All dependencies are pure-Python / universal
-  wheels (`numpy`, `Pillow`, `paho-mqtt`); both GRIB1 (KNMI) and GRIB2 (DWD EWAM,
-  simple packing) are read by a bundled custom decoder, so **no** `eccodes`/`cfgrib`
+  wheels (`numpy`, `Pillow`, `paho-mqtt`); both GRIB1 (KNMI) and GRIB2 (DWD EWAM
+  and ICON-D2, simple packing) are read by a bundled custom decoder, so **no** `eccodes`/`cfgrib`
   binary library is needed (that one does not have a wheel for every Python
   version/CPU and previously broke installation).
 - A free API key from the
@@ -957,14 +1015,16 @@ changing the map card or the rest of the backend):
    [developer.dataplatform.knmi.nl](https://developer.dataplatform.knmi.nl) →
    Notification Service. Leave it empty if you don't have one — the integration
    then polls, which is the only visible consequence. Do **not** paste your Open
-   Data key there: it is refused. For **DWD Open Data (waves)** leave the key
-   fields empty — DWD needs no key.
+   Data key there: it is refused. For **DWD Open Data** leave the key fields
+   empty — DWD needs no key.
 3. Choose a dataset. KNMI: HARMONIE-AROME Cy43 **Netherlands** (default) or
-   **Europe (DINI)**. DWD: **EWAM** (European waves). If you want both weather and
-   waves, add two integration instances (one per source); in the card you switch
-   between instances.
-4. Choose which parameters should be kept up to date.
-5. Optional: via the integration options, adjust the forecast horizon (default
+   **Europe (DINI)**. DWD: **EWAM** (European waves) or **ICON-D2** (weather
+   model). If you want both weather and waves, add one integration instance per
+   dataset; in the card you switch between instances.
+4. Choose which parameters should be kept up to date. You can change that later
+   under **Configure** (see step 5) — for instance to switch swell on for an
+   existing EWAM instance without removing it.
+5. Optional: via the integration options, adjust the **parameters**, the forecast horizon (default
    24 hours, max 60 hours — that is as far as the KNMI HARMONIE forecast reaches),
    the number of forecast runs to keep (default 2), the polling interval (default
    30 minutes) and **custom colour scales per parameter** (see below).
@@ -1140,7 +1200,8 @@ always switch in the card via the view picker). Choices:
   lines) and/or `particle_base_opacity` (dim the raster further).
 - `vectors` — arrows (direction + magnitude), coloured by wind speed with an
   outline; **wind only**.
-- `wavevectors` — arrows for the wave direction; **waves only**.
+- `wavevectors` — arrows for the wave direction; **waves only**. The arrows
+  belong to the selected kind: waves, swell or wind waves.
 
 If the chosen mode does not match the parameter (e.g. `vectors` while there is no
 wind), the card automatically falls back to `raster`. The outline colour of the wind
@@ -1210,7 +1271,7 @@ exactly as below.
 | `source` | Name | API key |
 | --- | --- | --- |
 | `knmi` | KNMI Data Platform | yes (Open Data key) |
-| `dwd` | DWD Open Data (waves) | no |
+| `dwd` | DWD Open Data | no |
 | `bsh` | BSH (North Sea current) | no |
 
 ### Datasets (`dataset`)
@@ -1220,6 +1281,7 @@ exactly as below.
 | `knmi` | `harmonie_arome_cy43_p1` | HARMONIE-AROME Cy43 — Netherlands | regular lat/lon | 60 h | 1 h |
 | `knmi` | `harmonie_arome_cy43_p3` | HARMONIE-AROME Cy43 — Europe (DINI) | rotated lat/lon | 60 h | 1 h |
 | `dwd` | `ewam` | DWD EWAM — European waves | regular lat/lon | 78 h | 1 h |
+| `dwd` | `icon_d2` | DWD ICON-D2 — weather model 2.2 km | regular lat/lon | 48 h | 1 h |
 | `bsh` | `bsh_current_northsea` | BSH — North Sea current | regular lat/lon | 48 h | 15 min |
 
 ### Parameters (`parameter` / `parameters`)
@@ -1245,6 +1307,35 @@ exactly as below.
 | `wave_height` | Wave height (significant) | m | scalar |
 | `wave_period` | Wave period (mean) | s | scalar |
 | `wave_direction` | Wave direction (mean) | ° | scalar |
+| `swell_height` | Swell: height | m | scalar |
+| `swell_period` | Swell: period (mean) | s | scalar |
+| `swell_peak_period` | Swell: peak period | s | scalar |
+| `swell_direction` | Swell: direction | ° | scalar |
+| `wind_wave_height` | Wind waves: height | m | scalar |
+| `wind_wave_period` | Wind waves: period (mean) | s | scalar |
+| `wind_wave_peak_period` | Wind waves: peak period | s | scalar |
+| `wind_wave_direction` | Wind waves: direction | ° | scalar |
+
+**DWD** (`icon_d2`) — the same keys as KNMI, so the model comparison puts them
+side by side:
+
+| `parameter` | Name | Unit | Type |
+| --- | --- | --- | --- |
+| `wind_10m` | Wind (10 m) | m/s | vector |
+| `wind_gust_10m` | Wind gusts (10 m) | m/s | scalar (speed only) |
+| `temperature_2m` | Temperature (2 m) | °C | scalar |
+| `dewpoint_2m` | Dew point (2 m) | °C | scalar |
+| `humidity_2m` | Relative humidity (2 m) | % | scalar |
+| `precipitation` | Precipitation (per hour) | mm | scalar |
+| `pressure_msl` | Pressure (mean sea level) | hPa | scalar |
+| `visibility` | Visibility | km | scalar |
+| `cloud_cover` | Cloud cover | % | scalar |
+| `cape` | CAPE (thunderstorm energy) | J/kg | scalar |
+
+ICON-D2 delivers precipitation as a total since the start of the run; the
+integration converts it to the amount per hour, as with KNMI. ICON's gusts are the
+maximum of the past hour, without a direction of their own. At a run's start time
+(+0 h) neither exists yet, so those two have no image there.
 
 **BSH** (`bsh_current_northsea`):
 
@@ -1253,9 +1344,12 @@ exactly as below.
 | `current` | Sea current (surface) | m/s | vector |
 
 The **type** determines which views are available: `vector` parameters
-(`wind_10m`, `wind_gust_10m`, `current`) support `particles`/`vectors`; a direction
-parameter (unit °, i.e. `wave_direction`) enables `wavevectors`; and `pressure_msl`
-(unit hPa) enables the isobar layer.
+(`wind_10m`, KNMI's `wind_gust_10m`, `current`) support `particles`/`vectors`; a
+direction parameter (unit °, e.g. `wave_direction`) enables `wavevectors`; and
+`pressure_msl` (unit hPa) enables the isobar layer. A direction belongs to the
+height and period with the same prefix: `swell_direction` goes with
+`swell_height`, `swell_period` and `swell_peak_period`. When you switch swell on,
+include `swell_direction` too, or the swell rows have no arrows.
 
 ### Integration: setup fields (config flow)
 
@@ -1265,12 +1359,13 @@ parameter (unit °, i.e. `wave_direction`) enables `wavevectors`; and `pressure_
 | `api_key` | KNMI Open Data key (leave empty for DWD/BSH) |
 | `notification_api_key` | optional; **separate** KNMI Notification Service key (empty, or your Open Data key = polling only) |
 | `dataset` | a dataset key from the table above |
-| `parameters` | list of parameter keys you want to keep up to date |
+| `parameters` | list of parameter keys you want to keep up to date (can be changed later in the options) |
 
 ### Integration: options (Configure)
 
 | Key | Type | Default | Range / form |
 | --- | --- | --- | --- |
+| `parameters` | list | the choice made when adding | which parameters of the dataset are downloaded and shown. A parameter you switch on appears once the current run has been processed again; that starts right after saving |
 | `forecast_horizon_hours` | number (hours) | `24` | 1–60 |
 | `retain_runs` | integer | `2` | 1–10 |
 | `update_interval_minutes` | integer (min) | `30` | 5–180 |
@@ -1481,10 +1576,16 @@ Also:
   the Netherlands — do not set the forecast horizon higher than needed.
 - The **ensemble** variant `harmonie_arome_cy43_p4a` (EPS) is not supported yet;
   that requires a choice/aggregation over the ensemble members.
-- From **DWD Open Data** only the **EWAM wave model** is supported (for now). EWAM
-  uses simple GRIB2 packing and is therefore readable without a binary library;
-  other DWD models (e.g. ICON-EU) often use CCSDS/AEC or JPEG2000 compression,
-  which would require such a library.
+- From **DWD Open Data** the **EWAM wave model** and **ICON-D2** are supported.
+  They use simple GRIB2 packing and are therefore readable without a binary
+  library. ICON-EU, ECMWF and the coastal wave model CWAM are not: the first two
+  use CCSDS/AEC compression (which needs such a library), and CWAM only covers the
+  German Bight.
+- **ICON-D2** is a separate file of ~1 MB per parameter per hour. With all 10
+  parameters and the default 24-hour horizon a run is therefore a ~250 MB download
+  (48 hours: ~500 MB). A new run appears every 3 hours, about 80 minutes after
+  its run time; the integration only picks a run up once it is complete on the
+  server. Switch on only the parameters you use, or raise the polling interval.
 - **BSH sea current** is 15-minute data: one BSH file contains a whole day of time
   steps (96 per 24 h). The integration splits that into individual time steps, but
   note that a longer forecast horizon yields many frames (24 h = 96 frames). Only

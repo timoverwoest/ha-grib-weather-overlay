@@ -97,6 +97,16 @@ COLORMAPS: dict[str, tuple[ColorStop, ...]] = {
         ColorStop(0.85, (232, 120, 60)),
         ColorStop(1.0, (150, 30, 90)),
     ),
+    # CAPE (J/kg): stable air stays out of the way; rising energy for
+    # thunderstorms warms from yellow through orange to magenta.
+    "cape": (
+        ColorStop(0.0, (240, 240, 240)),
+        ColorStop(0.1, (255, 240, 170)),
+        ColorStop(0.3, (253, 190, 90)),
+        ColorStop(0.55, (240, 110, 50)),
+        ColorStop(0.8, (200, 30, 60)),
+        ColorStop(1.0, (130, 20, 120)),
+    ),
     # Direction (0-360 deg): cyclic, so 0 and 360 share a colour.
     "direction": (
         ColorStop(0.0, (215, 48, 39)),
@@ -276,7 +286,9 @@ def render_field(
 
     image = Image.fromarray(rgba, mode="RGBA")
     buf = BytesIO()
-    image.save(buf, format="PNG", optimize=True)
+    # No optimize=True: on a 1215x746 ICON-D2 frame it made encoding five times
+    # slower (~190 ms vs ~40 ms) for a 2% smaller file.
+    image.save(buf, format="PNG")
 
     frame = RenderedFrame(
         png_bytes=buf.getvalue(),

@@ -112,6 +112,13 @@ def peek_valid_time(path: Path) -> tuple[datetime, datetime]:
     raise GribDecodeError(f"{path} contains no GRIB messages")
 
 
+def _empty_interval(message) -> bool:
+    """A statistic over an interval of zero length (ICON's +0h gust maximum and
+    precipitation total): all zeros that would read as "calm" and "dry"."""
+    end_time = getattr(message, "end_time", None)
+    return end_time is not None and end_time == message.reference_time
+
+
 def decode_parameter(path: Path, parameter: GribParameter) -> DecodedField:
     """Extract one GribParameter's field from a single-lead-time GRIB file."""
     messages = _load_messages(path)
@@ -135,6 +142,8 @@ def decode_parameter(path: Path, parameter: GribParameter) -> DecodedField:
         msg = _find(messages, parameter.grib_filter)
         if msg is None:
             raise GribDecodeError(f"Parameter '{parameter.key}' not found in {path}")
+        if _empty_interval(msg):
+            raise GribDecodeError(f"Parameter '{parameter.key}' covers no time yet in {path}")
         grid, lats, lons = _to_grid(msg)
         valid_time, run_time = _message_times(msg)
         data = grid * parameter.scale + parameter.offset

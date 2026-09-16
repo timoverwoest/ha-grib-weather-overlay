@@ -8,6 +8,7 @@ projection, ...).
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -40,6 +41,26 @@ class GribParameter:
     offset: float = 0.0
     colormap: str = "turbo"
     value_range: tuple[float, float] | None = None  # fixed scale, or None to auto-scale per frame
+    # True when each lead time holds the total since the run started (ICON's
+    # tot_prec) rather than the amount since the previous lead time. The
+    # coordinator subtracts consecutive totals, so a source that sets this must
+    # hand over the parameter's files in ascending lead-time order.
+    accumulated: bool = False
+
+
+# Wave-type parameters come in families sharing a prefix: swell_height,
+# swell_period, swell_peak_period and swell_direction belong together.
+_FAMILY_SUFFIX = re.compile(r"_(?:peak_period|period|height)$")
+
+
+def direction_key_for(key: str) -> str | None:
+    """The direction parameter that belongs with ``key``, by family prefix.
+
+    ``swell_height`` -> ``swell_direction``, ``wave_period`` -> ``wave_direction``.
+    None for a key outside such a family (wind carries its own direction as u/v).
+    """
+    match = _FAMILY_SUFFIX.search(key)
+    return f"{key[: match.start()]}_direction" if match else None
 
 
 @dataclass(frozen=True)
