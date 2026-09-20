@@ -7,12 +7,27 @@
  */
 
 // Home Assistant loads this file with the integration version in the query
-// (`...?v=0.37.5`). The vendored assets sit in the same folder and are served
+// (`...?v=0.37.6`). The vendored assets sit in the same folder and are served
 // with the same month-long cache, so they carry the same version: without it an
 // update would keep handing out the previous Leaflet from the browser's cache.
 const GRIB_ASSET_VERSION = (() => {
-  const src = document.querySelector('script[src*="grib-overlay-card.js"]')?.src;
-  return (src ? new URL(src, location.href).searchParams.get("v") : null) || "";
+  // Home Assistant imports this file as a module, so there is no
+  // document.currentScript and no <script src> tag to look up: our own URL --
+  // the one carrying the version -- only shows up in a stack trace. The script
+  // tag is still checked first, for a plain <script> include (the dev harness).
+  const fromTag =
+    document.currentScript?.src ||
+    document.querySelector('script[src*="grib-overlay-card.js"]')?.src;
+  const inStack = /https?:\/\/[^\s)'"]+grib-overlay-card\.js[^\s)'"]*/.exec(
+    new Error().stack || ""
+  );
+  // A stack entry ends in :line:column, which is not part of the URL.
+  const url = fromTag || (inStack ? inStack[0].replace(/:\d+:\d+$/, "") : "");
+  try {
+    return (url && new URL(url, location.href).searchParams.get("v")) || "";
+  } catch (err) {
+    return "";
+  }
 })();
 const GRIB_ASSET_QUERY = GRIB_ASSET_VERSION ? `?v=${encodeURIComponent(GRIB_ASSET_VERSION)}` : "";
 

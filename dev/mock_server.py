@@ -367,6 +367,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/dev.html":
             self._file(DEV_DIR / "dev.html", "text/html")
+        elif parsed.path == "/module.html":
+            # The card as Home Assistant loads it: an ES module, with the
+            # version in the query. Nothing else, so the console banner and the
+            # vendored asset URLs can be checked in isolation.
+            self._file(DEV_DIR / "module.html", "text/html")
         elif parts[:1] == ["grib_overlay_static"]:
             rel = Path(*parts[1:])
             content_type = "text/css" if rel.suffix == ".css" else "application/javascript"

@@ -152,3 +152,13 @@ def test_a_blank_map_is_measured_again_and_rebuilt_if_needed() -> None:
     # setUrl on a detached image paints nothing.
     assert "if (this._imageOverlay && !this._map.hasLayer(this._imageOverlay))" in JS
     assert "!this._imageOverlay.getElement()?.isConnected" in JS
+
+
+def test_the_card_finds_its_own_url_when_loaded_as_a_module() -> None:
+    """Home Assistant imports the card, it does not add a <script src> tag, so
+    there is nothing to query: without the stack-trace fallback the banner says
+    "dev" and the vendored files lose their cache-busting version."""
+    block = JS.split("const GRIB_ASSET_VERSION = (() => {", 1)[1].split("})();", 1)[0]
+    assert "document.currentScript?.src" in block
+    assert "new Error().stack" in block
+    assert 'replace(/:\\d+:\\d+$/, "")' in block  # a stack entry ends in :line:column
