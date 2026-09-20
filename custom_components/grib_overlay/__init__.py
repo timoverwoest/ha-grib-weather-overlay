@@ -10,6 +10,7 @@ from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 
 from .const import DOMAIN
@@ -22,6 +23,21 @@ FRONTEND_JS_FILENAME = "grib-overlay-card.js"
 STATIC_URL_PREFIX = "/grib_overlay_static"
 FRONTEND_URL_PATH = f"{STATIC_URL_PREFIX}/{FRONTEND_JS_FILENAME}"
 COMPRESSIBLE_SUFFIXES = (".js", ".css")
+FRONTEND_READY = f"{DOMAIN}_frontend"
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Serve the card and the API before any entry is set up.
+
+    Home Assistant gives a custom card about two seconds to register itself and
+    otherwise draws it as a "configuration error" -- one that stays until the
+    page is reloaded. Registering here rather than from the first entry means a
+    dashboard opened while the entries are still restoring their caches still
+    gets the card file, instead of a 404 that breaks every card of this
+    integration at once.
+    """
+    await _async_register_frontend(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -37,8 +53,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     if first_entry:
-        for view in VIEWS:
-            hass.http.register_view(view())
+        # Belt and braces: async_setup registers these at startup, but an entry
+        # added later (or a reload after an integration error) must find them.
         await _async_register_frontend(hass)
 
     entry.async_create_background_task(
@@ -64,6 +80,11 @@ async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def _async_register_frontend(hass: HomeAssistant) -> None:
     """Serve the card + vendored Leaflet assets and register the card as a Lovelace resource."""
+    if hass.data.get(FRONTEND_READY):
+        return
+    hass.data[FRONTEND_READY] = True
+    for view in VIEWS:
+        hass.http.register_view(view())
     www_dir = Path(__file__).parent / "www"
     js_path = www_dir / FRONTEND_JS_FILENAME
     if not js_path.exists():
@@ -109,8 +130,12 @@ def _refresh_precompressed(www_dir: Path) -> None:
             gz = path.with_name(path.name + ".gz")
             if gz.is_file() and gz.stat().st_mtime >= path.stat().st_mtime:
                 continue
+            source = path.read_bytes()
+            blob = gzip.compress(source, 9)
+            if gzip.decompress(blob) != source:  # never serve a copy we can't read back
+                continue
             tmp = path.with_name(path.name + ".gz.tmp")
-            tmp.write_bytes(gzip.compress(path.read_bytes(), 9))
+            tmp.write_bytes(blob)
             tmp.replace(gz)
     except OSError as err:
         _LOGGER.debug("Could not pre-compress the card assets in %s: %s", www_dir, err)

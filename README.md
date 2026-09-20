@@ -883,6 +883,12 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
 - **Kaarttegels met "Access blocked"** — de ondergrond; zie
   [Kaartlagen](#kaartlagen). Werk bij naar 0.29.1 of nieuwer en
   ververs het dashboard (de browser bewaart de geblokkeerde tegels even).
+- **Kaart en overlay blijven leeg na het wisselen van dashboard, de rest van de
+  card werkt wel** — Leaflet komt soms terug zonder dat er iets getekend is.
+  Sinds 0.37.5 meet de card zichzelf een paar keer opnieuw op en bouwt hij de
+  kaart desnoods opnieuw op, op dezelfde plek en met hetzelfde tijdstip; de
+  overlay-afbeelding wordt opnieuw aangemaakt als zijn beeld niet meer op de
+  kaart zit.
 - **De kaart blijft leeg als je tussen dashboardpagina's bladert** — Home
   Assistant houdt de kaarten van een pagina in het geheugen en hangt ze er bij
   terugkomst weer in. Sinds 0.37.3 haalt de card bij zo'n terugkeer zijn frames
@@ -1994,6 +2000,11 @@ What you will see in the log (Settings → System → Logs):
 - **Map tiles saying "Access blocked"** — the base map; see [Map layers](#map-layers).
   Update to 0.29.1 or newer and reload the dashboard (the browser keeps the
   blocked tiles for a while).
+- **The map and overlay stay empty after switching dashboards while the rest of
+  the card works** — Leaflet sometimes comes back with nothing painted. Since
+  0.37.5 the card re-measures itself a few times and, if need be, builds the map
+  again at the same place and moment; the overlay image is recreated when its
+  image is no longer on the map.
 - **The map stays empty when you browse between dashboard pages** — Home
   Assistant keeps a page's cards in memory and re-attaches them when you come
   back. Since 0.37.3 the card fetches its frames again on that re-attach,

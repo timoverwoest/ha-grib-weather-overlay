@@ -7,7 +7,7 @@
  */
 
 // Home Assistant loads this file with the integration version in the query
-// (`...?v=0.37.4`). The vendored assets sit in the same folder and are served
+// (`...?v=0.37.5`). The vendored assets sit in the same folder and are served
 // with the same month-long cache, so they carry the same version: without it an
 // update would keep handing out the previous Leaflet from the browser's cache.
 const GRIB_ASSET_VERSION = (() => {
@@ -1749,6 +1749,8 @@ class GribOverlayCard extends HTMLElement {
     if (this._reattaching || !this._hass || !this._entries || !this._entries.length) return;
     this._reattaching = true;
     try {
+      await this._ensureTiles({ allowRebuild: true });
+      if (!this._map) return;
       const shown = this._frames[this._frameIndex || 0];
       await this._onParameterChange();
       const back = shown
@@ -1821,6 +1823,35 @@ class GribOverlayCard extends HTMLElement {
     }
     // Show the value window at the shared point (and close any other popup).
     this._openValuePopup(ll);
+  }
+
+  // A map built (or handed back) while its container was hidden -- switching
+  // dashboards does that -- can end up with no tiles at all: the card shows its
+  // controls and data, the map area stays blank. Nudge Leaflet a few times and,
+  // for a map that was only re-attached, build it again if it is still empty.
+  async _ensureTiles({ allowRebuild = false } = {}) {
+    for (const wait of [250, 750, 1500]) {
+      await new Promise((resolve) => setTimeout(resolve, wait));
+      if (!this._map || !this.isConnected) return;
+      if (this._els.mapDiv.querySelector(".leaflet-tile")) return;
+      if (!this._els.mapDiv.offsetWidth) continue; // still hidden: nothing to measure
+      this._map.invalidateSize({ pan: false });
+    }
+    if (!allowRebuild || !this._map || !this.isConnected) return;
+    if (this._els.mapDiv.querySelector(".leaflet-tile")) return;
+
+    console.warn("grib-overlay-card: the map came back blank, building it again");
+    const center = this._map.getCenter();
+    const zoom = this._map.getZoom();
+    const shown = this._frames[this._frameIndex || 0];
+    this._map.remove();
+    this._map = null;
+    this._boundsFit = true; // keep where the user was looking; don't re-fit
+    await this._initialize();
+    if (!this._map) return;
+    this._map.setView(center, zoom);
+    const back = shown ? this._frames.findIndex((f) => f.valid_time === shown.valid_time) : -1;
+    if (back > 0) this._showFrame(back);
   }
 
   _observeResize() {
@@ -2223,6 +2254,7 @@ class GribOverlayCard extends HTMLElement {
     this._scheduleInvalidate();
 
     await this._loadEntries();
+    this._ensureTiles();
   }
 
   async _loadEntries() {
@@ -2321,6 +2353,7 @@ class GribOverlayCard extends HTMLElement {
     if (!entry) return;
 
     const params = overlayParameters(entry, this._config);
+    const current = this._els.paramSelect.value;
     this._els.paramSelect.innerHTML = "";
     for (const param of params) {
       const opt = document.createElement("option");
@@ -2328,7 +2361,10 @@ class GribOverlayCard extends HTMLElement {
       opt.textContent = `${gribParamName(param)} (${this._displayUnitLabel(param.unit)})`;
       this._els.paramSelect.appendChild(opt);
     }
-    const wantedParam = this._config.parameter;
+    // Keep what the user was looking at when this dataset also has it (the
+    // card rebuilds itself after a dashboard switch); otherwise the config's
+    // choice, otherwise the first parameter.
+    const wantedParam = params.some((p) => p.key === current) ? current : this._config.parameter;
     this._els.paramSelect.value = params.some((p) => p.key === wantedParam)
       ? wantedParam
       : params[0]?.key || "";
@@ -2435,6 +2471,15 @@ class GribOverlayCard extends HTMLElement {
       opacity = d >= 0 && d <= 1 ? d : 0.35;
     } else if (mode) {
       opacity = 0.45;
+    }
+    // A layer whose image is no longer in the map (a dashboard switch can
+    // leave it behind, or the map was rebuilt) has to be made anew: setUrl on
+    // a detached image paints nothing.
+    if (this._imageOverlay && !this._map.hasLayer(this._imageOverlay)) {
+      this._imageOverlay = null;
+    } else if (this._imageOverlay && !this._imageOverlay.getElement()?.isConnected) {
+      this._map.removeLayer(this._imageOverlay);
+      this._imageOverlay = null;
     }
     if (!this._imageOverlay) {
       this._imageOverlay = window.L.imageOverlay(frame.image_url, bounds, { opacity }).addTo(this._map);

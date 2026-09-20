@@ -116,3 +116,39 @@ def test_a_re_attached_card_fetches_its_frames_again() -> None:
     assert "await this._onParameterChange();" in body
     assert "if (back > 0) this._showFrame(back);" in body  # same moment as before
     assert "invalidateSize()" in body
+
+
+def test_the_card_is_served_before_any_entry_is_set_up() -> None:
+    """A dashboard opened while the entries are still restoring their caches
+    must not get a 404 for the card: that breaks every card of this integration
+    at once, until the page is reloaded."""
+    assert "async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:" in INIT
+    setup = INIT.split("async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:", 1)[1]
+    setup = setup.split("\nasync def ", 1)[0]
+    assert "await _async_register_frontend(hass)" in setup
+    # Registering twice would raise, so it is guarded and does the views too.
+    register = INIT.split("async def _async_register_frontend(hass: HomeAssistant) -> None:", 1)[1]
+    register = register.split("\ndef ", 1)[0]
+    assert "if hass.data.get(FRONTEND_READY):" in register
+    assert "hass.http.register_view(view())" in register
+
+
+def test_a_gzip_copy_that_cannot_be_read_back_is_not_written(tmp_path: Path) -> None:
+    # aiohttp serves the .gz in place of the file, without ever looking at the
+    # original: a copy we cannot decompress ourselves must never reach disk.
+    refresh = INIT.split("def _refresh_precompressed(www_dir: Path) -> None:", 1)[1]
+    assert "if gzip.decompress(blob) != source:" in refresh
+
+
+def test_a_blank_map_is_measured_again_and_rebuilt_if_needed() -> None:
+    """Switching dashboards can hand the card back with nothing painted: the
+    controls and data are there, the map area is empty."""
+    body = JS.split("  async _ensureTiles({ allowRebuild = false } = {}) {", 1)[1].split("\n  }\n", 1)[0]
+    assert "for (const wait of [250, 750, 1500])" in body
+    assert "this._map.invalidateSize({ pan: false });" in body
+    assert "await this._initialize();" in body  # last resort: build the map again
+    assert "this._map.setView(center, zoom);" in body  # at the same place
+    # The image overlay is recreated when its image is no longer on the map --
+    # setUrl on a detached image paints nothing.
+    assert "if (this._imageOverlay && !this._map.hasLayer(this._imageOverlay))" in JS
+    assert "!this._imageOverlay.getElement()?.isConnected" in JS
