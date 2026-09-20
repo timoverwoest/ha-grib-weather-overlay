@@ -80,7 +80,12 @@ def _entry(hass, tmp_path, **options) -> MockConfigEntry:
 
 
 def _write_cached_run(
-    coordinator: GribOverlayCoordinator, keys: list[str], leads=(0,), horizon=None
+    coordinator: GribOverlayCoordinator,
+    keys: list[str],
+    leads=(0,),
+    horizon=None,
+    empty: list[str] | None = None,
+    record_empty: bool = True,
 ) -> None:
     run_dir = coordinator.storage_dir / "2026091600"
     run_dir.mkdir(parents=True)
@@ -102,12 +107,18 @@ def _write_cached_run(
                     "legend": {"unit": "m", "min_value": 0, "max_value": 8, "stops": []},
                 }
             )
-    manifest = {
+    manifest: dict = {
         "manifest_version": coordinator.MANIFEST_VERSION,
         "color_scales": "",
         "run_filename": "2026091600",
         "frames": frames,
     }
+    for key in empty or []:
+        frames[key] = []  # asked for, but the run held nothing for it
+    if record_empty:
+        manifest_empty = sorted(key for key, flist in frames.items() if not flist)
+        if manifest_empty:
+            manifest["empty_parameters"] = manifest_empty
     if horizon is not None:
         manifest["horizon_hours"] = horizon
     (run_dir / coordinator.MANIFEST_NAME).write_text(json.dumps(manifest))
@@ -145,6 +156,40 @@ async def test_a_switched_off_parameter_is_not_offered_from_the_cache(hass, tmp_
     run, frames = coordinator._load_cached_frames()
     assert run == "2026091600"
     assert list(frames) == ["wave_height"]
+
+
+async def test_a_run_missing_one_parameter_is_tried_once_more(hass, tmp_path) -> None:
+    """A parameter that came out empty gets a second chance, not a permanent hole.
+
+    The run may have been processed while the source was briefly missing that
+    field -- or before this record existed at all (an older manifest).
+    """
+    entry = _entry(hass, tmp_path, **{CONF_PARAMETERS: ["wave_height", "swell_height"]})
+    coordinator = GribOverlayCoordinator(hass, entry)
+    _write_cached_run(
+        coordinator, ["wave_height"], empty=["swell_height"], record_empty=False
+    )
+    assert coordinator._load_cached_frames() == (None, {})
+
+
+async def test_a_second_empty_run_is_taken_as_it_is(hass, tmp_path) -> None:
+    """Once the manifest records it, the run is not downloaded again and again."""
+    entry = _entry(hass, tmp_path, **{CONF_PARAMETERS: ["wave_height", "swell_height"]})
+    coordinator = GribOverlayCoordinator(hass, entry)
+    _write_cached_run(coordinator, ["wave_height"], empty=["swell_height"])
+    run, frames = coordinator._load_cached_frames()
+    assert run == "2026091600"
+    assert frames["swell_height"] == []
+
+
+async def test_the_manifest_records_which_parameters_came_out_empty(hass, tmp_path) -> None:
+    entry = _entry(hass, tmp_path)
+    coordinator = GribOverlayCoordinator(hass, entry)
+    run_dir = tmp_path / "run-empty"
+    run_dir.mkdir()
+    coordinator._write_frames_manifest(run_dir, "2026091600", {"wave_height": []}, 48.0)
+    manifest = json.loads((run_dir / coordinator.MANIFEST_NAME).read_text())
+    assert manifest["empty_parameters"] == ["wave_height"]
 
 
 async def test_a_longer_horizon_processes_the_run_again(hass, tmp_path) -> None:

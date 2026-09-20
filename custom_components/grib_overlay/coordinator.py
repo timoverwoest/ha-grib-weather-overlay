@@ -569,6 +569,16 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
         for frames in new_frames.values():
             frames.sort(key=lambda f: f.valid_time)
+        empty = sorted(key for key, flist in new_frames.items() if not flist)
+        if empty and any(new_frames.values()):
+            # The rest of the run is fine, so nothing fails -- but a parameter
+            # the user switched on that stays empty would otherwise be visible
+            # only as a card that never fills (and a debug line per member).
+            _LOGGER.warning(
+                "Run %s: no data for %s; the other parameters were processed normally",
+                run_filename,
+                ", ".join(empty),
+            )
         self._write_frames_manifest(run_dir, run_filename, new_frames, horizon_hours)
         return new_frames
 
@@ -689,6 +699,10 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             "color_scales": self._color_scales_signature(),
             "run_filename": run_filename,
             "horizon_hours": horizon_hours,
+            # Parameters that were asked for but yielded nothing in this run.
+            # Recorded so a restart can tell "we already tried that" from "this
+            # run was processed before that parameter was switched on".
+            "empty_parameters": sorted(key for key, flist in frames.items() if not flist),
             "frames": {
                 key: [
                     {
@@ -742,6 +756,18 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             # (Every enabled parameter gets a key, even one that came out empty.)
             cached = manifest.get("frames", {})
             if not enabled <= set(cached):
+                continue
+            # An enabled parameter with no frames at all: process the run again,
+            # once. A run from before this record (or from before the parameter
+            # was switched on) is worth a second try; when the second try comes
+            # out empty too, the manifest says so and the run is taken as it is.
+            hollow = {key for key in enabled if not cached.get(key)}
+            if hollow and hollow != set(manifest.get("empty_parameters") or []):
+                _LOGGER.debug(
+                    "Cached run %s has no frames for %s; processing it again",
+                    run_dir.name,
+                    ", ".join(sorted(hollow)),
+                )
                 continue
             # Rendered for a shorter horizon than is now asked for -> process the
             # run again, or the card would stay short until the next run. (A

@@ -7,7 +7,7 @@
  */
 
 // Home Assistant loads this file with the integration version in the query
-// (`...?v=0.37.3`). The vendored assets sit in the same folder and are served
+// (`...?v=0.37.4`). The vendored assets sit in the same folder and are served
 // with the same month-long cache, so they carry the same version: without it an
 // update would keep handing out the previous Leaflet from the browser's cache.
 const GRIB_ASSET_VERSION = (() => {

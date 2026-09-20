@@ -888,6 +888,11 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
   terugkomst weer in. Sinds 0.37.3 haalt de card bij zo'n terugkeer zijn frames
   opnieuw op, meet hij de kaart opnieuw op en toont hij hetzelfde tijdstip als
   daarvoor — verversen van de pagina is niet meer nodig.
+- **Een parameter blijft leeg terwijl de rest van de bron werkt** — in het
+  logboek staat dan `Run … : no data for <parameter>`. Die run wordt daarna nog
+  één keer opnieuw verwerkt (bij een herstart of herladen van de integratie);
+  blijft hij leeg, dan is het die run zelf en vult de eerstvolgende run hem
+  gewoon weer.
 - **Isobaren staan aan maar er verschijnt niets** — onder de kaart staat dan
   *"Geen luchtdrukdata voor dit tijdstip"*. De run is nog niet verwerkt (even
   wachten), of je hebt luchtdruk pas net aangezet: de integratie haalt die run
@@ -1994,6 +1999,10 @@ What you will see in the log (Settings → System → Logs):
   back. Since 0.37.3 the card fetches its frames again on that re-attach,
   re-measures the map and shows the same moment as before — no page reload
   needed.
+- **One parameter stays empty while the rest of the source works** — the log
+  then says `Run … : no data for <parameter>`. That run is processed once more
+  (on a restart or a reload of the integration); if it stays empty, it is that
+  run, and the next one fills it again.
 - **The isobars are on but nothing appears** — the card then says *"No pressure
   data for this time"* under the map. Either the run has not been processed yet
   (give it a moment), or pressure was only just enabled: the integration fetches
