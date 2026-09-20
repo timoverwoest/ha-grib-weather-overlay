@@ -59,6 +59,30 @@ def test_a_kept_wave_parameter_keeps_its_direction() -> None:
     assert "!matchesAny(exclude, dir)" in body
 
 
+def test_a_direction_is_not_offered_as_a_layer_of_its_own() -> None:
+    # Directions are drawn as arrows on their own height/period, so the overlay
+    # dropdown leaves them out -- unless the config names one, or an entry has
+    # nothing else (a direction-only dataset must not end up empty).
+    body = _body("overlayParameters")
+    assert 'p.unit !== "\\u00b0" || p.key === wanted' in body
+    assert "return shown.length ? shown : all;" in body
+    assert JS.count("const params = overlayParameters(entry, this._config);") == 1
+
+
+def test_the_comparison_offers_only_what_the_ticked_models_have() -> None:
+    # Unticking a model must take its exclusive parameters out of the dropdown,
+    # and unticking everything falls back to all models rather than to nothing.
+    active = _body("_activeEntries") if "function _activeEntries(" in FILTERS else JS.split(
+        "_activeEntries() {", 1
+    )[1].split("\n  }\n", 1)[0]
+    assert "excluded.has(e.entry_id)" in active
+    assert "return active.length ? active : entries;" in active
+    populate = JS.split("  _populateParameters() {", 1)[1].split("\n  }\n", 1)[0]
+    assert "for (const e of this._activeEntries())" in populate
+    # ... and the parameter being compared survives a tick when it still exists.
+    assert "const wanted = seen.has(current) ? current : this._config.parameter;" in populate
+
+
 def test_an_empty_result_is_explained_on_the_card() -> None:
     assert 'this._els.note.textContent = gribT("noDatasetsMatch");' in JS
     assert JS.count("noDatasetsMatch:") == 2  # Dutch and English

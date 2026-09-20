@@ -97,10 +97,26 @@ class _Resp:
 
 
 class _Session:
-    """Answers get_anal_times with ``runs`` and get_matroos windows with a NetCDF."""
+    """Answers get_anal_times with ``runs`` and get_matroos windows with a NetCDF.
 
-    def __init__(self, runs: list[str], missing_hours: set[int] = frozenset()) -> None:
+    ``computed_to`` says how far each run has been computed (by run stamp);
+    beyond that Matroos answers with its one-line "no data" text, exactly as it
+    does for a run that is still being produced.
+    """
+
+    NO_DATA = (
+        b"ERROR in matroos.pl: er is geen data beschikbaar voor de gespecificeerde "
+        b"bron in de gevraagde periode."
+    )
+
+    def __init__(
+        self,
+        runs: list[str],
+        missing_hours: set[int] = frozenset(),
+        computed_to: dict[str, int] | None = None,
+    ) -> None:
         self.runs, self.missing, self.windows = runs, set(missing_hours), []
+        self.computed_to = computed_to or {}
 
     def get(self, url: str, timeout=None):
         q = {k: v[0] for k, v in parse_qs(urlparse(url).query).items()}
@@ -114,8 +130,15 @@ class _Session:
             int((start - run).total_seconds() // 3600) + i
             for i in range(int((end - start).total_seconds() // 3600) + 1)
         ]
-        hours = [h for h in hours if h not in self.missing]
+        last = self.computed_to.get(q["anal"])
+        hours = [h for h in hours if h not in self.missing and (last is None or h <= last)]
+        if not hours:
+            return _Resp(self.NO_DATA)
         return _Resp(_matroos_nc(run, hours, q["color"].split(",")))
+
+    def probes(self) -> list[str]:
+        """The run stamps the completeness check asked about (one hour each)."""
+        return [q["anal"] for start, end, q in self.windows if start == end]
 
 
 @pytest.mark.asyncio
@@ -123,6 +146,35 @@ async def test_lists_the_newest_six_hourly_run() -> None:
     src = RwsSource(_Session(["202609160900", "202609161200", "202609161500", "garbage"]))
     files = await src.async_list_files(DCSM)
     assert [f.filename for f in files] == ["202609161200"]
+
+
+@pytest.mark.asyncio
+async def test_a_run_that_is_still_being_computed_is_skipped() -> None:
+    # The newest six-hourly run stops at +40 h: it is still being produced, so
+    # the run before it -- the one we most likely already have -- is used.
+    session = _Session(
+        ["202609160600", "202609160900", "202609161200"], computed_to={"202609161200": 40}
+    )
+    files = await RwsSource(session).async_list_files(DCSM)
+    assert [f.filename for f in files] == ["202609160600"]
+    assert session.probes() == ["202609161200", "202609160600"]
+
+
+@pytest.mark.asyncio
+async def test_a_finished_run_is_only_probed_once() -> None:
+    session = _Session(["202609161200"])
+    src = RwsSource(session)
+    for _ in range(3):
+        assert [f.filename for f in await src.async_list_files(DCSM)] == ["202609161200"]
+    assert session.probes() == ["202609161200"]
+
+
+@pytest.mark.asyncio
+async def test_no_finished_run_lists_nothing() -> None:
+    session = _Session(
+        ["202609160600", "202609161200"], computed_to={"202609160600": 10, "202609161200": 10}
+    )
+    assert await RwsSource(session).async_list_files(DCSM) == []
 
 
 @pytest.mark.asyncio

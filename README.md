@@ -752,6 +752,11 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 | `meteogram_parameters` | lijst of tekst | — | parametersleutels die in het uitgebreide meteogram **standaard zichtbaar** zijn; de rest start verborgen (in te schakelen via de chips). Leeg = alle rijen tonen. Match op parametersleutel, dus geldt voor álle bronnen |
 | `meteogram_resolution` | tekst | `uur` | tijdstap van de meteogram-kolommen: `kwartier`, `uur`, `3uur` of `dag`. Bij `dag` het daggemiddelde (neerslag: dagsom); fijner = waarde op dat tijdstip. In het venster zelf ook via “Kolommen” te wisselen |
 
+In de keuzelijst van de kaart staan **geen losse richtingparameters**
+(golfrichting, deiningsrichting): een richting hoort bij zijn hoogte of periode
+en wordt daar als pijlen bovenop getekend. Wil je er tóch één als kleurlaag,
+noem hem dan expliciet met `parameter: wave_direction`.
+
 `datasets`/`parameters` (en hun `exclude_`-varianten) gelden voor de hele card:
 keuzelijst, overlay en het uitgebreide meteogram. Een richtingparameter blijft
 staan zolang zijn hoogte/periode blijft staan (`wave_height` houdt
@@ -777,6 +782,7 @@ chips, “Alle rijen tonen”) geldt tijdelijk, voor dat geopende venster.
 | `exclude_datasets` | lijst of tekst | — | deze bronnen juist **niet** |
 | `parameters` / `exclude_parameters` | lijst of tekst | — | welke parameters in de keuzelijst staan: sleutel, jokerteken of groep (`golven`, `zee`, `weer` …) |
 | `meteogram_resolution` | tekst | `uur` | kolom-tijdstap van de tabel: `kwartier`, `uur`, `3uur`, `dag` |
+| (geen sleutel) | | | de parameterlijst volgt de **aangevinkte** modellen: vink je een bron uit, dan verdwijnen de parameters die alleen die bron heeft |
 | `wind_unit`, `visibility_unit`, `direction_unit` | tekst | zie hieronder | zelfde eenheden-opties als de overlay-card |
 
 ### Weerkaart-card (`grib-overlay-weathermap-card`)
@@ -1029,7 +1035,10 @@ Extra's:
   run per 6 uur op (de modellen draaien elke 3 uur), in stukken van 7 uur. Voor
   DCSM is dat ~2,5 MB per uur voor het hele gebied (24 uur vooruit: ~60 MB per
   run); SWAN Noordzee ~1,6 MB en SWAN-kust ~0,7 MB per uur. De modellen reiken
-  tot 48 uur vooruit.
+  tot 48 uur vooruit. Matroos zet een run al in de lijst zodra de eerste uren
+  klaar zijn, dus de integratie vraagt eerst met één klein verzoek of het laatste
+  uur er al is; zo niet, dan blijft de vorige (complete) run staan tot de nieuwe
+  af is — meestal een half uur later.
 - **DCSM-waterstand**: de omrekening naar een regelmatig rooster levert langs
   kusten en in afgesloten bekkens een handvol onmogelijke waarden (8–12 m). De
   integratie verwijdert cellen die meer dan 2 m van hun buren afwijken (~0,04%);
@@ -1834,6 +1843,11 @@ include `swell_direction` too, or the swell rows have no arrows.
 | `meteogram_parameters` | list or text | — | parameter keys that are **visible by default** in the detailed meteogram; the rest starts hidden (enable via the chips). Empty = show all rows. Match on parameter key, so it applies to all sources |
 | `meteogram_resolution` | text | `uur` | time step of the meteogram columns: `kwartier`, `uur`, `3uur` or `dag`. For `dag` the daily average (precipitation: daily sum); finer = value at that time. Also switchable via “Kolommen” in the window itself |
 
+The card's dropdown does **not** offer directions as layers of their own (wave
+direction, swell direction): a direction belongs to its height or period and is
+drawn on top of it as arrows. To have one as a colour layer anyway, name it
+explicitly with `parameter: wave_direction`.
+
 `datasets`/`parameters` (and their `exclude_` variants) apply to the whole card:
 dropdown, overlay and the detailed meteogram. A direction parameter stays as
 long as its height/period does (`wave_height` keeps `wave_direction`), so the
@@ -1859,6 +1873,7 @@ applies temporarily, for that opened window.
 | `exclude_datasets` | list or text | — | rather **not** these sources |
 | `parameters` / `exclude_parameters` | list or text | — | which parameters the dropdown offers: key, wildcard or group (`waves`, `sea`, `weather` …) |
 | `meteogram_resolution` | text | `uur` | column time step of the table: `kwartier`, `uur`, `3uur`, `dag` |
+| (no key) | | | the parameter list follows the **ticked** models: untick a source and the parameters only that source has disappear |
 | `wind_unit`, `visibility_unit`, `direction_unit` | text | see below | same unit options as the overlay card |
 
 ### Weather-map card (`grib-overlay-weathermap-card`)
@@ -2108,6 +2123,10 @@ Also:
   every 6 hours (the models run every 3), in pieces of 7 hours. For DCSM that is
   ~2.5 MB per hour for the whole area (24 hours ahead: ~60 MB per run); SWAN
   North Sea ~1.6 MB and SWAN coast ~0.7 MB per hour. The models reach 48 hours.
+  Matroos lists a run as soon as its first hours are out, so the integration asks
+  with one small request whether the last hour is there yet; if it is not, the
+  previous (finished) run stays until the new one is done — usually half an hour
+  later.
 - **DCSM water level**: interpolating to a regular grid leaves a handful of
   impossible values (8–12 m) along coasts and in enclosed basins. The
   integration removes cells that differ from their neighbours by more than 2 m

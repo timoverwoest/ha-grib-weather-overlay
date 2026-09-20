@@ -83,3 +83,16 @@ def test_a_read_only_install_still_serves_the_plain_files(tmp_path: Path) -> Non
     finally:
         tmp_path.chmod(0o700)
     assert not (tmp_path / "card.js.gz").exists()
+
+
+def test_a_throwing_hass_setter_cannot_blank_the_card() -> None:
+    """Home Assistant replaces a card whose `hass` setter throws with a bare
+    "configuration error" -- no message, nothing to go on. Every setter guards
+    its body, so a hiccup costs a frame and not the card."""
+    assert JS.count("set hass(hass) {") == JS.count('gribGuard("hass update", () => {') == 3
+    for block in JS.split("set hass(hass) {")[1:]:
+        body = block.split("\n  }\n", 1)[0]
+        assert 'gribGuard("hass update"' in body
+        # Only the bookkeeping line may sit outside the guard.
+        before = body.split("gribGuard", 1)[0].strip()
+        assert before == "this._hass = hass;", before

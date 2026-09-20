@@ -40,6 +40,8 @@ API_BASE_URL = "https://noos.matroos.rws.nl/direct"
 
 # Lead times per request: a DCSM hour over the whole domain is ~2.5 MB.
 _WINDOW_HOURS = 6
+# How far back to look for a finished run when the newest one is still running.
+_RUN_CANDIDATES = 2
 _TIMEOUT = aiohttp.ClientTimeout(total=300)
 # DCSM's grid interpolation leaves a few cells along coasts and in enclosed
 # basins with impossible water levels (8-12 m). Such a cell differs from its
@@ -258,6 +260,7 @@ class RwsSource(GribSource):
     def __init__(self, session: aiohttp.ClientSession, api_key: str | None = None,
                  notification_api_key: str | None = None, instance_id: str | None = None) -> None:
         self._session = session
+        self._complete: set[str] = set()  # runs already known to be finished
 
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
         return list(KNOWN_DATASETS)
@@ -296,10 +299,38 @@ class RwsSource(GribSource):
                 continue
             if run.hour % model.run_interval_hours == 0:
                 runs.append(run)
-        if not runs:
-            return []
-        latest = max(runs)
-        return [GribFileInfo(filename=_stamp(latest), size=0, last_modified=latest.isoformat())]
+        # Newest first, and only a run that has reached its last hour: Matroos
+        # publishes a run's analysis time as soon as its first hours are out, so
+        # the newest one is often still being computed. Downloading it would
+        # give a run that stops short of the horizon (and, before, an error);
+        # the run before it is finished and is usually the one we already have.
+        for run in sorted(runs, reverse=True)[:_RUN_CANDIDATES]:
+            if await self._async_is_complete(model, run):
+                return [GribFileInfo(filename=_stamp(run), size=0, last_modified=run.isoformat())]
+        return []
+
+    async def _async_is_complete(self, model: _Model, run: datetime) -> bool:
+        """Has ``run`` been computed all the way to its last lead time?
+
+        One small request for that hour alone answers it: Matroos returns
+        NetCDF when the hour exists and a one-line error when it doesn't.
+        """
+        key = f"{model.source}:{_stamp(run)}"
+        if key in self._complete:
+            return True
+        last = _stamp(run + timedelta(hours=model.last_lead))
+        south, west, north, east = model.bbox
+        lat, lon = (south + north) / 2, (west + east) / 2
+        url = (
+            f"{API_BASE_URL}/get_matroos.php?source={model.source}&anal={_stamp(run)}"
+            f"&color={model.fields[0]}&coords=WGS84"
+            f"&xmin={lon}&xmax={lon + model.step_deg}&ymin={lat}&ymax={lat + model.step_deg}"
+            f"&xn=2&yn=2&from={last}&to={last}&dtmin=60&format=nc"
+        )
+        if not (await self._get(url)).startswith(b"CDF"):
+            return False
+        self._complete.add(key)
+        return True
 
     async def async_download_file(
         self, dataset: GribDatasetInfo, filename: str, destination: Path

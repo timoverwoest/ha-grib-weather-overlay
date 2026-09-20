@@ -7,7 +7,7 @@
  */
 
 // Home Assistant loads this file with the integration version in the query
-// (`...?v=0.36.1`). The vendored assets sit in the same folder and are served
+// (`...?v=0.37.0`). The vendored assets sit in the same folder and are served
 // with the same month-long cache, so they carry the same version: without it an
 // update would keep handing out the previous Leaflet from the browser's cache.
 const GRIB_ASSET_QUERY = (() => {
@@ -80,6 +80,18 @@ function gribT(key, vars) {
 // the document/browser language and this puts the user's own language back,
 // without tearing down the Leaflet map. Nodes opt in with data-i18n (text) or
 // data-i18n-title (tooltip).
+// Home Assistant hands a card a fresh `hass` on every state change, and
+// replaces the card with a bare "configuration error" -- no message, nothing to
+// go on -- as soon as that setter throws. Nothing we do there is worth losing
+// the card over: log it and carry on.
+function gribGuard(what, fn) {
+  try {
+    fn();
+  } catch (err) {
+    console.error(`grib-overlay-card: ${what} failed`, err);
+  }
+}
+
 function gribApplyLanguage(root) {
   if (!root) return;
   for (const el of root.querySelectorAll("[data-i18n]")) {
@@ -1186,6 +1198,16 @@ function filterCardEntries(entries, config) {
   return out;
 }
 
+// The parameters the overlay card offers as a layer. A direction is drawn as
+// arrows on top of its own height or period, so it is not a layer of its own --
+// unless the config asks for one by name, or an entry has nothing else.
+function overlayParameters(entry, config) {
+  const all = (entry && entry.parameters) || [];
+  const wanted = (config || {}).parameter;
+  const shown = all.filter((p) => p.unit !== "\u00b0" || p.key === wanted);
+  return shown.length ? shown : all;
+}
+
 // What the filters currently say, so a live config edit (the YAML editor's
 // preview) can tell whether the dataset list has to be rebuilt.
 function cardFilterKey(config) {
@@ -1589,11 +1611,13 @@ class GribOverlayCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    // setConfig (and thus the first paint) runs before Home Assistant hands
-    // over `hass`, so the static chrome is re-labelled here once the user's
-    // own language is known -- and again if they ever switch it.
-    if (gribSyncLang(hass) && this._built) gribApplyLanguage(this.shadowRoot);
-    this._tryInitialize();
+    gribGuard("hass update", () => {
+      // setConfig (and thus the first paint) runs before Home Assistant hands
+      // over `hass`, so the static chrome is re-labelled here once the user's
+      // own language is known -- and again if they ever switch it.
+      if (gribSyncLang(hass) && this._built) gribApplyLanguage(this.shadowRoot);
+      this._tryInitialize();
+    });
   }
 
   // Only build the Leaflet map once the card is both configured with hass AND
@@ -2240,17 +2264,18 @@ class GribOverlayCard extends HTMLElement {
     const entry = this._currentEntry();
     if (!entry) return;
 
+    const params = overlayParameters(entry, this._config);
     this._els.paramSelect.innerHTML = "";
-    for (const param of entry.parameters) {
+    for (const param of params) {
       const opt = document.createElement("option");
       opt.value = param.key;
       opt.textContent = `${gribParamName(param)} (${this._displayUnitLabel(param.unit)})`;
       this._els.paramSelect.appendChild(opt);
     }
     const wantedParam = this._config.parameter;
-    this._els.paramSelect.value = entry.parameters.some((p) => p.key === wantedParam)
+    this._els.paramSelect.value = params.some((p) => p.key === wantedParam)
       ? wantedParam
-      : entry.parameters[0]?.key || "";
+      : params[0]?.key || "";
 
     // Auto-fit to the dataset bounds only when the user hasn't pinned the view
     // via config; an explicit center/zoom must win over the auto-fit.
@@ -5419,11 +5444,13 @@ class GribCompareCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    // setConfig (and thus the first paint) runs before Home Assistant hands
-    // over `hass`, so the static chrome is re-labelled here once the user's
-    // own language is known -- and again if they ever switch it.
-    if (gribSyncLang(hass) && this._built) gribApplyLanguage(this.shadowRoot);
-    this._tryInitialize();
+    gribGuard("hass update", () => {
+      // setConfig (and thus the first paint) runs before Home Assistant hands
+      // over `hass`, so the static chrome is re-labelled here once the user's
+      // own language is known -- and again if they ever switch it.
+      if (gribSyncLang(hass) && this._built) gribApplyLanguage(this.shadowRoot);
+      this._tryInitialize();
+    });
   }
 
   getCardSize() {
@@ -5725,7 +5752,12 @@ class GribCompareCard extends HTMLElement {
         const id = ev.target.value;
         if (ev.target.checked) this._excluded.delete(id);
         else this._excluded.add(id);
-        this._renderComparison();
+        // The parameter list follows the ticked models; when the one being
+        // compared disappears with them, fetch what the dropdown fell back to.
+        const before = this._els.paramSelect.value;
+        this._populateParameters();
+        if (this._els.paramSelect.value !== before) this._refresh();
+        else this._renderComparison();
       }
     });
     // Live measurement entry: update the map + re-render only the chart/delta,
@@ -5920,11 +5952,22 @@ class GribCompareCard extends HTMLElement {
     setTimeout(() => this._map && this._map.invalidateSize(), 60);
   }
 
-  // Parameter dropdown = union of parameter keys across all entries (excluding
-  // pure direction parameters), labelled with name + display unit.
+  // The models being compared: everything the card may show, minus the ones
+  // unticked below the map. Unticking them all falls back to all of them, so
+  // the card never ends up with nothing to offer.
+  _activeEntries() {
+    const entries = this._entries || [];
+    const excluded = this._excluded || new Set();
+    const active = entries.filter((e) => !excluded.has(e.entry_id));
+    return active.length ? active : entries;
+  }
+
+  // Parameter dropdown = union of parameter keys across the ticked models
+  // (excluding pure direction parameters), labelled with name + display unit.
+  // A parameter only an unticked model has would have nothing to compare.
   _populateParameters() {
     const seen = new Map();
-    for (const e of this._entries || []) {
+    for (const e of this._activeEntries()) {
       for (const p of e.parameters || []) {
         if (p.unit === "°") continue;
         if (!seen.has(p.key)) seen.set(p.key, p);
@@ -5937,7 +5980,9 @@ class GribCompareCard extends HTMLElement {
       opt.textContent = `${gribParamName(p)} (${displayUnitLabel(this._config, p.unit)})`;
       this._els.paramSelect.appendChild(opt);
     }
-    const wanted = this._config.parameter;
+    // Keep what the user is looking at as long as it is still on offer.
+    const current = this._els.paramSelect.value;
+    const wanted = seen.has(current) ? current : this._config.parameter;
     this._els.paramSelect.value = seen.has(wanted) ? wanted : (seen.keys().next().value || "");
   }
 
@@ -6053,11 +6098,13 @@ class GribWeatherMapCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    if (gribSyncLang(hass) && this._built) {
-      gribApplyLanguage(this.shadowRoot);
-      this._show();
-    }
-    if (!this._loaded && this.isConnected) this._load();
+    gribGuard("hass update", () => {
+      if (gribSyncLang(hass) && this._built) {
+        gribApplyLanguage(this.shadowRoot);
+        this._show();
+      }
+      if (!this._loaded && this.isConnected) this._load();
+    });
   }
 
   getCardSize() {
