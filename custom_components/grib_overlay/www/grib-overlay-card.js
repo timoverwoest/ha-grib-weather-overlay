@@ -7,7 +7,7 @@
  */
 
 // Home Assistant loads this file with the integration version in the query
-// (`...?v=0.37.0`). The vendored assets sit in the same folder and are served
+// (`...?v=0.37.1`). The vendored assets sit in the same folder and are served
 // with the same month-long cache, so they carry the same version: without it an
 // update would keep handing out the previous Leaflet from the browser's cache.
 const GRIB_ASSET_QUERY = (() => {
@@ -122,6 +122,8 @@ const GRIB_TEXT = {
     waveVectors: "Golfrichting (pijlen)",
     isobars: "Isobaren",
     isobarsTitle: "Isobaren + hoge-/lagedrukcentra bovenop de overlay",
+    isobarsNoPressure:
+      "Deze bron heeft geen luchtdruk in deze kaart. Zet \u2018Luchtdruk (zeeniveau)\u2019 aan bij Instellingen \u2192 Apparaten & diensten \u2192 GRIB Weather Overlay \u2192 Configureren (en haal hem niet weg met parameters/exclude_parameters).",
     until: "t/m",
     playbackSpeed: "Afspeelsnelheid",
     animationPosition: "Positie in de animatie",
@@ -261,6 +263,8 @@ const GRIB_TEXT = {
     waveVectors: "Wave direction (arrows)",
     isobars: "Isobars",
     isobarsTitle: "Isobars + high/low pressure centres on top of the overlay",
+    isobarsNoPressure:
+      "This source has no pressure in this card. Enable \u2018Pressure (mean sea level)\u2019 under Settings \u2192 Devices & services \u2192 GRIB Weather Overlay \u2192 Configure (and do not filter it out with parameters/exclude_parameters).",
     until: "to",
     playbackSpeed: "Playback speed",
     animationPosition: "Position in the animation",
@@ -1196,6 +1200,26 @@ function filterCardEntries(entries, config) {
     out.push(params === entry.parameters ? entry : { ...entry, parameters: params });
   }
   return out;
+}
+
+// How far a pressure frame may sit from the frame on screen (90 minutes: an
+// hourly or 3-hourly pressure step still pairs, a different run does not).
+const ISOBAR_MAX_OFFSET_MS = 90 * 60 * 1000;
+
+// The frame closest to `isoTime`, or null when the closest is further away
+// than `maxOffsetMs`.
+function nearestFrame(frames, isoTime, maxOffsetMs) {
+  const target = new Date(isoTime).getTime();
+  let best = null;
+  let bestGap = Infinity;
+  for (const f of frames || []) {
+    const gap = Math.abs(new Date(f.valid_time).getTime() - target);
+    if (gap < bestGap) {
+      best = f;
+      bestGap = gap;
+    }
+  }
+  return best && bestGap <= maxOffsetMs ? best : null;
 }
 
 // The parameters the overlay card offers as a layer. A direction is drawn as
@@ -2849,11 +2873,14 @@ class GribOverlayCard extends HTMLElement {
     const token = (this._isobarToken = (this._isobarToken || 0) + 1);
     let field = null;
     try {
-      // Find the pressure frame at the same valid time as the shown frame.
+      // Find the pressure frame for the shown frame's valid time. Nearest
+      // rather than equal: a source may publish pressure on a coarser step (or
+      // write the same moment differently), and an hour off still draws the
+      // right weather picture.
       let pf = frame;
       if (pParam.key !== this._els.paramSelect.value) {
         const pframes = await this._fetchParamFrames(pParam.key);
-        pf = pframes.find((f) => f.valid_time === frame.valid_time) || null;
+        pf = nearestFrame(pframes, frame.valid_time, ISOBAR_MAX_OFFSET_MS);
       }
       if (pf && pf.field_url) field = await this._fetchJson(pf.field_url, this._fieldCache);
     } catch (err) {
@@ -4374,11 +4401,16 @@ class GribOverlayCard extends HTMLElement {
     }
     this._els.renderModeSelect.value = this._renderMode;
 
-    // The isobars layer is available whenever the dataset carries pressure.
+    // The isobars layer is available whenever the dataset carries pressure --
+    // and when it doesn't, the tooltip says what to switch on rather than
+    // leaving a greyed-out checkbox to guess at.
     const hasPressure = !!this._pressureParam();
     this._els.isobarsToggle.disabled = !hasPressure;
     this._els.isobarsToggleLabel.style.opacity = hasPressure ? "" : "0.4";
     this._els.isobarsToggle.checked = this._isobarsOn && hasPressure;
+    const tip = hasPressure ? "isobarsTitle" : "isobarsNoPressure";
+    this._els.isobarsToggleLabel.setAttribute("data-i18n-title", tip);
+    this._els.isobarsToggleLabel.title = gribT(tip);
   }
 
   _updateLegend() {

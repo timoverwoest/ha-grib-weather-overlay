@@ -883,6 +883,12 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
 - **Kaarttegels met "Access blocked"** — de ondergrond; zie
   [Kaartlagen](#kaartlagen). Werk bij naar 0.29.1 of nieuwer en
   ververs het dashboard (de browser bewaart de geblokkeerde tegels even).
+- **Het vinkje "Isobaren" is grijs** — deze bron heeft geen luchtdruk in deze
+  card. Zet `pressure_msl` aan bij Instellingen → Apparaten & diensten → GRIB
+  Weather Overlay → Configureren, en controleer dat je hem niet wegfiltert met
+  `parameters`/`exclude_parameters`. De isobaren worden altijd uit de luchtdruk
+  van de **getoonde dataset zelf** getekend, dus een andere bron met luchtdruk
+  helpt niet. De tooltip van het vinkje zegt dit ook.
 - **"Configuratiefout" op de plek van de card** — Home Assistant wacht maar een
   paar seconden tot een custom card zich meldt; haalt de browser de card niet op
   tijd binnen (traag netwerk, mobiel, veel custom cards naast elkaar), dan komt
@@ -1973,6 +1979,12 @@ What you will see in the log (Settings → System → Logs):
 - **Map tiles saying "Access blocked"** — the base map; see [Map layers](#map-layers).
   Update to 0.29.1 or newer and reload the dashboard (the browser keeps the
   blocked tiles for a while).
+- **The “Isobars” checkbox is greyed out** — this source has no pressure in
+  this card. Enable `pressure_msl` under Settings → Devices & services → GRIB
+  Weather Overlay → Configure, and check that you are not filtering it out with
+  `parameters`/`exclude_parameters`. The isobars are always drawn from the
+  pressure of the **dataset being shown**, so another source that has pressure
+  does not help. The checkbox's tooltip says so too.
 - **“Configuration error” where the card should be** — Home Assistant waits only
   a couple of seconds for a custom card to register itself; if the browser does
   not have the card by then (slow or mobile connection, many custom cards at
