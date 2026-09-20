@@ -44,7 +44,9 @@
     });
   }
 </script>
-<script src="/grib_overlay_static/grib-overlay-card.js"></script>
+<!-- Home Assistant loads the card with the integration version in the query;
+     the card passes that on to the vendored Leaflet files. -->
+<script src="/grib_overlay_static/grib-overlay-card.js?v=dev"></script>
 <script>
   // ?lang=en / ?lang=nl mimics the Home Assistant user's profile language,
   // which the cards read from hass.locale.language. Defaults to Dutch, like

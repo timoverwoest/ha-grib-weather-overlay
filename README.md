@@ -877,6 +877,14 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
 - **Kaarttegels met "Access blocked"** — de ondergrond; zie
   [Kaartlagen](#kaartlagen). Werk bij naar 0.29.1 of nieuwer en
   ververs het dashboard (de browser bewaart de geblokkeerde tegels even).
+- **"Configuratiefout" op de plek van de card** — Home Assistant wacht maar een
+  paar seconden tot een custom card zich meldt; haalt de browser de card niet op
+  tijd binnen (traag netwerk, mobiel, veel custom cards naast elkaar), dan komt
+  die melding in beeld en helpt verversen. Vanaf 0.36.1 wordt alles in de
+  `www`-map **gecomprimeerd** en **een maand gecached** aangeboden — de URL
+  bevat de versie, dus na een update haalt de browser vanzelf het nieuwe bestand
+  op. Staat er een andere tekst onder "Configuratiefout" (bijvoorbeeld over een
+  onbekende sleutel), dan gaat het om de YAML van de card zelf.
 
 Meer detail nodig? Zet in `configuration.yaml`:
 
@@ -1950,6 +1958,14 @@ What you will see in the log (Settings → System → Logs):
 - **Map tiles saying "Access blocked"** — the base map; see [Map layers](#map-layers).
   Update to 0.29.1 or newer and reload the dashboard (the browser keeps the
   blocked tiles for a while).
+- **“Configuration error” where the card should be** — Home Assistant waits only
+  a couple of seconds for a custom card to register itself; if the browser does
+  not have the card by then (slow or mobile connection, many custom cards at
+  once) that message appears, and a refresh brings the card back. From 0.36.1
+  everything in the `www` folder is served **gzipped** and **cached for a
+  month** — the URL carries the version, so after an update the browser fetches
+  the new file by itself. If the line under “Configuration error” says something
+  else (an unknown key, for instance), it is about the card's own YAML.
 
 Need more detail? Add to `configuration.yaml`:
 

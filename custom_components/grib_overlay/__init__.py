@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import logging
 from pathlib import Path
 
@@ -20,6 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 FRONTEND_JS_FILENAME = "grib-overlay-card.js"
 STATIC_URL_PREFIX = "/grib_overlay_static"
 FRONTEND_URL_PATH = f"{STATIC_URL_PREFIX}/{FRONTEND_JS_FILENAME}"
+COMPRESSIBLE_SUFFIXES = (".js", ".css")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -67,8 +69,13 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     if not js_path.exists():
         _LOGGER.warning("Frontend card not found at %s, skipping registration", js_path)
         return
+    await hass.async_add_executor_job(_refresh_precompressed, www_dir)
+    # The browser must have the card before Home Assistant gives up on it (it
+    # waits a couple of seconds for a custom element, then shows the card as a
+    # "configuration error"). The card plus Leaflet is ~430 kB, so it is served
+    # cached -- safe, because the URL below carries the version -- and gzipped.
     await hass.http.async_register_static_paths(
-        [StaticPathConfig(STATIC_URL_PREFIX, str(www_dir), cache_headers=False)]
+        [StaticPathConfig(STATIC_URL_PREFIX, str(www_dir), cache_headers=True)]
     )
     # Append the integration version as a cache-buster: the card is served from
     # a stable path, so without a changing query string browsers (and the HA
@@ -79,3 +86,31 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     except Exception:  # noqa: BLE001 - fall back to an unversioned URL if lookup fails
         version = "0"
     add_extra_js_url(hass, f"{FRONTEND_URL_PATH}?v={version}")
+
+
+def _refresh_precompressed(www_dir: Path) -> None:
+    """Blocking: keep a gzipped copy beside every served .js/.css.
+
+    aiohttp hands out ``<file>.gz`` by itself to a browser that accepts gzip,
+    which cuts the card and Leaflet to about a quarter of their size. It does so
+    without looking at the original, though, so a copy left over from an earlier
+    version would be served in place of the new file: rebuild whatever is older
+    than its source, and drop copies whose source is gone. All of it is
+    best-effort -- on a read-only install the plain files are served instead.
+    """
+    try:
+        stale = [p for p in www_dir.rglob("*.gz.tmp")]
+        stale += [p for p in www_dir.rglob("*.gz") if not p.with_suffix("").is_file()]
+        for path in stale:
+            path.unlink(missing_ok=True)
+        for path in www_dir.rglob("*"):
+            if path.suffix not in COMPRESSIBLE_SUFFIXES or not path.is_file():
+                continue
+            gz = path.with_name(path.name + ".gz")
+            if gz.is_file() and gz.stat().st_mtime >= path.stat().st_mtime:
+                continue
+            tmp = path.with_name(path.name + ".gz.tmp")
+            tmp.write_bytes(gzip.compress(path.read_bytes(), 9))
+            tmp.replace(gz)
+    except OSError as err:
+        _LOGGER.debug("Could not pre-compress the card assets in %s: %s", www_dir, err)

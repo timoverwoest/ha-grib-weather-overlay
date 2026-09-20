@@ -6,10 +6,20 @@
  * as a single static file alongside the vendored Leaflet build.
  */
 
-const LEAFLET_JS_URL = "/grib_overlay_static/vendor/leaflet/leaflet.js";
-const LEAFLET_CSS_URL = "/grib_overlay_static/vendor/leaflet/leaflet.css";
-const VELOCITY_JS_URL = "/grib_overlay_static/vendor/leaflet-velocity/leaflet-velocity.js";
-const VELOCITY_CSS_URL = "/grib_overlay_static/vendor/leaflet-velocity/leaflet-velocity.css";
+// Home Assistant loads this file with the integration version in the query
+// (`...?v=0.36.1`). The vendored assets sit in the same folder and are served
+// with the same month-long cache, so they carry the same version: without it an
+// update would keep handing out the previous Leaflet from the browser's cache.
+const GRIB_ASSET_QUERY = (() => {
+  const src = document.querySelector('script[src*="grib-overlay-card.js"]')?.src;
+  const version = src ? new URL(src, location.href).searchParams.get("v") : null;
+  return version ? `?v=${encodeURIComponent(version)}` : "";
+})();
+
+const LEAFLET_JS_URL = `/grib_overlay_static/vendor/leaflet/leaflet.js${GRIB_ASSET_QUERY}`;
+const LEAFLET_CSS_URL = `/grib_overlay_static/vendor/leaflet/leaflet.css${GRIB_ASSET_QUERY}`;
+const VELOCITY_JS_URL = `/grib_overlay_static/vendor/leaflet-velocity/leaflet-velocity.js${GRIB_ASSET_QUERY}`;
+const VELOCITY_CSS_URL = `/grib_overlay_static/vendor/leaflet-velocity/leaflet-velocity.css${GRIB_ASSET_QUERY}`;
 
 // Base overlay render modes selectable in the card / settable via `render_mode`
 // config. Isobars are NOT a base mode -- they are a separate layer (a toggle)

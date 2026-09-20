@@ -6,6 +6,9 @@ __pycache__/
 *.egg-info/
 
 dev/output/
+
+# Written beside the card at runtime (Home Assistant pre-compresses what it serves).
+custom_components/grib_overlay/www/**/*.gz
 *.tar
 *.grib
 
