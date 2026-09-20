@@ -883,6 +883,12 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
 - **Kaarttegels met "Access blocked"** — de ondergrond; zie
   [Kaartlagen](#kaartlagen). Werk bij naar 0.29.1 of nieuwer en
   ververs het dashboard (de browser bewaart de geblokkeerde tegels even).
+- **Een kaart op een andere dashboardpagina toont de hele wereld met een
+  spikkeltje overlay (of lijkt leeg)** — die card werd opgebouwd terwijl zijn
+  pagina nog verborgen was, dus paste Home Assistant de dataset in een kaart
+  zonder afmetingen: Leaflet komt dan uit op zoomniveau 0. Sinds 0.37.7 wacht de
+  card met inzoomen tot hij echt een grootte heeft, en doet hij het alsnog zodra
+  je die pagina opent.
 - **Kaart en overlay blijven leeg na het wisselen van dashboard, de rest van de
   card werkt wel** — Leaflet komt soms terug zonder dat er iets getekend is.
   Sinds 0.37.5 meet de card zichzelf een paar keer opnieuw op en bouwt hij de
@@ -2000,6 +2006,11 @@ What you will see in the log (Settings → System → Logs):
 - **Map tiles saying "Access blocked"** — the base map; see [Map layers](#map-layers).
   Update to 0.29.1 or newer and reload the dashboard (the browser keeps the
   blocked tiles for a while).
+- **A card on another dashboard page shows the whole world with a speck of
+  overlay (or looks empty)** — that card was built while its page was still
+  hidden, so the dataset was fitted into a map with no size and Leaflet landed
+  on zoom 0. Since 0.37.7 the card waits with that fit until it actually has a
+  size, and performs it as soon as you open the page.
 - **The map and overlay stay empty after switching dashboards while the rest of
   the card works** — Leaflet sometimes comes back with nothing painted. Since
   0.37.5 the card re-measures itself a few times and, if need be, builds the map

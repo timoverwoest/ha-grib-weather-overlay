@@ -7,7 +7,7 @@
  */
 
 // Home Assistant loads this file with the integration version in the query
-// (`...?v=0.37.6`). The vendored assets sit in the same folder and are served
+// (`...?v=0.37.7`). The vendored assets sit in the same folder and are served
 // with the same month-long cache, so they carry the same version: without it an
 // update would keep handing out the previous Leaflet from the browser's cache.
 const GRIB_ASSET_VERSION = (() => {
@@ -1845,15 +1845,35 @@ class GribOverlayCard extends HTMLElement {
   // controls and data, the map area stays blank. Nudge Leaflet a few times and,
   // for a map that was only re-attached, build it again if it is still empty.
   async _ensureTiles({ allowRebuild = false } = {}) {
-    for (const wait of [250, 750, 1500]) {
+    if (this._ensuringTiles) return;
+    this._ensuringTiles = true;
+    try {
+      await this._ensureTilesOnce(allowRebuild);
+    } finally {
+      this._ensuringTiles = false;
+    }
+  }
+
+  async _ensureTilesOnce(allowRebuild) {
+    for (const wait of [250, 750, 1500, 3000]) {
       await new Promise((resolve) => setTimeout(resolve, wait));
       if (!this._map || !this.isConnected) return;
       if (this._els.mapDiv.querySelector(".leaflet-tile")) return;
       if (!this._els.mapDiv.offsetWidth) continue; // still hidden: nothing to measure
       this._map.invalidateSize({ pan: false });
+      if (this._applyPendingFit()) return;
+      // A layer whose tiles were dropped needs to be told to draw them again;
+      // re-measuring alone leaves the container empty.
+      this._map.eachLayer((layer) => {
+        if (typeof layer.redraw === "function") layer.redraw();
+      });
     }
     if (!allowRebuild || !this._map || !this.isConnected) return;
     if (this._els.mapDiv.querySelector(".leaflet-tile")) return;
+    // Bounded: a map that stays blank after two rebuilds is not going to be
+    // fixed by a third, and the card should not sit in a loop.
+    this._rebuilds = (this._rebuilds || 0) + 1;
+    if (this._rebuilds > 2) return;
 
     console.warn("grib-overlay-card: the map came back blank, building it again");
     const center = this._map.getCenter();
@@ -1869,11 +1889,45 @@ class GribOverlayCard extends HTMLElement {
     if (back > 0) this._showFrame(back);
   }
 
+  // Fitting needs a measured map. A card built while its dashboard page was
+  // still hidden has none: Leaflet then fits the dataset into a zero-size
+  // viewport and lands on zoom 0 -- a world map with a speck of overlay, which
+  // is what an "empty" card on another page turns out to be. Keep the request
+  // and honour it as soon as the card has a size.
+  _fitBounds(bounds) {
+    if (!this._els.mapDiv.offsetWidth || !this._els.mapDiv.offsetHeight) {
+      this._pendingFit = bounds;
+      return;
+    }
+    this._pendingFit = null;
+    this._boundsFit = true;
+    this._map.fitBounds(bounds);
+  }
+
+  // Called whenever the card gains a size; fits what could not be fitted yet.
+  _applyPendingFit() {
+    if (!this._pendingFit || !this._map) return false;
+    if (!this._els.mapDiv.offsetWidth || !this._els.mapDiv.offsetHeight) return false;
+    const bounds = this._pendingFit;
+    this._pendingFit = null;
+    this._boundsFit = true;
+    this._map.fitBounds(bounds);
+    return true;
+  }
+
   _observeResize() {
     if (!window.ResizeObserver || !this._els || !this._els.mapContainer) return;
     if (this._resizeObserver) this._resizeObserver.disconnect();
     this._resizeObserver = new ResizeObserver(() => {
-      if (this._map) this._map.invalidateSize();
+      if (!this._map) return;
+      this._map.invalidateSize();
+      this._applyPendingFit();
+      // Becoming visible again (another dashboard page, a state-switch, the
+      // card built while its view was still hidden) can leave Leaflet with an
+      // empty container: recover rather than wait for a page reload.
+      if (this._els.mapDiv.offsetWidth && !this._els.mapDiv.querySelector(".leaflet-tile")) {
+        this._ensureTiles({ allowRebuild: true });
+      }
     });
     this._resizeObserver.observe(this._els.mapContainer);
   }
@@ -2389,9 +2443,10 @@ class GribOverlayCard extends HTMLElement {
     const hasManualView = this._config.center !== undefined || this._config.zoom !== undefined;
     if (!this._boundsFit && !hasManualView) {
       const [south, west, north, east] = entry.dataset.bounds;
-      this._map.fitBounds([[south, west], [north, east]]);
+      this._fitBounds([[south, west], [north, east]]);
+    } else {
+      this._boundsFit = true;
     }
-    this._boundsFit = true;
 
     await this._onParameterChange();
   }

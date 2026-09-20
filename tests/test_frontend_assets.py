@@ -143,8 +143,10 @@ def test_a_gzip_copy_that_cannot_be_read_back_is_not_written(tmp_path: Path) -> 
 def test_a_blank_map_is_measured_again_and_rebuilt_if_needed() -> None:
     """Switching dashboards can hand the card back with nothing painted: the
     controls and data are there, the map area is empty."""
-    body = JS.split("  async _ensureTiles({ allowRebuild = false } = {}) {", 1)[1].split("\n  }\n", 1)[0]
-    assert "for (const wait of [250, 750, 1500])" in body
+    body = JS.split("  async _ensureTilesOnce(allowRebuild) {", 1)[1].split("\n  }\n", 1)[0]
+    assert "for (const wait of [250, 750, 1500, 3000])" in body
+    assert "layer.redraw()" in body  # tiles that were dropped have to be drawn again
+    assert "if (this._rebuilds > 2) return;" in body  # and never in a loop
     assert "this._map.invalidateSize({ pan: false });" in body
     assert "await this._initialize();" in body  # last resort: build the map again
     assert "this._map.setView(center, zoom);" in body  # at the same place
@@ -162,3 +164,20 @@ def test_the_card_finds_its_own_url_when_loaded_as_a_module() -> None:
     assert "document.currentScript?.src" in block
     assert "new Error().stack" in block
     assert 'replace(/:\\d+:\\d+$/, "")' in block  # a stack entry ends in :line:column
+
+
+def test_the_dataset_fit_waits_until_the_card_has_a_size() -> None:
+    """A card built while its dashboard page is still hidden has a zero-size map.
+    Fitting the dataset into that lands on zoom 0 -- a world map with a speck of
+    overlay, which is what an "empty" card on another page turns out to be."""
+    fit = JS.split("  _fitBounds(bounds) {", 1)[1].split("\n  }\n", 1)[0]
+    assert "if (!this._els.mapDiv.offsetWidth || !this._els.mapDiv.offsetHeight) {" in fit
+    assert "this._pendingFit = bounds;" in fit
+    # ... and it is honoured as soon as there is a size, from the resize
+    # observer and from the tile check.
+    observer = JS.split("    this._resizeObserver = new ResizeObserver(() => {", 1)[1]
+    assert "this._applyPendingFit();" in observer.split("});", 1)[0]
+    assert "if (this._applyPendingFit()) return;" in JS
+    # The fit is only marked done when it actually happened.
+    apply = JS.split("  _applyPendingFit() {", 1)[1].split("\n  }\n", 1)[0]
+    assert "this._boundsFit = true;" in apply and "this._map.fitBounds(bounds);" in apply
