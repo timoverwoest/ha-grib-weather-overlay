@@ -883,6 +883,11 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
 - **Kaarttegels met "Access blocked"** — de ondergrond; zie
   [Kaartlagen](#kaartlagen). Werk bij naar 0.29.1 of nieuwer en
   ververs het dashboard (de browser bewaart de geblokkeerde tegels even).
+- **Isobaren staan aan maar er verschijnt niets** — onder de kaart staat dan
+  *"Geen luchtdrukdata voor dit tijdstip"*. De run is nog niet verwerkt (even
+  wachten), of je hebt luchtdruk pas net aangezet: de integratie haalt die run
+  dan opnieuw op bij de volgende poll. In de browserconsole staat er een regel
+  bij met de parameter en het tijdstip.
 - **Het vinkje "Isobaren" is grijs** — deze bron heeft geen luchtdruk in deze
   card. Zet `pressure_msl` aan bij Instellingen → Apparaten & diensten → GRIB
   Weather Overlay → Configureren, en controleer dat je hem niet wegfiltert met
@@ -1979,6 +1984,11 @@ What you will see in the log (Settings → System → Logs):
 - **Map tiles saying "Access blocked"** — the base map; see [Map layers](#map-layers).
   Update to 0.29.1 or newer and reload the dashboard (the browser keeps the
   blocked tiles for a while).
+- **The isobars are on but nothing appears** — the card then says *"No pressure
+  data for this time"* under the map. Either the run has not been processed yet
+  (give it a moment), or pressure was only just enabled: the integration fetches
+  that run again at the next poll. The browser console carries a line with the
+  parameter and the time.
 - **The “Isobars” checkbox is greyed out** — this source has no pressure in
   this card. Enable `pressure_msl` under Settings → Devices & services → GRIB
   Weather Overlay → Configure, and check that you are not filtering it out with

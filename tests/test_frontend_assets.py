@@ -96,3 +96,12 @@ def test_a_throwing_hass_setter_cannot_blank_the_card() -> None:
         # Only the bookkeeping line may sit outside the guard.
         before = body.split("gribGuard", 1)[0].strip()
         assert before == "this._hass = hass;", before
+
+
+def test_the_card_announces_itself_with_its_version() -> None:
+    """The banner is the answer to "is the card loaded, and which version?" --
+    it runs last, so a console without it means the file never finished."""
+    assert "GRIB-OVERLAY-CARD %c ${GRIB_ASSET_VERSION" in JS
+    banner = JS.index("console.info(")
+    assert banner > JS.index('customElements.define("grib-overlay-weathermap-card"')
+    assert JS[banner:].count("customElements.define(") == 0

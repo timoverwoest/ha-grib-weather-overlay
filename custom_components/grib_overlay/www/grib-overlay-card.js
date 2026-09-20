@@ -7,14 +7,14 @@
  */
 
 // Home Assistant loads this file with the integration version in the query
-// (`...?v=0.37.1`). The vendored assets sit in the same folder and are served
+// (`...?v=0.37.2`). The vendored assets sit in the same folder and are served
 // with the same month-long cache, so they carry the same version: without it an
 // update would keep handing out the previous Leaflet from the browser's cache.
-const GRIB_ASSET_QUERY = (() => {
+const GRIB_ASSET_VERSION = (() => {
   const src = document.querySelector('script[src*="grib-overlay-card.js"]')?.src;
-  const version = src ? new URL(src, location.href).searchParams.get("v") : null;
-  return version ? `?v=${encodeURIComponent(version)}` : "";
+  return (src ? new URL(src, location.href).searchParams.get("v") : null) || "";
 })();
+const GRIB_ASSET_QUERY = GRIB_ASSET_VERSION ? `?v=${encodeURIComponent(GRIB_ASSET_VERSION)}` : "";
 
 const LEAFLET_JS_URL = `/grib_overlay_static/vendor/leaflet/leaflet.js${GRIB_ASSET_QUERY}`;
 const LEAFLET_CSS_URL = `/grib_overlay_static/vendor/leaflet/leaflet.css${GRIB_ASSET_QUERY}`;
@@ -122,6 +122,8 @@ const GRIB_TEXT = {
     waveVectors: "Golfrichting (pijlen)",
     isobars: "Isobaren",
     isobarsTitle: "Isobaren + hoge-/lagedrukcentra bovenop de overlay",
+    isobarsNoData:
+      "Geen luchtdrukdata voor dit tijdstip, dus de isobaren kunnen niet worden getekend.",
     isobarsNoPressure:
       "Deze bron heeft geen luchtdruk in deze kaart. Zet \u2018Luchtdruk (zeeniveau)\u2019 aan bij Instellingen \u2192 Apparaten & diensten \u2192 GRIB Weather Overlay \u2192 Configureren (en haal hem niet weg met parameters/exclude_parameters).",
     until: "t/m",
@@ -263,6 +265,8 @@ const GRIB_TEXT = {
     waveVectors: "Wave direction (arrows)",
     isobars: "Isobars",
     isobarsTitle: "Isobars + high/low pressure centres on top of the overlay",
+    isobarsNoData:
+      "No pressure data for this time, so the isobars can't be drawn.",
     isobarsNoPressure:
       "This source has no pressure in this card. Enable \u2018Pressure (mean sea level)\u2019 under Settings \u2192 Devices & services \u2192 GRIB Weather Overlay \u2192 Configure (and do not filter it out with parameters/exclude_parameters).",
     until: "to",
@@ -2888,8 +2892,33 @@ class GribOverlayCard extends HTMLElement {
     }
     if (token !== this._isobarToken || !this._isobarsOn) return;
     this._isobarField = field;
-    if (field) this._drawIsobars();
-    else this._removeIsobars();
+    if (field) {
+      this._drawIsobars();
+      this._setIsobarNote("");
+    } else {
+      // Switched on but nothing to draw: say so instead of leaving an empty
+      // map. Usually the run has no pressure yet (it is still being processed)
+      // or the parameter was only just enabled on the integration.
+      this._removeIsobars();
+      this._setIsobarNote(gribT("isobarsNoData"));
+      console.warn(
+        `grib-overlay-card: no pressure field for ${pParam.key} at ${frame.valid_time}`
+      );
+    }
+  }
+
+  // The isobar note shares the card's note line, without overwriting a message
+  // that matters more (a download error, "no frames yet").
+  _setIsobarNote(text) {
+    if (text) {
+      if (!this._els.note.textContent || this._isobarNoteShown) {
+        this._els.note.textContent = text;
+        this._isobarNoteShown = true;
+      }
+    } else if (this._isobarNoteShown) {
+      this._els.note.textContent = "";
+      this._isobarNoteShown = false;
+    }
   }
 
   _ensureIsobarSvg() {
@@ -2919,6 +2948,7 @@ class GribOverlayCard extends HTMLElement {
   }
 
   _removeIsobars() {
+    this._setIsobarNote("");
     if (this._isobarSvg) {
       this._isobarSvg.remove();
       this._isobarSvg = null;
@@ -6327,3 +6357,12 @@ window.customCards.push({
   name: gribT("wmCardName"),
   description: gribT("wmCardDescription"),
 });
+
+// Like every other card in the HACS ecosystem: announce yourself. A console
+// without this line means the browser never finished loading the card -- which
+// is what Home Assistant's "configuration error" placeholder looks like.
+console.info(
+  `%c GRIB-OVERLAY-CARD %c ${GRIB_ASSET_VERSION || "dev"} `,
+  "color:#fff;background:#0b4f8a;font-weight:700;border-radius:3px 0 0 3px",
+  "color:#0b4f8a;background:#dceaf6;border-radius:0 3px 3px 0"
+);

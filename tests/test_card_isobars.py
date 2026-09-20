@@ -30,3 +30,15 @@ def test_a_dataset_without_pressure_says_why_the_layer_is_off() -> None:
     assert 'const tip = hasPressure ? "isobarsTitle" : "isobarsNoPressure";' in avail
     # The tooltip follows a language switch like the rest of the chrome.
     assert 'setAttribute("data-i18n-title", tip)' in avail
+
+
+def test_isobars_switched_on_without_data_say_so() -> None:
+    # Silence was the complaint: the layer was on, the map stayed bare and
+    # nothing said why (a run still being processed, a parameter just enabled).
+    assert JS.count("isobarsNoData:") == 2  # Dutch and English
+    assert 'this._setIsobarNote(gribT("isobarsNoData"));' in ISOBAR
+    assert 'this._setIsobarNote("");' in ISOBAR  # ... and it goes away again
+    assert "no pressure field for" in ISOBAR  # a console line to go on
+    note = JS.split("  _setIsobarNote(text) {", 1)[1].split("\n  }\n", 1)[0]
+    # It must not paint over a message that matters more.
+    assert "if (!this._els.note.textContent || this._isobarNoteShown)" in note
