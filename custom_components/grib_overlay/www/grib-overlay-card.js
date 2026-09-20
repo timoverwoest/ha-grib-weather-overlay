@@ -7,7 +7,7 @@
  */
 
 // Home Assistant loads this file with the integration version in the query
-// (`...?v=0.37.2`). The vendored assets sit in the same folder and are served
+// (`...?v=0.37.3`). The vendored assets sit in the same folder and are served
 // with the same month-long cache, so they carry the same version: without it an
 // update would keep handing out the previous Leaflet from the browser's cache.
 const GRIB_ASSET_VERSION = (() => {
@@ -124,6 +124,8 @@ const GRIB_TEXT = {
     isobarsTitle: "Isobaren + hoge-/lagedrukcentra bovenop de overlay",
     isobarsNoData:
       "Geen luchtdrukdata voor dit tijdstip, dus de isobaren kunnen niet worden getekend.",
+    isobarsNoFrames:
+      "Deze bron heeft nog geen luchtdrukdata; de isobaren blijven leeg tot de volgende run verwerkt is.",
     isobarsNoPressure:
       "Deze bron heeft geen luchtdruk in deze kaart. Zet \u2018Luchtdruk (zeeniveau)\u2019 aan bij Instellingen \u2192 Apparaten & diensten \u2192 GRIB Weather Overlay \u2192 Configureren (en haal hem niet weg met parameters/exclude_parameters).",
     until: "t/m",
@@ -267,6 +269,8 @@ const GRIB_TEXT = {
     isobarsTitle: "Isobars + high/low pressure centres on top of the overlay",
     isobarsNoData:
       "No pressure data for this time, so the isobars can't be drawn.",
+    isobarsNoFrames:
+      "This source has no pressure data yet; the isobars stay empty until the next run is processed.",
     isobarsNoPressure:
       "This source has no pressure in this card. Enable \u2018Pressure (mean sea level)\u2019 under Settings \u2192 Devices & services \u2192 GRIB Weather Overlay \u2192 Configure (and do not filter it out with parameters/exclude_parameters).",
     until: "to",
@@ -1732,6 +1736,30 @@ class GribOverlayCard extends HTMLElement {
       this._scheduleInvalidate();
       this._adoptSharedPoint();
       this._renderSavedMarkers();
+      this._refreshAfterReattach();
+    }
+  }
+
+  // Home Assistant keeps a view's cards in memory: browsing away and back
+  // re-attaches this very element, with whatever it was showing -- an overlay
+  // image the browser may have dropped in the meantime, and a frame list from
+  // before the newest run. Fetch the list again and draw the same moment, so
+  // coming back to the page looks like opening it fresh (no reload needed).
+  async _refreshAfterReattach() {
+    if (this._reattaching || !this._hass || !this._entries || !this._entries.length) return;
+    this._reattaching = true;
+    try {
+      const shown = this._frames[this._frameIndex || 0];
+      await this._onParameterChange();
+      const back = shown
+        ? this._frames.findIndex((f) => f.valid_time === shown.valid_time)
+        : -1;
+      if (back > 0) this._showFrame(back);
+      requestAnimationFrame(() => this._map && this._map.invalidateSize());
+    } catch (err) {
+      console.warn("grib-overlay-card: refresh after re-attach failed", err);
+    } finally {
+      this._reattaching = false;
     }
   }
 
@@ -2356,6 +2384,7 @@ class GribOverlayCard extends HTMLElement {
     if (this._frames.length) {
       this._showFrame(0);
     }
+    this._checkIsobarAvailability();
   }
 
   _populateAnimationSelects() {
@@ -4408,6 +4437,33 @@ class GribOverlayCard extends HTMLElement {
   _onIsobarsToggle() {
     this._isobarsOn = this._els.isobarsToggle.checked;
     if (this._frames.length) this._showFrame(this._frameIndex || 0);
+    this._checkIsobarAvailability();
+  }
+
+  // Does this dataset have pressure data at all? Checked the moment the layer
+  // is switched on or another dataset is picked -- so the card says there is
+  // nothing to draw straight away, whatever parameter is on screen.
+  async _checkIsobarAvailability() {
+    const pParam = this._isobarsOn ? this._pressureParam() : null;
+    if (!pParam) {
+      this._setIsobarNote("");
+      return;
+    }
+    let frames = [];
+    try {
+      frames = await this._fetchParamFrames(pParam.key);
+    } catch (err) {
+      frames = [];
+    }
+    if (!this._isobarsOn) return;
+    if (frames.length) {
+      this._setIsobarNote("");
+    } else {
+      this._setIsobarNote(gribT("isobarsNoFrames"));
+      console.warn(
+        `grib-overlay-card: no ${pParam.key} frames for ${this._currentEntry()?.title}`
+      );
+    }
   }
 
   // Enable/disable overlays based on the available data: wind modes need a wind
@@ -5541,6 +5597,10 @@ class GribCompareCard extends HTMLElement {
       this._scheduleInvalidate();
       this._adoptSharedPoint(); // jump to a point picked on another page while away
       this._renderSavedMarkers();
+      // Same as the overlay card: browsing back re-attaches this element, so
+      // fetch the models again rather than leaving the run from before.
+      if (this._entries && this._point) this._refresh();
+      requestAnimationFrame(() => this._map && this._map.invalidateSize());
     }
   }
 

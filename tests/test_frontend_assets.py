@@ -105,3 +105,14 @@ def test_the_card_announces_itself_with_its_version() -> None:
     banner = JS.index("console.info(")
     assert banner > JS.index('customElements.define("grib-overlay-weathermap-card"')
     assert JS[banner:].count("customElements.define(") == 0
+
+
+def test_a_re_attached_card_fetches_its_frames_again() -> None:
+    """Home Assistant keeps a view's cards in memory, so browsing back re-attaches
+    the same element. It must not need a page reload to show a map again."""
+    connected = JS.split("  connectedCallback() {", 1)[1].split("\n  }\n", 1)[0]
+    assert "this._refreshAfterReattach();" in connected
+    body = JS.split("  async _refreshAfterReattach() {", 1)[1].split("\n  }\n", 1)[0]
+    assert "await this._onParameterChange();" in body
+    assert "if (back > 0) this._showFrame(back);" in body  # same moment as before
+    assert "invalidateSize()" in body

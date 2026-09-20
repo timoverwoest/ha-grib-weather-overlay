@@ -42,3 +42,17 @@ def test_isobars_switched_on_without_data_say_so() -> None:
     note = JS.split("  _setIsobarNote(text) {", 1)[1].split("\n  }\n", 1)[0]
     # It must not paint over a message that matters more.
     assert "if (!this._els.note.textContent || this._isobarNoteShown)" in note
+
+
+def test_the_layer_reports_a_dataset_without_pressure_data_at_once() -> None:
+    # Not only when a frame happens to be drawn: switching the layer on, or
+    # picking another dataset, has to say straight away that there is nothing.
+    assert JS.count("isobarsNoFrames:") == 2  # Dutch and English
+    check = JS.split("  async _checkIsobarAvailability() {", 1)[1].split("\n  }\n", 1)[0]
+    assert 'this._setIsobarNote(gribT("isobarsNoFrames"));' in check
+    assert "frames = await this._fetchParamFrames(pParam.key);" in check
+    toggle = JS.split("  _onIsobarsToggle() {", 1)[1].split("\n  }\n", 1)[0]
+    assert "this._checkIsobarAvailability();" in toggle
+    # ... and after a dataset/parameter switch (the tail of _onParameterChange).
+    change = JS.split("  async _onParameterChange() {", 1)[1].split("\n  }\n", 1)[0]
+    assert "this._checkIsobarAvailability();" in change
