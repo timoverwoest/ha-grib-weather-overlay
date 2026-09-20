@@ -922,6 +922,12 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
   laatste van het bestand: staat hij er niet, dan is het bestand niet (volledig)
   geladen en komt een "Configuratiefout" daarvandaan. Staat hij er wel, dan zegt
   de tijd erachter of het bestand van de schijf kwam of over de lijn moest.
+- **"Configuratiefout" zonder tekst eronder** — Home Assistant vervangt een
+  card door zo'n leeg blok als het toekennen van `hass`, `preview` of `layout`
+  aan de card een fout geeft. Vlak daarvoor zet het een regel in de
+  browserconsole met het kaarttype en de fout erbij: zoek op
+  `custom:grib-overlay-card` (zet "Preserve log" aan voordat je herlaadt) en
+  klap die regel uit — daarin staat waar het misging.
 - **"Configuratiefout" op de plek van de card** — Home Assistant wacht maar een
   paar seconden tot een custom card zich meldt; haalt de browser de card niet op
   tijd binnen (traag netwerk, mobiel, veel custom cards naast elkaar), dan komt
@@ -2048,6 +2054,11 @@ What you will see in the log (Settings → System → Logs):
   the file: if it is missing, the file was not (fully) loaded and a
   "configuration error" comes from that. If it is there, the timing says whether
   the file came from the browser's cache or had to travel.
+- **“Configuration error” with no text under it** — Home Assistant replaces a
+  card with that empty block when assigning `hass`, `preview` or `layout` to the
+  card throws. Right before it does, it writes a console line with the card type
+  and the error: search for `custom:grib-overlay-card` (switch "Preserve log" on
+  before reloading) and expand that line — it says where it went wrong.
 - **“Configuration error” where the card should be** — Home Assistant waits only
   a couple of seconds for a custom card to register itself; if the browser does
   not have the card by then (slow or mobile connection, many custom cards at

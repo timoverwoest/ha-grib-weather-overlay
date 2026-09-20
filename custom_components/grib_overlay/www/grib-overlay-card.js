@@ -7,7 +7,7 @@
  */
 
 // Home Assistant loads this file with the integration version in the query
-// (`...?v=0.37.8`). The vendored assets sit in the same folder and are served
+// (`...?v=0.37.9`). The vendored assets sit in the same folder and are served
 // with the same month-long cache, so they carry the same version: without it an
 // update would keep handing out the previous Leaflet from the browser's cache.
 const GRIB_ASSET_URL = (() => {
@@ -108,6 +108,25 @@ function gribGuard(what, fn) {
   } catch (err) {
     console.error(`grib-overlay-card: ${what} failed`, err);
   }
+}
+
+// Registering a tag twice throws, and that throw would take the rest of this
+// file with it -- the cards defined further down would never appear. That
+// happens when a second copy of the card is loaded (a service worker handing
+// out a cached older version beside the new one, or the card added as a
+// Lovelace resource as well as by the integration). Say so, and leave the
+// first one in place.
+function gribDefineCard(tag, cls) {
+  const existing = customElements.get(tag);
+  if (existing) {
+    console.warn(
+      `grib-overlay-card: ${tag} was already defined by another copy of this ` +
+        `file; this one (${GRIB_ASSET_VERSION || "dev"}) is not taking over. ` +
+        "Check for a duplicate Lovelace resource, or empty the browser cache."
+    );
+    return;
+  }
+  customElements.define(tag, cls);
 }
 
 function gribApplyLanguage(root) {
@@ -4711,7 +4730,7 @@ class GribOverlayCard extends HTMLElement {
   }
 }
 
-customElements.define("grib-overlay-card", GribOverlayCard);
+gribDefineCard("grib-overlay-card", GribOverlayCard);
 
 // ==========================================================================
 // Model comparison: shared rendering (used by the compare card AND the
@@ -6307,7 +6326,7 @@ class GribCompareCard extends HTMLElement {
   }
 }
 
-customElements.define("grib-overlay-compare-card", GribCompareCard);
+gribDefineCard("grib-overlay-compare-card", GribCompareCard);
 
 // -- KNMI weather map card ------------------------------------------------------
 // KNMI's hand-analysed surface charts (isobars, fronts, H/L): the latest
@@ -6517,7 +6536,7 @@ class GribWeatherMapCard extends HTMLElement {
   }
 }
 
-customElements.define("grib-overlay-weathermap-card", GribWeatherMapCard);
+gribDefineCard("grib-overlay-weathermap-card", GribWeatherMapCard);
 
 window.customCards = window.customCards || [];
 window.customCards.push({

@@ -103,8 +103,8 @@ def test_the_card_announces_itself_with_its_version() -> None:
     it runs last, so a console without it means the file never finished."""
     assert "GRIB-OVERLAY-CARD %c ${GRIB_ASSET_VERSION" in JS
     banner = JS.index("console.info(")
-    assert banner > JS.index('customElements.define("grib-overlay-weathermap-card"')
-    assert JS[banner:].count("customElements.define(") == 0
+    assert banner > JS.index('gribDefineCard("grib-overlay-weathermap-card"')
+    assert JS[banner:].count("gribDefineCard(") == 0
 
 
 def test_a_re_attached_card_fetches_its_frames_again() -> None:
@@ -191,3 +191,16 @@ def test_the_banner_says_how_the_card_was_loaded() -> None:
     assert '"from cache"' in body
     assert "loaded in ${Math.round(entry.duration)} ms" in body
     assert "gribLoadTiming()" in JS.split("console.info(", 1)[1]
+
+
+def test_a_second_copy_of_the_card_does_not_take_the_file_down() -> None:
+    """Defining a tag twice throws, and that throw would leave the cards defined
+    further down the file unregistered -- every one of them a "configuration
+    error". A duplicate copy (a cached older version, a Lovelace resource on top
+    of the integration) has to be survivable."""
+    assert JS.count("customElements.define(") == 1  # only inside the guard
+    body = JS.split("function gribDefineCard(tag, cls) {", 1)[1].split("\n}\n", 1)[0]
+    assert "const existing = customElements.get(tag);" in body
+    assert "console.warn(" in body
+    for tag in ("grib-overlay-card", "grib-overlay-compare-card", "grib-overlay-weathermap-card"):
+        assert f'gribDefineCard("{tag}"' in JS
