@@ -7,10 +7,10 @@
  */
 
 // Home Assistant loads this file with the integration version in the query
-// (`...?v=0.37.7`). The vendored assets sit in the same folder and are served
+// (`...?v=0.37.8`). The vendored assets sit in the same folder and are served
 // with the same month-long cache, so they carry the same version: without it an
 // update would keep handing out the previous Leaflet from the browser's cache.
-const GRIB_ASSET_VERSION = (() => {
+const GRIB_ASSET_URL = (() => {
   // Home Assistant imports this file as a module, so there is no
   // document.currentScript and no <script src> tag to look up: our own URL --
   // the one carrying the version -- only shows up in a stack trace. The script
@@ -22,9 +22,12 @@ const GRIB_ASSET_VERSION = (() => {
     new Error().stack || ""
   );
   // A stack entry ends in :line:column, which is not part of the URL.
-  const url = fromTag || (inStack ? inStack[0].replace(/:\d+:\d+$/, "") : "");
+  return fromTag || (inStack ? inStack[0].replace(/:\d+:\d+$/, "") : "");
+})();
+
+const GRIB_ASSET_VERSION = (() => {
   try {
-    return (url && new URL(url, location.href).searchParams.get("v")) || "";
+    return (GRIB_ASSET_URL && new URL(GRIB_ASSET_URL, location.href).searchParams.get("v")) || "";
   } catch (err) {
     return "";
   }
@@ -6535,9 +6538,28 @@ window.customCards.push({
 
 // Like every other card in the HACS ecosystem: announce yourself. A console
 // without this line means the browser never finished loading the card -- which
-// is what Home Assistant's "configuration error" placeholder looks like.
+// is what Home Assistant's "configuration error" placeholder looks like. How
+// long that took, and whether it came off the network at all, is the next
+// question when the placeholder does turn up, so it is printed along.
 console.info(
   `%c GRIB-OVERLAY-CARD %c ${GRIB_ASSET_VERSION || "dev"} `,
   "color:#fff;background:#0b4f8a;font-weight:700;border-radius:3px 0 0 3px",
-  "color:#0b4f8a;background:#dceaf6;border-radius:0 3px 3px 0"
+  "color:#0b4f8a;background:#dceaf6;border-radius:0 3px 3px 0",
+  gribLoadTiming()
 );
+
+// "loaded in 412 ms (62 kB)" / "loaded in 3 ms (from cache)" -- from the
+// browser's own resource timing, so it says what actually happened.
+function gribLoadTiming() {
+  try {
+    const entry = performance.getEntriesByName(GRIB_ASSET_URL)[0];
+    if (!entry) return "";
+    const where = entry.transferSize
+      ? `${Math.round(entry.transferSize / 1024)} kB`
+      : "from cache";
+    const worker = entry.deliveryType === "cache" || entry.workerStart ? ", service worker" : "";
+    return `loaded in ${Math.round(entry.duration)} ms (${where}${worker})`;
+  } catch (err) {
+    return "";
+  }
+}

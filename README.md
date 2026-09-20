@@ -916,6 +916,12 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
   `parameters`/`exclude_parameters`. De isobaren worden altijd uit de luchtdruk
   van de **getoonde dataset zelf** getekend, dus een andere bron met luchtdruk
   helpt niet. De tooltip van het vinkje zegt dit ook.
+- **Welke versie draait de browser, en hoe kwam die binnen?** De card meldt
+  zich in de browserconsole:
+  `GRIB-OVERLAY-CARD 0.37.8 loaded in 5 ms (from cache)`. Die regel draait als
+  laatste van het bestand: staat hij er niet, dan is het bestand niet (volledig)
+  geladen en komt een "Configuratiefout" daarvandaan. Staat hij er wel, dan zegt
+  de tijd erachter of het bestand van de schijf kwam of over de lijn moest.
 - **"Configuratiefout" op de plek van de card** — Home Assistant wacht maar een
   paar seconden tot een custom card zich meldt; haalt de browser de card niet op
   tijd binnen (traag netwerk, mobiel, veel custom cards naast elkaar), dan komt
@@ -2036,6 +2042,12 @@ What you will see in the log (Settings → System → Logs):
   `parameters`/`exclude_parameters`. The isobars are always drawn from the
   pressure of the **dataset being shown**, so another source that has pressure
   does not help. The checkbox's tooltip says so too.
+- **Which version is the browser running, and how did it arrive?** The card
+  announces itself in the browser console:
+  `GRIB-OVERLAY-CARD 0.37.8 loaded in 5 ms (from cache)`. That line runs last in
+  the file: if it is missing, the file was not (fully) loaded and a
+  "configuration error" comes from that. If it is there, the timing says whether
+  the file came from the browser's cache or had to travel.
 - **“Configuration error” where the card should be** — Home Assistant waits only
   a couple of seconds for a custom card to register itself; if the browser does
   not have the card by then (slow or mobile connection, many custom cards at

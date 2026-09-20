@@ -160,7 +160,7 @@ def test_the_card_finds_its_own_url_when_loaded_as_a_module() -> None:
     """Home Assistant imports the card, it does not add a <script src> tag, so
     there is nothing to query: without the stack-trace fallback the banner says
     "dev" and the vendored files lose their cache-busting version."""
-    block = JS.split("const GRIB_ASSET_VERSION = (() => {", 1)[1].split("})();", 1)[0]
+    block = JS.split("const GRIB_ASSET_URL = (() => {", 1)[1].split("})();", 1)[0]
     assert "document.currentScript?.src" in block
     assert "new Error().stack" in block
     assert 'replace(/:\\d+:\\d+$/, "")' in block  # a stack entry ends in :line:column
@@ -181,3 +181,13 @@ def test_the_dataset_fit_waits_until_the_card_has_a_size() -> None:
     # The fit is only marked done when it actually happened.
     apply = JS.split("  _applyPendingFit() {", 1)[1].split("\n  }\n", 1)[0]
     assert "this._boundsFit = true;" in apply and "this._map.fitBounds(bounds);" in apply
+
+
+def test_the_banner_says_how_the_card_was_loaded() -> None:
+    """When the "configuration error" placeholder does turn up, the next question
+    is whether the file was slow, cached, or never fetched at all."""
+    body = JS.split("function gribLoadTiming() {", 1)[1].split("\n}\n", 1)[0]
+    assert "performance.getEntriesByName(GRIB_ASSET_URL)[0]" in body
+    assert '"from cache"' in body
+    assert "loaded in ${Math.round(entry.duration)} ms" in body
+    assert "gribLoadTiming()" in JS.split("console.info(", 1)[1]
