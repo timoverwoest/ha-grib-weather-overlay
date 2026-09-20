@@ -20,6 +20,9 @@
 <h2>grib-overlay-compare-card (modelvergelijking)</h2>
 <grib-overlay-compare-card id="compare"></grib-overlay-compare-card>
 
+<h2>grib-overlay-card met filters (alleen golfdata, KNMI)</h2>
+<grib-overlay-card id="waves"></grib-overlay-card>
+
 <h2>grib-overlay-weathermap-card (KNMI-weerkaart)</h2>
 <grib-overlay-weathermap-card id="wm"></grib-overlay-weathermap-card>
 
@@ -79,6 +82,17 @@
   const compare = document.getElementById("compare");
   compare.setConfig({ type: "custom:grib-overlay-compare-card", center: [52.4, 4.5], zoom: 8, ...baseMap });
   compare.hass = hass;
+
+  // Dataset/parameter filters: only the KNMI sources, and only their wave rows
+  // (the "golven" group covers wave_*, swell_* and wind_wave_*).
+  const waves = document.getElementById("waves");
+  waves.setConfig({
+    type: "custom:grib-overlay-card",
+    datasets: ["knmi"],
+    parameters: ["golven"],
+    ...baseMap,
+  });
+  waves.hass = hass;
 
   const wm = document.getElementById("wm");
   wm.setConfig({ type: "custom:grib-overlay-weathermap-card" });

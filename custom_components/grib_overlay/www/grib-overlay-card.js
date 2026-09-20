@@ -145,6 +145,8 @@ const GRIB_TEXT = {
     errSources: "Kon bronnen niet ophalen: ",
     noIntegration:
       "Geen GRIB Weather Overlay integratie gevonden. Voeg de integratie eerst toe via Instellingen → Apparaten & diensten.",
+    noDatasetsMatch:
+      "Geen dataset past bij de filters van deze kaart (datasets/parameters in de YAML).",
     noFrames:
       "Nog geen frames beschikbaar voor deze parameter (eerste download/verwerking loopt mogelijk nog).",
     noParamSelected: "Geen parameter geselecteerd.",
@@ -278,6 +280,8 @@ const GRIB_TEXT = {
     errSources: "Could not fetch sources: ",
     noIntegration:
       "No GRIB Weather Overlay integration found. Add the integration first via Settings → Devices & services.",
+    noDatasetsMatch:
+      "No dataset matches this card's filters (datasets/parameters in the YAML).",
     noFrames:
       "No frames available for this parameter yet (the first download/processing may still be running).",
     noParamSelected: "No parameter selected.",
@@ -1063,6 +1067,127 @@ function formatDirection(config, deg) {
   return directionMode(config) === "deg" ? `${Math.round(d)}°` : compass(d);
 }
 
+// --- which datasets and parameters a card shows -----------------------------
+
+// Parameter groups, so a card can be given "golven" instead of every wave key.
+// The values are matched like any other token, wildcards included.
+const GRIB_PARAM_GROUPS = {
+  waves: ["wave_*", "swell_*", "wind_wave_*"],
+  swell: ["swell_*"],
+  windwaves: ["wind_wave_*"],
+  wind: ["wind_10m", "wind_gust_10m"],
+  sea: ["current", "water_level", "water_temperature"],
+  weather: [
+    "wind_10m", "wind_gust_10m", "temperature_2m", "dewpoint_2m", "humidity_2m",
+    "precipitation", "pressure_msl", "visibility", "cloud_cover", "cape",
+  ],
+};
+
+// Dutch (and a few loose English) names for those groups.
+const GRIB_GROUP_ALIASES = {
+  golven: "waves", golf: "waves", wave: "waves",
+  deining: "swell",
+  windgolven: "windwaves", windwave: "windwaves", wind_waves: "windwaves",
+  zee: "sea", stroming: "sea", currents: "sea", water: "sea",
+  weer: "weather",
+};
+
+// A config value as lowercase tokens, or null when the key isn't set at all
+// (meaning: everything passes). A YAML list and a comma/space-separated string
+// are both accepted, as elsewhere in the card config.
+function filterTokens(raw) {
+  if (raw == null) return null;
+  const list = Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/);
+  const tokens = list.map((s) => String(s).trim().toLowerCase()).filter(Boolean);
+  return tokens.length ? tokens : null;
+}
+
+// Tokens match case-insensitively; `*` stands for any run of characters, so
+// `dmi_*` covers every DMI dataset and `swell_*` every swell parameter.
+function tokenMatches(token, value) {
+  if (value == null || value === "") return false;
+  const v = String(value).toLowerCase();
+  if (!token.includes("*")) return token === v;
+  const rx = new RegExp(
+    "^" + token.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$"
+  );
+  return rx.test(v);
+}
+
+function matchesAny(tokens, value) {
+  return !!tokens && tokens.some((t) => tokenMatches(t, value));
+}
+
+// A group name in a parameter list stands for the keys it covers.
+function expandParamTokens(tokens) {
+  if (!tokens) return null;
+  const out = [];
+  for (const t of tokens) out.push(...(GRIB_PARAM_GROUPS[GRIB_GROUP_ALIASES[t] || t] || [t]));
+  return out;
+}
+
+// An entry can be named by its entry-id, its source, its dataset key or name,
+// or the title shown in the dropdown.
+function entryMatchesToken(entry, token) {
+  const ds = (entry && entry.dataset) || {};
+  return [entry.entry_id, entry.source, ds.key, ds.name, gribDatasetName(ds), entry.title].some(
+    (v) => tokenMatches(token, v)
+  );
+}
+
+// The parameters a card keeps, in the entry's own order. A height or period
+// takes its direction companion along -- the arrows and the from-direction rows
+// need it -- unless that direction is excluded itself.
+function filterCardParameters(params, include, exclude) {
+  const list = params || [];
+  if (!include && !exclude) return list;
+  const keep = new Set(
+    list
+      .filter((p) => (!include || matchesAny(include, p.key)) && !matchesAny(exclude, p.key))
+      .map((p) => p.key)
+  );
+  for (const key of [...keep]) {
+    const dir = gribDirectionKeyFor(key);
+    if (dir && !keep.has(dir) && !matchesAny(exclude, dir) && list.some((p) => p.key === dir)) {
+      keep.add(dir);
+    }
+  }
+  return list.filter((p) => keep.has(p.key));
+}
+
+// The entries a card may show: `datasets` / `exclude_datasets` pick the sources,
+// `parameters` / `exclude_parameters` the rows within them -- so wave data can
+// be kept off one card and given a card of its own. An entry that has no
+// parameter left drops out entirely.
+function filterCardEntries(entries, config) {
+  const cfg = config || {};
+  const include = filterTokens(cfg.datasets ?? cfg.entries ?? cfg.models);
+  const exclude = filterTokens(cfg.exclude_datasets ?? cfg.exclude_entries);
+  const pInclude = expandParamTokens(filterTokens(cfg.parameters));
+  const pExclude = expandParamTokens(filterTokens(cfg.exclude_parameters));
+  const out = [];
+  for (const entry of entries || []) {
+    if (include && !include.some((t) => entryMatchesToken(entry, t))) continue;
+    if (exclude && exclude.some((t) => entryMatchesToken(entry, t))) continue;
+    const params = filterCardParameters(entry.parameters, pInclude, pExclude);
+    if (!params.length) continue;
+    out.push(params === entry.parameters ? entry : { ...entry, parameters: params });
+  }
+  return out;
+}
+
+// What the filters currently say, so a live config edit (the YAML editor's
+// preview) can tell whether the dataset list has to be rebuilt.
+function cardFilterKey(config) {
+  const cfg = config || {};
+  return JSON.stringify([
+    cfg.datasets ?? cfg.entries ?? cfg.models ?? null,
+    cfg.exclude_datasets ?? cfg.exclude_entries ?? null,
+    cfg.parameters ?? null,
+    cfg.exclude_parameters ?? null,
+  ]);
+}
+
 // Canonical column resolution ("quarter"/"hour"/"3h"/"day") with aliases.
 function normalizeResolution(v) {
   const raw = String(v == null ? "" : v).toLowerCase().replace(/\s+/g, "");
@@ -1426,12 +1551,17 @@ class GribOverlayCard extends HTMLElement {
   }
 
   setConfig(config) {
+    const filtersChanged =
+      this._config !== undefined && cardFilterKey(config || {}) !== cardFilterKey(this._config);
     this._config = config || {};
     this._render();
     this._applyLayout();
     // On a live config edit (e.g. changing wind_unit in the dashboard editor)
     // the card is already initialized; refresh the unit labels in place.
     if (this._entries) this._refreshUnitLabels();
+    // ... and rebuild the dropdowns when the edit changed which datasets or
+    // parameters this card may show.
+    if (filtersChanged && this._allEntries) this._applyEntryFilter();
   }
 
   // Re-label the parameter dropdown + legend for the current display units,
@@ -2008,27 +2138,44 @@ class GribOverlayCard extends HTMLElement {
   async _loadEntries() {
     try {
       const data = await this._hass.callApi("GET", "grib_overlay/entries");
-      this._entries = data.entries || [];
+      this._allEntries = data.entries || [];
     } catch (err) {
       this._els.note.textContent = gribT("errEntries") + (err.message || err);
       return;
     }
 
-    if (!this._entries.length) {
+    if (!this._allEntries.length) {
       this._els.note.textContent =
         gribT("noIntegration");
       return;
     }
 
+    await this._applyEntryFilter();
+  }
+
+  // Fill the dataset dropdown with the entries this card may show -- all of
+  // them unless the config narrows them down (`datasets`/`parameters`). Also
+  // run on a live config edit, so the dropdown follows the YAML.
+  async _applyEntryFilter() {
+    const current = this._els.entrySelect.value;
+    this._entries = filterCardEntries(this._allEntries || [], this._config);
     this._els.entrySelect.innerHTML = "";
+    if (!this._entries.length) {
+      this._els.note.textContent = gribT("noDatasetsMatch");
+      return;
+    }
+    this._els.note.textContent = "";
     for (const entry of this._entries) {
       const opt = document.createElement("option");
       opt.value = entry.entry_id;
       opt.textContent = entry.title;
       this._els.entrySelect.appendChild(opt);
     }
+    // Keep the dataset the user was looking at when it survives the filter.
     this._els.entrySelect.value =
-      this._resolveDefaultEntryId() || this._entries[0].entry_id;
+      (this._entries.some((e) => e.entry_id === current) && current) ||
+      this._resolveDefaultEntryId() ||
+      this._entries[0].entry_id;
 
     await this._onEntryChange();
   }
@@ -5244,6 +5391,8 @@ class GribCompareCard extends HTMLElement {
   }
 
   setConfig(config) {
+    const filtersChanged =
+      this._config !== undefined && cardFilterKey(config || {}) !== cardFilterKey(this._config);
     this._config = config || {};
     this._resolution = normalizeResolution(this._config.meteogram_resolution);
     const r = Number(this._config.measurement_radius_km);
@@ -5251,7 +5400,11 @@ class GribCompareCard extends HTMLElement {
     this._corrMode = "none"; // forecast correction: none | abs | rel
     this._corrSources = null; // null = all shown sources
     this._render();
-    if (this._entries) this._refresh();
+    if (filtersChanged && this._allEntries) {
+      this._applyEntryFilter();
+    } else if (this._entries) {
+      this._refresh();
+    }
   }
 
   set hass(hass) {
@@ -5741,7 +5894,8 @@ class GribCompareCard extends HTMLElement {
 
     try {
       const data = await this._hass.callApi("GET", "grib_overlay/entries");
-      this._entries = data.entries || [];
+      this._allEntries = data.entries || [];
+      this._entries = filterCardEntries(this._allEntries, this._config);
     } catch (err) {
       this._els.note.textContent = gribT("errSources") + (err.message || err);
       return;
@@ -5777,13 +5931,11 @@ class GribCompareCard extends HTMLElement {
     this._els.paramSelect.value = seen.has(wanted) ? wanted : (seen.keys().next().value || "");
   }
 
-  _configEntryFilter() {
-    const cfg = this._config || {};
-    const raw = cfg.entries ?? cfg.models;
-    if (raw == null) return null;
-    const list = Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/);
-    const set = new Set(list.map((s) => String(s).trim().toLowerCase()).filter(Boolean));
-    return set.size ? set : null;
+  // Re-apply the config filters to the entries already fetched (live edit).
+  _applyEntryFilter() {
+    this._entries = filterCardEntries(this._allEntries || [], this._config);
+    this._populateParameters();
+    this._refresh();
   }
 
   // Fetch the selected parameter's series from every entry that offers it.
@@ -5793,18 +5945,9 @@ class GribCompareCard extends HTMLElement {
     const { lat, lng } = this._point;
     this._els.readout.textContent = `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
     this._els.readout.classList.remove("hidden");
-    const filter = this._configEntryFilter();
-    const wanted = (this._entries || []).filter((e) => {
-      if (!(e.parameters || []).some((p) => p.key === param)) return false;
-      if (!filter) return true;
-      return (
-        filter.has((e.entry_id || "").toLowerCase()) ||
-        filter.has((e.source || "").toLowerCase()) ||
-        filter.has((e.dataset && e.dataset.key || "").toLowerCase()) ||
-        filter.has((e.dataset && e.dataset.name || "").toLowerCase()) ||
-        filter.has((e.title || "").toLowerCase())
-      );
-    });
+    const wanted = (this._entries || []).filter((e) =>
+      (e.parameters || []).some((p) => p.key === param)
+    );
     const q = `lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}`;
     const shortById = compareShortLabels(wanted);
     const models = await Promise.all(

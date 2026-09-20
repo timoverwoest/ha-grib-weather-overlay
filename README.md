@@ -59,6 +59,9 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   tot in de Oslofjord.
 - **KNMI-weerkaart met fronten** als eigen card: analyses en verwachtingskaarten
   tot 48 uur vooruit.
+- **Per card kiezen welke datasets erin zitten** (`datasets` / `parameters` en
+  hun `exclude_`-varianten): zet de golven op hun eigen card en houd de
+  weerkaart schoon — het filter geldt ook voor het uitgebreide meteogram.
 - **Zeekaartlagen** zoals op map.openseamap.org: zeetekens, sport, dieptelijnen,
   dieptemetingen, GEBCO-diepte en een EMODnet-dieptekaart als ondergrond, via een
   lagenknop op de kaart.
@@ -285,6 +288,11 @@ type: custom:grib-overlay-card
 # dataset: bsh_current_northsea   # datasetsleutel, -naam of de titel uit de keuzelijst
 # entry_id: <config entry id>     # exacte config-entry (wint van dataset)
 # parameter: wind_10m
+# welke datasets/parameters deze kaart mag tonen (bv. golfdata op een eigen card):
+# datasets: [knmi, dwd]         # alleen deze bronnen (source, datasetsleutel/-naam, titel of entry-id; * mag)
+# exclude_datasets: [dmi_wam_*] # of juist deze bronnen niet
+# parameters: [golven]          # alleen deze parameters (sleutel of groep; * mag)
+# exclude_parameters: [golven]  # of juist deze parameters niet
 # render_mode: vectors  # startweergave: raster (standaard), particles, vectors of wavevectors
 # arrow_halo_color: "#ffffff"  # kleur van de contour (halo) om de wind-pijlen (standaard wit)
 # deeltjes-weergave (contrast t.o.v. de laag erachter):
@@ -314,6 +322,36 @@ type: custom:grib-overlay-card
 # measurement_radius_km: 10   # meteogram → vergelijk modellen → Meting: straal voor nabije meetstations
 ```
 
+#### Datasets verdelen over meerdere cards
+
+Elke card kiest zelf welke datasets en parameters erin zitten. Zo houd je het
+weer en de golven uit elkaar — twee cards naast elkaar op hetzelfde dashboard:
+
+```yaml
+# kaart 1: weer, zonder golfdata
+type: custom:grib-overlay-card
+exclude_parameters: [golven]
+
+# kaart 2: alleen golven en deining
+type: custom:grib-overlay-card
+parameters: [golven]
+```
+
+- `datasets` / `exclude_datasets` kiezen de **bronnen**: match op `source`
+  (`knmi`, `dwd`, `dmi`, `rws`, `metno`, `bsh`), datasetsleutel of -naam, de
+  titel uit de keuzelijst of de entry-id. `*` mag als jokerteken
+  (`dmi_*`, `rws_swan_*`).
+- `parameters` / `exclude_parameters` kiezen de **parameters** binnen die
+  bronnen: parametersleutels (`wave_height`), jokertekens (`swell_*`) of een
+  groepsnaam: `golven` (alle golf-, deinings- en windgolf-parameters),
+  `deining`, `windgolven`, `wind`, `zee` (stroming, waterstand,
+  watertemperatuur) of `weer`.
+- Een richting hoort bij zijn hoogte/periode: kies je `wave_height`, dan blijft
+  `wave_direction` beschikbaar voor de pijlen (tenzij je die zelf uitsluit).
+- Het filter geldt voor de hele card: de keuzelijst, de overlay én het
+  uitgebreide meteogram. Een bron die niets overhoudt, verdwijnt uit de lijst;
+  blijft er niets over, dan zegt de card dat.
+
 ### Modelvergelijking-card (`grib-overlay-compare-card`)
 
 Vergelijk op één punt wat de verschillende bronnen voorspellen. Klik op de
@@ -325,8 +363,12 @@ parameter: wind_10m          # startparameter (union van alle bronnen)
 center: [52.98, 4.12]        # startpositie van de mini-kaart (bv. een haven)
 zoom: 9
 # meteogram_resolution: 3uur # kolom-tijdstap van de tabel: kwartier, uur, 3uur of dag
-# entries: [knmi, dwd]       # optioneel: alleen deze bronnen vergelijken
-#                            #   (match op source, datasetsleutel/-naam, titel of entry-id)
+# datasets: [knmi, dwd]      # optioneel: alleen deze bronnen vergelijken
+#                            #   (match op source, datasetsleutel/-naam, titel of entry-id; * mag)
+#                            #   `entries:` / `models:` doen hetzelfde (oudere naam)
+# exclude_datasets: [bsh]    # of juist deze bronnen niet
+# parameters: [golven]       # alleen deze parameters in de keuzelijst (sleutel, * of groep)
+# exclude_parameters: [zee]  # of juist deze parameters niet
 # measurement_radius_km: 10  # straal voor "meetstations in de buurt" (standaard 10 km)
 # eenheden gelden net als bij de overlay-card:
 # wind_unit: kn
@@ -679,6 +721,10 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 | `dataset` | tekst | (eerste) | datasetsleutel, -naam of titel — welke dataset bij het laden |
 | `entry_id` | tekst | (eerste) | exacte config-entry-id (wint van `dataset`) |
 | `parameter` | tekst | (eerste) | parametersleutel — welke parameter bij het laden |
+| `datasets` | lijst of tekst | — | alleen deze bronnen op deze card; match op `source`, datasetsleutel/-naam, titel of entry-id, `*` als jokerteken. Leeg = alle |
+| `exclude_datasets` | lijst of tekst | — | deze bronnen juist **niet** (zelfde match) |
+| `parameters` | lijst of tekst | — | alleen deze parameters: sleutel, jokerteken of groep (`golven`, `deining`, `windgolven`, `wind`, `zee`, `weer`). Leeg = alle |
+| `exclude_parameters` | lijst of tekst | — | deze parameters juist **niet** (bv. `[golven]` voor een weerkaart zonder golfdata) |
 | `render_mode` | tekst | `raster` | `raster`, `particles`, `vectors`, `wavevectors` (valt terug op `raster` als de parameter het niet ondersteunt) |
 | `arrow_halo_color` | hex-kleur | `#ffffff` | contour (halo) om de wind-pijlen |
 | `particle_color` | hex-kleur | (velocity-kleuren) | één vaste deeltjeskleur voor hoog contrast |
@@ -706,6 +752,12 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 | `meteogram_parameters` | lijst of tekst | — | parametersleutels die in het uitgebreide meteogram **standaard zichtbaar** zijn; de rest start verborgen (in te schakelen via de chips). Leeg = alle rijen tonen. Match op parametersleutel, dus geldt voor álle bronnen |
 | `meteogram_resolution` | tekst | `uur` | tijdstap van de meteogram-kolommen: `kwartier`, `uur`, `3uur` of `dag`. Bij `dag` het daggemiddelde (neerslag: dagsom); fijner = waarde op dat tijdstip. In het venster zelf ook via “Kolommen” te wisselen |
 
+`datasets`/`parameters` (en hun `exclude_`-varianten) gelden voor de hele card:
+keuzelijst, overlay en het uitgebreide meteogram. Een richtingparameter blijft
+staan zolang zijn hoogte/periode blijft staan (`wave_height` houdt
+`wave_direction`), zodat de pijlen werken. Zie
+[Datasets verdelen over meerdere cards](#datasets-verdelen-over-meerdere-cards).
+
 De oude schrijfwijze `renderMode` (camelCase) blijft ook werken naast
 `render_mode`. `meteogram_parameters` mag zowel een YAML-lijst als een door
 komma’s/spaties gescheiden tekst zijn; bv. `[wind_10m, wind_gust_10m,
@@ -721,7 +773,9 @@ chips, “Alle rijen tonen”) geldt tijdelijk, voor dat geopende venster.
 | `center` | `[lat, lon]` | `[52.1, 5.3]` | startpositie van de mini-kaart |
 | `zoom` | getal | `7` | start-zoomniveau van de mini-kaart |
 | `base_map`, `map_layers`, `tile_url`, `tile_attribution` | | | kaartlagen, als bij de overlay-card |
-| `entries` (of `models`) | lijst of tekst | — | alleen deze bronnen vergelijken; match op `source`, datasetsleutel/-naam, titel of entry-id. Leeg = alle bronnen die de parameter hebben |
+| `datasets` (of `entries`/`models`) | lijst of tekst | — | alleen deze bronnen vergelijken; match op `source`, datasetsleutel/-naam, titel of entry-id, `*` als jokerteken. Leeg = alle bronnen die de parameter hebben |
+| `exclude_datasets` | lijst of tekst | — | deze bronnen juist **niet** |
+| `parameters` / `exclude_parameters` | lijst of tekst | — | welke parameters in de keuzelijst staan: sleutel, jokerteken of groep (`golven`, `zee`, `weer` …) |
 | `meteogram_resolution` | tekst | `uur` | kolom-tijdstap van de tabel: `kwartier`, `uur`, `3uur`, `dag` |
 | `wind_unit`, `visibility_unit`, `direction_unit` | tekst | zie hieronder | zelfde eenheden-opties als de overlay-card |
 
@@ -1089,6 +1143,9 @@ changing the map card or the rest of the backend):
   currents, right into the Oslofjord.
 - **KNMI weather map with fronts** as its own card: analyses and forecast charts
   up to 48 hours ahead.
+- **Pick per card which datasets it holds** (`datasets` / `parameters` and their
+  `exclude_` variants): give the waves a card of their own and keep the weather
+  card clean — the filter applies to the detailed meteogram too.
 - **Nautical chart layers** as on map.openseamap.org: seamarks, sport, depth
   contours, depth soundings, GEBCO depth and an EMODnet bathymetry base map, via a
   layer button on the map.
@@ -1306,6 +1363,11 @@ type: custom:grib-overlay-card
 # dataset: bsh_current_northsea   # dataset key, name, or the title from the picker
 # entry_id: <config entry id>     # exact config entry (wins over dataset)
 # parameter: wind_10m
+# which datasets/parameters this card may show (e.g. wave data on a card of its own):
+# datasets: [knmi, dwd]         # only these sources (source, dataset key/name, title or entry-id; * allowed)
+# exclude_datasets: [dmi_wam_*] # or rather not these sources
+# parameters: [waves]           # only these parameters (key or group; * allowed)
+# exclude_parameters: [waves]   # or rather not these parameters
 # render_mode: vectors  # initial view: raster (default), particles, vectors or wavevectors
 # arrow_halo_color: "#ffffff"  # colour of the outline (halo) around the wind arrows (default white)
 # particle view (contrast against the layer behind it):
@@ -1335,6 +1397,38 @@ type: custom:grib-overlay-card
 # measurement_radius_km: 10   # meteogram → compare models → Measurement: radius for nearby stations
 ```
 
+#### Splitting datasets over several cards
+
+Each card picks its own datasets and parameters, so you can keep the weather and
+the waves apart — two cards side by side on the same dashboard:
+
+```yaml
+# card 1: weather, without wave data
+type: custom:grib-overlay-card
+exclude_parameters: [waves]
+
+# card 2: waves and swell only
+type: custom:grib-overlay-card
+parameters: [waves]
+```
+
+- `datasets` / `exclude_datasets` pick the **sources**: match on `source`
+  (`knmi`, `dwd`, `dmi`, `rws`, `metno`, `bsh`), dataset key or name, the title
+  from the dropdown, or the entry-id. `*` works as a wildcard (`dmi_*`,
+  `rws_swan_*`).
+- `parameters` / `exclude_parameters` pick the **parameters** within those
+  sources: parameter keys (`wave_height`), wildcards (`swell_*`) or a group
+  name: `waves` (every wave, swell and wind-wave parameter), `swell`,
+  `windwaves`, `wind`, `sea` (current, water level, water temperature) or
+  `weather`. The Dutch names (`golven`, `deining`, `windgolven`, `zee`, `weer`)
+  work too.
+- A direction belongs to its height/period: pick `wave_height` and
+  `wave_direction` stays available for the arrows (unless you exclude it
+  yourself).
+- The filter applies to the whole card: the dropdown, the overlay and the
+  detailed meteogram. A source with nothing left disappears from the list; if
+  nothing is left at all, the card says so.
+
 ### Model-comparison card (`grib-overlay-compare-card`)
 
 Compare, at one point, what the different sources predict. Click on the mini-map
@@ -1346,8 +1440,12 @@ parameter: wind_10m          # initial parameter (union of all sources)
 center: [52.98, 4.12]        # initial position of the mini-map (e.g. a harbour)
 zoom: 9
 # meteogram_resolution: 3uur # table column time step: kwartier, uur, 3uur or dag
-# entries: [knmi, dwd]       # optional: compare only these sources
-#                            #   (match on source, dataset key/name, title or entry-id)
+# datasets: [knmi, dwd]      # optional: compare only these sources
+#                            #   (match on source, dataset key/name, title or entry-id; * allowed)
+#                            #   `entries:` / `models:` do the same (older name)
+# exclude_datasets: [bsh]    # or rather not these sources
+# parameters: [waves]        # only these parameters in the dropdown (key, * or group)
+# exclude_parameters: [sea]  # or rather not these parameters
 # measurement_radius_km: 10  # radius for "nearby measurement stations" (default 10 km)
 # units work just like on the overlay card:
 # wind_unit: kn
@@ -1697,6 +1795,10 @@ include `swell_direction` too, or the swell rows have no arrows.
 | `dataset` | text | (first) | dataset key, name or title — which dataset on load |
 | `entry_id` | text | (first) | exact config entry id (wins over `dataset`) |
 | `parameter` | text | (first) | parameter key — which parameter on load |
+| `datasets` | list or text | — | only these sources on this card; match on `source`, dataset key/name, title or entry-id, `*` as a wildcard. Empty = all |
+| `exclude_datasets` | list or text | — | rather **not** these sources (same matching) |
+| `parameters` | list or text | — | only these parameters: key, wildcard or group (`waves`, `swell`, `windwaves`, `wind`, `sea`, `weather`). Empty = all |
+| `exclude_parameters` | list or text | — | rather **not** these parameters (e.g. `[waves]` for a weather card without wave data) |
 | `render_mode` | text | `raster` | `raster`, `particles`, `vectors`, `wavevectors` (falls back to `raster` if the parameter does not support it) |
 | `arrow_halo_color` | hex colour | `#ffffff` | outline (halo) around the wind arrows |
 | `particle_color` | hex colour | (velocity colours) | one fixed particle colour for high contrast |
@@ -1724,6 +1826,12 @@ include `swell_direction` too, or the swell rows have no arrows.
 | `meteogram_parameters` | list or text | — | parameter keys that are **visible by default** in the detailed meteogram; the rest starts hidden (enable via the chips). Empty = show all rows. Match on parameter key, so it applies to all sources |
 | `meteogram_resolution` | text | `uur` | time step of the meteogram columns: `kwartier`, `uur`, `3uur` or `dag`. For `dag` the daily average (precipitation: daily sum); finer = value at that time. Also switchable via “Kolommen” in the window itself |
 
+`datasets`/`parameters` (and their `exclude_` variants) apply to the whole card:
+dropdown, overlay and the detailed meteogram. A direction parameter stays as
+long as its height/period does (`wave_height` keeps `wave_direction`), so the
+arrows keep working. See
+[Splitting datasets over several cards](#splitting-datasets-over-several-cards).
+
 The old spelling `renderMode` (camelCase) also keeps working alongside
 `render_mode`. `meteogram_parameters` may be either a YAML list or a
 comma/space-separated string; e.g. `[wind_10m, wind_gust_10m, temperature_2m]` or
@@ -1739,7 +1847,9 @@ applies temporarily, for that opened window.
 | `center` | `[lat, lon]` | `[52.1, 5.3]` | initial position of the mini-map |
 | `zoom` | number | `7` | initial zoom level of the mini-map |
 | `base_map`, `map_layers`, `tile_url`, `tile_attribution` | | | map layers, as for the overlay card |
-| `entries` (or `models`) | list or text | — | compare only these sources; match on `source`, dataset key/name, title or entry-id. Empty = all sources that have the parameter |
+| `datasets` (or `entries`/`models`) | list or text | — | compare only these sources; match on `source`, dataset key/name, title or entry-id, `*` as a wildcard. Empty = all sources that have the parameter |
+| `exclude_datasets` | list or text | — | rather **not** these sources |
+| `parameters` / `exclude_parameters` | list or text | — | which parameters the dropdown offers: key, wildcard or group (`waves`, `sea`, `weather` …) |
 | `meteogram_resolution` | text | `uur` | column time step of the table: `kwartier`, `uur`, `3uur`, `dag` |
 | `wind_unit`, `visibility_unit`, `direction_unit` | text | see below | same unit options as the overlay card |
 
