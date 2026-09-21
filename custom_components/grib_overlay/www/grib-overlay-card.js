@@ -42,6 +42,15 @@ const VELOCITY_CSS_URL = `/grib_overlay_static/vendor/leaflet-velocity/leaflet-v
 // Base overlay render modes selectable in the card / settable via `render_mode`
 // config. Isobars are NOT a base mode -- they are a separate layer (a toggle)
 // that draws on top of whichever base mode is active.
+// Leaflet hides every tile it creates (`.leaflet-tile { visibility: hidden }`)
+// and only reveals it once the image has actually loaded, by adding
+// `leaflet-tile-loaded`. A map whose tile images were aborted -- which is what
+// a browser does to a subtree taken out of the page, and what Chromium does
+// most eagerly -- is therefore FULL of tiles and completely blank. So "does
+// this map have tiles?" is the wrong question, and the reason a card kept
+// coming back empty from another dashboard while every check said it was fine.
+const GRIB_PAINTED_TILE = ".leaflet-tile-loaded";
+
 const RENDER_MODES = ["raster", "particles", "vectors", "wavevectors"];
 
 // ---------------------------------------------------------------------------
@@ -327,6 +336,125 @@ function gribWatchForCardErrors() {
 }
 
 gribWatchForCardErrors();
+
+// Home Assistant's own console line is the quickest account of a card it
+// dropped -- but a console can be replaced by another card's bundle before we
+// get to it, and then the red block goes unexplained all the same. So do not
+// depend on being told: go and look for the block itself. A `hui-card` that
+// was configured as one of ours and is holding an error card instead is the
+// red block, whatever wrote to the console.
+const GRIB_SCAN_DELAYS_MS = [4000, 12000, 30000];
+const GRIB_SCAN_NODE_LIMIT = 20000;
+
+let gribErrorCardsReported = false;
+
+// One card wrapper, read as carefully as a stranger's internals deserve.
+function gribErrorCardRecord(node) {
+  try {
+    const host = node.getRootNode && node.getRootNode().host;
+    if (node.localName === "hui-error-card") {
+      // Inside a hui-card we already looked at: not a second red block.
+      if (host && host.localName === "hui-card") return null;
+      const type = String((host && host.config && host.config.type) || "");
+      if (!type) return null;
+      return {
+        type,
+        ours: type.startsWith("custom:grib-overlay-"),
+        message: String((node._config && node._config.error) || ""),
+      };
+    }
+    const inner = node._element;
+    if (!inner || inner.localName !== "hui-error-card") return null;
+    const type = String((node.config && node.config.type) || "?");
+    return {
+      type,
+      ours: type.startsWith("custom:grib-overlay-"),
+      message: String((inner._config && inner._config.error) || ""),
+    };
+  } catch (err) {
+    return null; // another Home Assistant version keeps these elsewhere
+  }
+}
+
+function gribScanForErrorCards() {
+  const ours = [];
+  const others = [];
+  const queue = [document.body];
+  let seen = 0;
+  while (queue.length && seen < GRIB_SCAN_NODE_LIMIT) {
+    const node = queue.shift();
+    seen += 1;
+    if (!node || node.nodeType !== 1) continue;
+    if (node.localName === "hui-card" || node.localName === "hui-error-card") {
+      const record = gribErrorCardRecord(node);
+      if (record) (record.ours ? ours : others).push(record);
+    }
+    if (node.shadowRoot) for (const child of node.shadowRoot.children) queue.push(child);
+    for (const child of node.children) queue.push(child);
+  }
+  return { ours, others, nodes: seen };
+}
+
+function gribScanOnce() {
+  if (gribErrorCardsReported || typeof document === "undefined" || !document.body) return;
+  const found = gribScanForErrorCards();
+  // Other cards failing is their business -- worth naming only as company for
+  // one of ours, never on its own.
+  if (!found.ours.length) return;
+  gribErrorCardsReported = true;
+  const dropped = found.ours
+    .map((r) => `${r.type}${r.message ? ": " + r.message : " (no message under it)"}`)
+    .join("; ");
+  const company = found.others.length
+    ? `; other cards on the page are showing one too: ${[
+        ...new Set(found.others.map((r) => r.type)),
+      ].join(", ")}`
+    : "; no other card on the page is showing one";
+  gribReportCardError(
+    found.ours[0].type,
+    {
+      name: "configuration error",
+      message:
+        `Home Assistant is showing ${found.ours.length} of our cards as an error block ` +
+        `(${dropped})${company}. Console watch ` +
+        `${window.__gribOverlayErrorHook ? "installed" : "NOT installed"}, ` +
+        `${found.nodes} elements searched`,
+    },
+    "error-card"
+  );
+}
+
+// Home Assistant hides its "custom element doesn't exist" placeholder for two
+// seconds and rebuilds the card if the file turns up late, so an early look
+// would report a card that is about to be fine. Look later, and twice more for
+// a dashboard that took its time.
+// A map that is on screen, has a size, and has not painted a single tile is
+// blank -- whatever the reason. Say so through the same channel as a card
+// Home Assistant dropped: that is the one thing a user cannot read out of a
+// console, and on a phone there is no console at all.
+function gribReportBlankMap(card, mapDiv, detail) {
+  if (!mapDiv || !mapDiv.offsetWidth || !mapDiv.offsetHeight) return; // hidden, not blank
+  if (mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
+  gribReportCardError(
+    card,
+    {
+      name: "blank map",
+      message:
+        `the map is on screen but nothing is painted (container ${mapDiv.offsetWidth}` +
+        `x${mapDiv.offsetHeight} px, ${mapDiv.querySelectorAll(".leaflet-tile").length} tiles ` +
+        `present but not loaded${detail ? ", " + detail : ""})`,
+    },
+    "blank-map"
+  );
+}
+
+function gribWatchForErrorCards() {
+  if (typeof window === "undefined" || window.__gribOverlayScan) return;
+  window.__gribOverlayScan = true;
+  for (const delay of GRIB_SCAN_DELAYS_MS) setTimeout(gribScanOnce, delay);
+}
+
+gribWatchForErrorCards();
 
 function gribApplyLanguage(root) {
   if (!root) return;
@@ -2101,7 +2229,7 @@ class GribOverlayCard extends HTMLElement {
     for (const wait of [250, 750, 1500, 3000]) {
       await new Promise((resolve) => setTimeout(resolve, wait));
       if (!this._map || !this.isConnected) return;
-      if (this._els.mapDiv.querySelector(".leaflet-tile")) return;
+      if (this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
       if (!this._els.mapDiv.offsetWidth) continue; // still hidden: nothing to measure
       this._map.invalidateSize({ pan: false });
       if (this._applyPendingFit()) return;
@@ -2112,7 +2240,7 @@ class GribOverlayCard extends HTMLElement {
       });
     }
     if (!allowRebuild || !this._map || !this.isConnected) return;
-    if (this._els.mapDiv.querySelector(".leaflet-tile")) return;
+    if (this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
     // Building a Leaflet map into a container of no size produces exactly the
     // blank map it is meant to cure -- and spends the budget doing it. Wait
     // for the card to have a size; becoming visible asks again.
@@ -2177,7 +2305,7 @@ class GribOverlayCard extends HTMLElement {
       // Becoming visible again (another dashboard page, a state-switch, the
       // card built while its view was still hidden) can leave Leaflet with an
       // empty container: recover rather than wait for a page reload.
-      if (this._els.mapDiv.offsetWidth && !this._els.mapDiv.querySelector(".leaflet-tile")) {
+      if (this._els.mapDiv.offsetWidth && !this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) {
         this._ensureTiles({ allowRebuild: true });
       }
     });
@@ -2226,30 +2354,27 @@ class GribOverlayCard extends HTMLElement {
   // time it had to rebuild may have been days and a hundred page switches ago.
   _recoverIfBlank() {
     if (!this._map || !this._els || !this._els.mapDiv) return;
-    if (this._els.mapDiv.querySelector(".leaflet-tile")) return;
+    if (this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
     this._rebuilds = 0;
     this._blankReported = false;
     this._ensureTiles({ allowRebuild: true });
+    // And check afterwards whether any of that helped.
+    clearTimeout(this._blankCheck);
+    this._blankCheck = setTimeout(() => this._reportBlankMap(), 12000);
   }
 
   // A map that stays blank is exactly what a user cannot report: the card is
   // there, the controls work, and the console is on a phone. Say so through the
   // same channel as a failed `hass` assignment -- the log and a notification.
   _reportBlankMap() {
-    if (this._blankReported) return;
+    if (this._blankReported || !this.isConnected) return;
     this._blankReported = true;
-    const div = this._els && this._els.mapDiv;
-    gribReportCardError(
+    gribReportBlankMap(
       "custom:grib-overlay-card",
-      {
-        name: "blank map",
-        message:
-          "the map stayed empty after rebuilding it twice " +
-          `(container ${div ? div.offsetWidth : "?"}x${div ? div.offsetHeight : "?"} px, ` +
-          `zoom ${this._map ? this._map.getZoom() : "?"}, ` +
-          `${this._frames ? this._frames.length : 0} frames loaded)`,
-      },
-      "blank-map"
+      this._els && this._els.mapDiv,
+      `zoom ${this._map ? this._map.getZoom() : "?"}, ` +
+        `${this._frames ? this._frames.length : 0} frames loaded, ` +
+        `${this._rebuilds || 0} rebuilds`
     );
   }
 
@@ -6535,7 +6660,7 @@ class GribCompareCard extends HTMLElement {
       this._resizeObserver = new ResizeObserver(() => {
         if (!this._map) return;
         this._map.invalidateSize();
-        if (this._els.mapDiv.offsetWidth && !this._els.mapDiv.querySelector(".leaflet-tile")) {
+        if (this._els.mapDiv.offsetWidth && !this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) {
           this._ensureTiles();
         }
       });
@@ -6597,9 +6722,19 @@ class GribCompareCard extends HTMLElement {
 
   _recoverIfBlank() {
     if (!this._map || !this._els || !this._els.mapDiv) return;
-    if (this._els.mapDiv.querySelector(".leaflet-tile")) return;
+    if (this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
     this._rebuilds = 0; // a fresh budget every time the card comes back on screen
     this._ensureTiles();
+    clearTimeout(this._blankCheck);
+    this._blankCheck = setTimeout(() => {
+      if (this._blankReported || !this.isConnected) return;
+      this._blankReported = true;
+      gribReportBlankMap(
+        "custom:grib-overlay-compare-card",
+        this._els && this._els.mapDiv,
+        `${this._rebuilds || 0} rebuilds`
+      );
+    }, 12000);
   }
 
   async _ensureTiles() {
@@ -6612,7 +6747,7 @@ class GribCompareCard extends HTMLElement {
       for (const wait of [250, 750, 1500]) {
         await new Promise((resolve) => setTimeout(resolve, wait));
         if (!this._map || !this.isConnected) return;
-        if (this._els.mapDiv.querySelector(".leaflet-tile")) return;
+        if (this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
         if (!this._els.mapDiv.offsetWidth) continue; // still hidden
         this._map.invalidateSize({ pan: false });
         this._map.eachLayer((layer) => {
@@ -6620,7 +6755,7 @@ class GribCompareCard extends HTMLElement {
         });
       }
       if (!this._map || !this.isConnected) return;
-      if (this._els.mapDiv.querySelector(".leaflet-tile")) return;
+      if (this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
       // Never into a container of no size: that builds the blank map it is
       // meant to cure. Becoming visible asks again.
       if (!this._els.mapDiv.offsetWidth || !this._els.mapDiv.offsetHeight) return;

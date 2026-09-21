@@ -324,3 +324,37 @@ def test_the_comparison_card_gets_its_map_back_too() -> None:
     watch = JS.split("class GribCompareCard", 1)[1]
     assert "new IntersectionObserver(" in watch
     assert "this._recoverIfBlank();" in watch
+
+
+def test_a_map_counts_as_painted_only_when_a_tile_actually_loaded() -> None:
+    """Leaflet hides every tile it creates and reveals it only once the image
+    has loaded. A map whose tile images were aborted -- what a browser does to a
+    subtree taken out of the page -- is full of tiles and completely blank, so
+    asking whether there are tiles answered the wrong question."""
+    assert 'const GRIB_PAINTED_TILE = ".leaflet-tile-loaded";' in JS
+    assert '".leaflet-tile"' not in JS.split("const GRIB_PAINTED_TILE", 1)[1].replace(
+        'querySelectorAll(".leaflet-tile").length', ""
+    )
+    assert JS.count("querySelector(GRIB_PAINTED_TILE)") >= 6
+
+
+def test_the_card_goes_looking_for_its_own_red_block() -> None:
+    """A console can be replaced by another card's bundle before we hook it, and
+    then a dropped card goes unexplained. The block itself cannot hide."""
+    body = JS.split("function gribScanForErrorCards() {", 1)[1].split("\n}\n", 1)[0]
+    assert '"hui-card"' in body and '"hui-error-card"' in body
+    assert "node.shadowRoot" in body  # cards live in shadow roots, several deep
+    assert "GRIB_SCAN_NODE_LIMIT" in body
+    once = JS.split("function gribScanOnce() {", 1)[1].split("\n}\n", 1)[0]
+    # Other cards failing is their business, named only as company for one of ours.
+    assert "if (!found.ours.length) return;" in once
+    assert "__gribOverlayErrorHook" in once  # says whether the console watch got in
+    assert "const GRIB_SCAN_DELAYS_MS = [4000, 12000, 30000];" in JS
+
+
+def test_a_map_that_is_on_screen_and_blank_says_so() -> None:
+    body = JS.split("function gribReportBlankMap(card, mapDiv, detail) {", 1)[1].split("\n}\n", 1)[0]
+    assert "if (!mapDiv || !mapDiv.offsetWidth" in body  # hidden is not blank
+    assert "querySelector(GRIB_PAINTED_TILE)" in body
+    assert '"blank-map"' in body
+    assert "this._blankCheck = setTimeout(" in JS

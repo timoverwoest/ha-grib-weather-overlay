@@ -928,10 +928,15 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
 - **De kaart staat er, maar de map en de overlay zijn leeg** — meestal na een
   wissel naar een ander dashboard: Leaflet gooit de tegels van een map weg die
   uit de pagina gehaald wordt, en opnieuw opmeten alleen haalt ze niet terug.
-  Vanaf 0.38.2 kijkt elke card (ook de modelvergelijking) zelf of zijn map leeg
-  is zodra hij weer in beeld komt, en tekent hij hem opnieuw — met een verse
-  poging bij élke terugkeer, niet twee keer per browsersessie. Blijft hij toch
-  leeg, dan meldt de card dat zelf in het logboek en als melding.
+  Elke card (ook de modelvergelijking) kijkt zelf of zijn map leeg is zodra hij
+  weer in beeld komt, en tekent hem opnieuw — met een verse poging bij élke
+  terugkeer, niet twee keer per browsersessie. Vanaf 0.39.0 telt daarbij alleen
+  wat de browser écht getekend heeft: Leaflet houdt elke tegel onzichtbaar tot
+  de afbeelding binnen is, dus een map met afgebroken tegelverzoeken (wat een
+  browser doet met een stuk pagina dat verdwijnt — Chromium het snelst) stond
+  vól tegels én volledig leeg, en gold daarvóór ten onrechte als gezond. Blijft
+  hij toch leeg, dan meldt de card dat zelf in het logboek en als melding, met
+  de afmeting van de container erbij.
 - **"Configuratiefout" zonder tekst eronder** — Home Assistant vervangt een
   card door zo'n leeg blok als het toekennen van `hass`, `preview` of `layout`
   aan de card een fout geeft. Vlak daarvoor zet het een regel in de
@@ -941,7 +946,10 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
   ("de card gaf een fout in de browser") met de foutmelding erin, en dezelfde
   tekst staat in het logboek (Instellingen → Systeem → Logboek). Daarbij staat
   ook of de pagina geladen of **ververst** werd, welke browser het was, en of er
-  meer dan één kopie van het cardbestand geladen is. Dezelfde fout wordt vijf
+  meer dan één kopie van het cardbestand geladen is. Vanaf 0.39.0 gaat de card
+  bovendien **zelf zoeken** naar zo'n rood blok op de pagina — dat werkt ook als
+  een andere card de console heeft overgenomen — en zegt erbij welke andere
+  cards er rood staan. Dezelfde fout wordt vijf
   minuten lang maar één keer gemeld, zodat het logboek niet volloopt.
 - **"Configuratiefout" op de plek van de card** — Home Assistant wacht maar een
   paar seconden tot een custom card zich meldt; haalt de browser de card niet op
@@ -2075,11 +2083,15 @@ What you will see in the log (Settings → System → Logs):
   the file came from the browser's cache or had to travel.
 - **The card is there, but the map and the overlay are empty** — usually after
   switching to another dashboard: Leaflet drops the tiles of a map taken out of
-  the page, and re-measuring alone does not bring them back. From 0.38.2 every
+  the page, and re-measuring alone does not bring them back. Every
   card (the model comparison included) checks its own map the moment it comes
   back on screen and draws it again — with a fresh attempt on *every* return,
-  not twice per browser session. If it stays empty, the card says so itself, in
-  the log and as a notification.
+  not twice per browser session. From 0.39.0 only what the browser actually
+  painted counts: Leaflet keeps every tile invisible until its image has
+  arrived, so a map whose tile requests were aborted (what a browser does to a
+  part of the page that goes away — Chromium most eagerly) was full of tiles and
+  completely blank, and used to pass for healthy. If it stays empty, the card
+  says so itself, in the log and as a notification, with the container's size.
 - **“Configuration error” with no text under it** — Home Assistant replaces a
   card with that empty block when assigning `hass`, `preview` or `layout` to the
   card throws. Right before it does, it writes a console line with the card type
@@ -2088,7 +2100,10 @@ What you will see in the log (Settings → System → Logs):
   then shows a notification ("the card failed in the browser") with the error in
   it, and the same text is in the log (Settings → System → Logs). It also says
   whether the page was loaded or **reloaded**, which browser it was, and whether
-  more than one copy of the card file is loaded. The same failure is reported
+  more than one copy of the card file is loaded. From 0.39.0 the card also goes
+  **looking** for such a block on the page itself — which works even when
+  another card has taken the console over — and names the other cards showing
+  one. The same failure is reported
   once every five minutes, so a card that keeps failing cannot fill the log.
 - **“Configuration error” where the card should be** — Home Assistant waits only
   a couple of seconds for a custom card to register itself; if the browser does
