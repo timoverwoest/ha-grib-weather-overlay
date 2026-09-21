@@ -239,9 +239,10 @@ function gribCardStates() {
   return states;
 }
 
-function gribReportCardError(card, err) {
+function gribReportCardError(card, err, kind) {
   if (gribReportsSent >= GRIB_REPORT_MAX || gribReportQueue.length >= 10) return;
   gribReportQueue.push({
+    kind: kind || "card",
     card: String(card || ""),
     name: (err && err.name) || "",
     message: (err && (err.message || String(err))) || "(no message)",
@@ -1969,9 +1970,9 @@ class GribOverlayCard extends HTMLElement {
     // so nudge Leaflet to re-measure and repaint, jump to the latest shared point
     // (picked on another page while this card was detached), and refresh the pins
     // for points that have saved measurements.
+    this._watchVisibility();
     if (this._map) {
       this._observeResize();
-    this._watchVisibility();
       this._scheduleInvalidate();
       this._adoptSharedPoint();
       this._renderSavedMarkers();
@@ -2077,10 +2078,20 @@ class GribOverlayCard extends HTMLElement {
   // controls and data, the map area stays blank. Nudge Leaflet a few times and,
   // for a map that was only re-attached, build it again if it is still empty.
   async _ensureTiles({ allowRebuild = false } = {}) {
-    if (this._ensuringTiles) return;
+    // A run started while the card was still hidden cannot fix anything; the
+    // one that comes in when it gains a size can. Note the request rather than
+    // drop it, and let the run in progress finish first.
+    if (this._ensuringTiles) {
+      this._ensureAgain = this._ensureAgain || allowRebuild;
+      return;
+    }
     this._ensuringTiles = true;
     try {
       await this._ensureTilesOnce(allowRebuild);
+      while (this._ensureAgain) {
+        this._ensureAgain = false;
+        await this._ensureTilesOnce(true);
+      }
     } finally {
       this._ensuringTiles = false;
     }
@@ -2102,10 +2113,19 @@ class GribOverlayCard extends HTMLElement {
     }
     if (!allowRebuild || !this._map || !this.isConnected) return;
     if (this._els.mapDiv.querySelector(".leaflet-tile")) return;
-    // Bounded: a map that stays blank after two rebuilds is not going to be
-    // fixed by a third, and the card should not sit in a loop.
+    // Building a Leaflet map into a container of no size produces exactly the
+    // blank map it is meant to cure -- and spends the budget doing it. Wait
+    // for the card to have a size; becoming visible asks again.
+    if (!this._els.mapDiv.offsetWidth || !this._els.mapDiv.offsetHeight) return;
+    // Bounded, but only against a loop -- not against the card ever recovering
+    // again. This element lives as long as the browser tab and crosses every
+    // dashboard switch in it, so the budget is per appearance (reset when the
+    // card comes back on screen), not per lifetime.
     this._rebuilds = (this._rebuilds || 0) + 1;
-    if (this._rebuilds > 2) return;
+    if (this._rebuilds > 2) {
+      this._reportBlankMap();
+      return;
+    }
 
     console.warn("grib-overlay-card: the map came back blank, building it again");
     const center = this._map.getCenter();
@@ -2197,6 +2217,40 @@ class GribOverlayCard extends HTMLElement {
     this._setWindAnimation(awake);
     if (awake) this._resumePlayback();
     else this._suspendPlayback();
+    if (awake) this._recoverIfBlank();
+  }
+
+  // Back on screen -- from another dashboard, another view, another browser
+  // tab. This is the one moment the card can see for itself that its map is
+  // empty, so check, and give it a fresh budget to put that right: the last
+  // time it had to rebuild may have been days and a hundred page switches ago.
+  _recoverIfBlank() {
+    if (!this._map || !this._els || !this._els.mapDiv) return;
+    if (this._els.mapDiv.querySelector(".leaflet-tile")) return;
+    this._rebuilds = 0;
+    this._blankReported = false;
+    this._ensureTiles({ allowRebuild: true });
+  }
+
+  // A map that stays blank is exactly what a user cannot report: the card is
+  // there, the controls work, and the console is on a phone. Say so through the
+  // same channel as a failed `hass` assignment -- the log and a notification.
+  _reportBlankMap() {
+    if (this._blankReported) return;
+    this._blankReported = true;
+    const div = this._els && this._els.mapDiv;
+    gribReportCardError(
+      "custom:grib-overlay-card",
+      {
+        name: "blank map",
+        message:
+          "the map stayed empty after rebuilding it twice " +
+          `(container ${div ? div.offsetWidth : "?"}x${div ? div.offsetHeight : "?"} px, ` +
+          `zoom ${this._map ? this._map.getZoom() : "?"}, ` +
+          `${this._frames ? this._frames.length : 0} frames loaded)`,
+      },
+      "blank-map"
+    );
   }
 
   // The particle layer is vendored, so its internals are ours to drive:
@@ -6022,6 +6076,7 @@ class GribCompareCard extends HTMLElement {
     this._boundMeasSync = this._boundMeasSync || (() => this._renderSavedMarkers());
     window.addEventListener(GRIB_MEAS_EVENT, this._boundMeasSync); // same tab
     window.addEventListener("storage", this._boundMeasSync); // other tabs (localStorage)
+    this._watchVisibility();
     if (this._map) {
       this._scheduleInvalidate();
       this._adoptSharedPoint(); // jump to a point picked on another page while away
@@ -6030,6 +6085,7 @@ class GribCompareCard extends HTMLElement {
       // fetch the models again rather than leaving the run from before.
       if (this._entries && this._point) this._refresh();
       requestAnimationFrame(() => this._map && this._map.invalidateSize());
+      this._recoverIfBlank();
     }
   }
 
@@ -6044,6 +6100,14 @@ class GribCompareCard extends HTMLElement {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
     }
+    if (this._visibilityObserver) {
+      this._visibilityObserver.disconnect();
+      this._visibilityObserver = null;
+    }
+    if (this._boundPageVisibility) {
+      document.removeEventListener("visibilitychange", this._boundPageVisibility);
+    }
+    this._visibilityWatched = false;
   }
 
   _onSharedPoint(ev) {
@@ -6463,26 +6527,21 @@ class GribCompareCard extends HTMLElement {
       ? [shared.lat, shared.lng]
       : this._config.center || [52.1, 5.3];
     this._point = { lat: center[0], lng: center[1] };
-    this._map = window.L.map(this._els.mapDiv, { center, zoom: this._config.zoom || 7 });
-    addBaseLayers(this._map, this._config, () => this._hass);
-    // A CSS dot (divIcon) instead of Leaflet's default PNG marker, whose image
-    // assets aren't served here.
-    const icon = window.L.divIcon({
-      className: "grib-cmp-marker",
-      iconSize: [16, 16],
-      iconAnchor: [8, 8],
-    });
-    this._marker = window.L.marker(center, { draggable: true, icon }).addTo(this._map);
-    this._marker.on("dragend", () => this._pickPoint(this._marker.getLatLng()));
-    this._map.on("click", (e) => this._pickPoint(e.latlng));
+    this._buildMap(center, this._config.zoom || 7);
     this._loadMeasurementsForPoint(); // saved values for the starting point, if any
-    this._renderSavedMarkers();
     // The cross-card listeners are (re)attached in connectedCallback so they
     // survive HA view switches (which re-use this element).
     if (window.ResizeObserver) {
-      this._resizeObserver = new ResizeObserver(() => this._map && this._map.invalidateSize());
+      this._resizeObserver = new ResizeObserver(() => {
+        if (!this._map) return;
+        this._map.invalidateSize();
+        if (this._els.mapDiv.offsetWidth && !this._els.mapDiv.querySelector(".leaflet-tile")) {
+          this._ensureTiles();
+        }
+      });
       this._resizeObserver.observe(this._els.mapContainer);
     }
+    this._watchVisibility();
     this._scheduleInvalidate();
 
     try {
@@ -6501,6 +6560,86 @@ class GribCompareCard extends HTMLElement {
 
   _scheduleInvalidate() {
     setTimeout(() => this._map && this._map.invalidateSize(), 60);
+  }
+
+  _buildMap(center, zoom) {
+    this._map = window.L.map(this._els.mapDiv, { center, zoom });
+    addBaseLayers(this._map, this._config, () => this._hass);
+    // A CSS dot (divIcon) instead of Leaflet's default PNG marker, whose image
+    // assets aren't served here.
+    const icon = window.L.divIcon({
+      className: "grib-cmp-marker",
+      iconSize: [16, 16],
+      iconAnchor: [8, 8],
+    });
+    this._marker = window.L.marker(center, { draggable: true, icon }).addTo(this._map);
+    this._marker.on("dragend", () => this._pickPoint(this._marker.getLatLng()));
+    this._map.on("click", (e) => this._pickPoint(e.latlng));
+    this._renderSavedMarkers();
+  }
+
+  // Coming back to the dashboard this card is on used to leave the mini-map
+  // empty -- the comparison itself was there, the map was not. Leaflet drops
+  // the tiles of a map that was taken out of the page, and re-measuring alone
+  // does not bring them back: the layers have to be told to draw again. Same
+  // story as the overlay card, so the same treatment.
+  _watchVisibility() {
+    if (this._visibilityWatched || !this._els || !this._els.mapContainer) return;
+    this._visibilityWatched = true;
+    this._boundPageVisibility = () => !document.hidden && this._recoverIfBlank();
+    document.addEventListener("visibilitychange", this._boundPageVisibility);
+    if (!window.IntersectionObserver) return;
+    this._visibilityObserver = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting) && !document.hidden) this._recoverIfBlank();
+    });
+    this._visibilityObserver.observe(this._els.mapContainer);
+  }
+
+  _recoverIfBlank() {
+    if (!this._map || !this._els || !this._els.mapDiv) return;
+    if (this._els.mapDiv.querySelector(".leaflet-tile")) return;
+    this._rebuilds = 0; // a fresh budget every time the card comes back on screen
+    this._ensureTiles();
+  }
+
+  async _ensureTiles() {
+    if (this._ensuringTiles) {
+      this._ensureAgain = true; // asked again mid-run: the card may have a size now
+      return;
+    }
+    this._ensuringTiles = true;
+    try {
+      for (const wait of [250, 750, 1500]) {
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        if (!this._map || !this.isConnected) return;
+        if (this._els.mapDiv.querySelector(".leaflet-tile")) return;
+        if (!this._els.mapDiv.offsetWidth) continue; // still hidden
+        this._map.invalidateSize({ pan: false });
+        this._map.eachLayer((layer) => {
+          if (typeof layer.redraw === "function") layer.redraw();
+        });
+      }
+      if (!this._map || !this.isConnected) return;
+      if (this._els.mapDiv.querySelector(".leaflet-tile")) return;
+      // Never into a container of no size: that builds the blank map it is
+      // meant to cure. Becoming visible asks again.
+      if (!this._els.mapDiv.offsetWidth || !this._els.mapDiv.offsetHeight) return;
+      this._rebuilds = (this._rebuilds || 0) + 1;
+      if (this._rebuilds > 2) return; // bounded against a loop, reset on return
+      console.warn("grib-overlay-compare-card: the map came back blank, building it again");
+      const center = this._map.getCenter();
+      const zoom = this._map.getZoom();
+      this._map.remove();
+      this._map = null;
+      this._buildMap(center, zoom);
+      this._renderStationMarkers();
+    } finally {
+      this._ensuringTiles = false;
+    }
+    if (this._ensureAgain) {
+      this._ensureAgain = false;
+      await this._ensureTiles();
+    }
   }
 
   // The models being compared: everything the card may show, minus the ones

@@ -146,7 +146,16 @@ def test_a_blank_map_is_measured_again_and_rebuilt_if_needed() -> None:
     body = JS.split("  async _ensureTilesOnce(allowRebuild) {", 1)[1].split("\n  }\n", 1)[0]
     assert "for (const wait of [250, 750, 1500, 3000])" in body
     assert "layer.redraw()" in body  # tiles that were dropped have to be drawn again
-    assert "if (this._rebuilds > 2) return;" in body  # and never in a loop
+    assert "if (this._rebuilds > 2) {" in body  # and never in a loop
+    # ...but the budget is per appearance, not per lifetime: this element lives
+    # as long as the tab and crosses every dashboard switch in it.
+    recover = JS.split("  _recoverIfBlank() {", 1)[1].split("\n  }\n", 1)[0]
+    assert "this._rebuilds = 0;" in recover
+    assert "this._ensureTiles({ allowRebuild: true });" in recover
+    assert "if (awake) this._recoverIfBlank();" in JS
+    # A map that stays blank is what a user cannot report; the card says it.
+    assert "this._reportBlankMap();" in body
+    assert '"blank-map"' in JS
     assert "this._map.invalidateSize({ pan: false });" in body
     assert "await this._initialize();" in body  # last resort: build the map again
     assert "this._map.setView(center, zoom);" in body  # at the same place
@@ -284,3 +293,34 @@ def test_a_page_where_every_card_failed_can_still_report_it() -> None:
     assert 'document.querySelector("home-assistant")' in body
     assert "gribHassForReport()" in JS.split("function gribScheduleReport() {", 1)[1]
     assert "gribReportHass;" not in JS.split("async function gribSendReport() {", 1)[1]
+
+
+def test_a_map_is_never_rebuilt_into_a_container_with_no_size() -> None:
+    """The cure produced the disease: a Leaflet map built while the dashboard
+    page was hidden has no tiles either -- and it spent the rebuild budget
+    doing it, so the card stayed blank for the rest of the session."""
+    for method in ("  async _ensureTilesOnce(allowRebuild) {", "  async _ensureTiles() {"):
+        body = JS.split(method, 1)[1].split("\n  }\n", 1)[0]
+        assert "offsetWidth || !this._els.mapDiv.offsetHeight) return;" in body, method
+
+
+def test_a_recovery_asked_for_mid_run_is_not_dropped() -> None:
+    """The run that matters is the one arriving as the card gains a size, and
+    that is exactly when an earlier, useless run is still going."""
+    body = JS.split("  async _ensureTiles({ allowRebuild = false } = {}) {", 1)[1].split("\n  }\n", 1)[0]
+    assert "this._ensureAgain = this._ensureAgain || allowRebuild;" in body
+    assert "while (this._ensureAgain) {" in body
+    compare = JS.split("  async _ensureTiles() {", 1)[1].split("\n  }\n", 1)[0]
+    assert "this._ensureAgain = true;" in compare
+
+
+def test_the_comparison_card_gets_its_map_back_too() -> None:
+    """Its mini-map lost its tiles on the way back from another dashboard just
+    the same, and had nothing but invalidateSize to bring them back."""
+    body = JS.split("  async _ensureTiles() {", 1)[1].split("\n  }\n", 1)[0]
+    assert "layer.redraw()" in body
+    assert "this._buildMap(center, zoom);" in body  # last resort, at the same place
+    assert JS.count("  _buildMap(center, zoom) {") == 1  # built in one place only
+    watch = JS.split("class GribCompareCard", 1)[1]
+    assert "new IntersectionObserver(" in watch
+    assert "this._recoverIfBlank();" in watch

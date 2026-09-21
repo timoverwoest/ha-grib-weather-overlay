@@ -129,3 +129,26 @@ async def test_a_report_without_a_failure_in_it_is_refused(hass, hass_client, bo
 def test_the_endpoint_is_registered_and_needs_a_login() -> None:
     assert GribOverlayClientErrorView in VIEWS
     assert GribOverlayClientErrorView.requires_auth is True
+
+
+def test_a_map_that_stayed_blank_reads_as_itself() -> None:
+    """Not a thrown error: no element state, no stack -- just what the card
+    could see of itself, which is the whole point of reporting it."""
+    report = {
+        "navigation": "navigate",
+        "page": "/zeilen/kaart",
+        "events": [
+            {
+                "kind": "blank-map",
+                "card": "custom:grib-overlay-card",
+                "name": "blank map",
+                "message": "the map stayed empty after rebuilding it twice "
+                "(container 480x320 px, zoom 7, 49 frames loaded)",
+                "stack": "irrelevant\n    at somewhere",
+            }
+        ],
+    }
+    text = client_errors.format_report(report)
+    assert "the map stayed empty after rebuilding it twice" in text
+    assert "container 480x320 px" in text
+    assert "at somewhere" not in text

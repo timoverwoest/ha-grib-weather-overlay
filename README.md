@@ -925,6 +925,13 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
   laatste van het bestand: staat hij er niet, dan is het bestand niet (volledig)
   geladen en komt een "Configuratiefout" daarvandaan. Staat hij er wel, dan zegt
   de tijd erachter of het bestand van de schijf kwam of over de lijn moest.
+- **De kaart staat er, maar de map en de overlay zijn leeg** — meestal na een
+  wissel naar een ander dashboard: Leaflet gooit de tegels van een map weg die
+  uit de pagina gehaald wordt, en opnieuw opmeten alleen haalt ze niet terug.
+  Vanaf 0.38.2 kijkt elke card (ook de modelvergelijking) zelf of zijn map leeg
+  is zodra hij weer in beeld komt, en tekent hij hem opnieuw — met een verse
+  poging bij élke terugkeer, niet twee keer per browsersessie. Blijft hij toch
+  leeg, dan meldt de card dat zelf in het logboek en als melding.
 - **"Configuratiefout" zonder tekst eronder** — Home Assistant vervangt een
   card door zo'n leeg blok als het toekennen van `hass`, `preview` of `layout`
   aan de card een fout geeft. Vlak daarvoor zet het een regel in de
@@ -2066,6 +2073,13 @@ What you will see in the log (Settings → System → Logs):
   the file: if it is missing, the file was not (fully) loaded and a
   "configuration error" comes from that. If it is there, the timing says whether
   the file came from the browser's cache or had to travel.
+- **The card is there, but the map and the overlay are empty** — usually after
+  switching to another dashboard: Leaflet drops the tiles of a map taken out of
+  the page, and re-measuring alone does not bring them back. From 0.38.2 every
+  card (the model comparison included) checks its own map the moment it comes
+  back on screen and draws it again — with a fresh attempt on *every* return,
+  not twice per browser session. If it stays empty, the card says so itself, in
+  the log and as a notification.
 - **“Configuration error” with no text under it** — Home Assistant replaces a
   card with that empty block when assigning `hass`, `preview` or `layout` to the
   card throws. Right before it does, it writes a console line with the card type

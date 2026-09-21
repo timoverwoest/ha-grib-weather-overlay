@@ -70,6 +70,10 @@ def _event_lines(event: dict) -> list[str]:
     message = _text(event.get("message")) or "(no message)"
     head = f"{card} — {name + ': ' if name and not message.startswith(name) else ''}{message}"
     lines = [head]
+    # A blank map is not a thrown error: there is no element state to read
+    # and no stack worth printing, only what the card could see of itself.
+    if event.get("kind") == "blank-map":
+        return lines
     elements = event.get("elements")
     if isinstance(elements, list):
         for element in elements[:_ELEMENTS_MAX]:
