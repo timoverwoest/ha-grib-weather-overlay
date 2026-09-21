@@ -71,8 +71,12 @@
       throw { code: "unknown_command", message: `Unknown command ${msg.type}` };
     },
     hassUrl: (path = "") => new URL(path, location.origin).toString(),
-    callApi: async (method, path) => {
-      const resp = await fetch("/api/" + path, { method });
+    callApi: async (method, path, body) => {
+      const resp = await fetch("/api/" + path, {
+        method,
+        headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
       if (!resp.ok) throw new Error(`${method} /api/${path} -> ${resp.status}`);
       return resp.json();
     },

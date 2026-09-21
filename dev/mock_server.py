@@ -108,6 +108,9 @@ PARAMETERS_DWD = [
 
 # entry_id -> config. Each entry may carry its own frame_count/step so the shared
 # time axis in the detailed meteogram is a genuine union of differing model steps.
+# Failure reports the card posted, the way the integration collects them.
+CLIENT_ERRORS: list = []
+
 ENTRIES = {
     ENTRY_ID: {
         "entry_id": ENTRY_ID,
@@ -361,6 +364,21 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def do_POST(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
+        """The card reporting a failure of its own, as it does to Home Assistant."""
+        if urlparse(self.path).path != "/api/grib_overlay/client_error":
+            self._json({"error": "not found"}, status=404)
+            return
+        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            report = json.loads(self.rfile.read(length) or b"{}")
+        except ValueError:
+            self._json({"error": "not JSON"}, status=400)
+            return
+        CLIENT_ERRORS.append(report)
+        print("card error report:", json.dumps(report)[:400])
+        self._json({"logged": True})
+
     def do_GET(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
         parsed = urlparse(self.path)
         parts = [p for p in parsed.path.split("/") if p]
@@ -376,6 +394,9 @@ class Handler(BaseHTTPRequestHandler):
             rel = Path(*parts[1:])
             content_type = "text/css" if rel.suffix == ".css" else "application/javascript"
             self._file(WWW_DIR / rel, content_type)
+        elif parsed.path == "/api/grib_overlay/client_error":
+            # What the card reported so far, for the harness to check.
+            self._json({"reports": CLIENT_ERRORS})
         elif parsed.path == "/api/grib_overlay/entries":
             self._json({"entries": [_public_entry(e) for e in ENTRIES.values()]})
         elif parts[:2] == ["api", "grib_overlay"] and len(parts) >= 3 and parts[2] == "frames":

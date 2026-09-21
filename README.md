@@ -456,7 +456,10 @@ in de kaart zelf wisselen.
   raster; **alleen voor wind**. Zie ze slecht tegen de laag erachter (vooral op
   mobiel)? Verhoog het contrast met `particle_color` (één vaste kleur i.p.v. de
   velocity-kleuren — bv. `#0b1f3a` donker of `#ffffff` wit), `particle_width`
-  (dikkere lijnen) en/of `particle_base_opacity` (raster verder dimmen).
+  (dikkere lijnen) en/of `particle_base_opacity` (raster verder dimmen). De
+  animatie kost alleen iets als je hem ziet: Home Assistant houdt de cards van
+  een dashboardpagina die je niet open hebt gewoon in de pagina, en vanaf 0.38.0
+  zet de card zichzelf dan stil (en de tijdsanimatie ook) tot je terugkomt.
 - `vectors` — pijltjes (richting + grootte), gekleurd naar windsnelheid met een
   contour; **alleen voor wind**.
 - `wavevectors` — pijltjes voor de golfrichting; **alleen voor golven**. De
@@ -925,9 +928,14 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
 - **"Configuratiefout" zonder tekst eronder** — Home Assistant vervangt een
   card door zo'n leeg blok als het toekennen van `hass`, `preview` of `layout`
   aan de card een fout geeft. Vlak daarvoor zet het een regel in de
-  browserconsole met het kaarttype en de fout erbij: zoek op
-  `custom:grib-overlay-card` (zet "Preserve log" aan voordat je herlaadt) en
-  klap die regel uit — daarin staat waar het misging.
+  browserconsole met het kaarttype en de fout erbij. **Vanaf 0.38.0 hoef je daar
+  niet meer zelf bij te zijn:** de card leest die regel zelf mee en stuurt hem
+  naar de integratie. Je krijgt dan een melding in Home Assistant
+  ("de card gaf een fout in de browser") met de foutmelding erin, en dezelfde
+  tekst staat in het logboek (Instellingen → Systeem → Logboek). Daarbij staat
+  ook of de pagina geladen of **ververst** werd, welke browser het was, en of er
+  meer dan één kopie van het cardbestand geladen is. Dezelfde fout wordt vijf
+  minuten lang maar één keer gemeld, zodat het logboek niet volloopt.
 - **"Configuratiefout" op de plek van de card** — Home Assistant wacht maar een
   paar seconden tot een custom card zich meldt; haalt de browser de card niet op
   tijd binnen (traag netwerk, mobiel, veel custom cards naast elkaar), dan komt
@@ -1593,7 +1601,11 @@ always switch in the card via the view picker). Choices:
   only**. Hard to see against the layer behind it (especially on mobile)? Increase
   the contrast with `particle_color` (one fixed colour instead of the velocity
   colours — e.g. `#0b1f3a` dark or `#ffffff` white), `particle_width` (thicker
-  lines) and/or `particle_base_opacity` (dim the raster further).
+  lines) and/or `particle_base_opacity` (dim the raster further). The animation
+  only costs anything while you are looking at it: Home Assistant keeps the
+  cards of a dashboard page you do not have open in the page, and from 0.38.0
+  the card puts itself to sleep (and the time animation with it) until you come
+  back.
 - `vectors` — arrows (direction + magnitude), coloured by wind speed with an
   outline; **wind only**.
 - `wavevectors` — arrows for the wave direction; **waves only**. The arrows
@@ -2057,8 +2069,13 @@ What you will see in the log (Settings → System → Logs):
 - **“Configuration error” with no text under it** — Home Assistant replaces a
   card with that empty block when assigning `hass`, `preview` or `layout` to the
   card throws. Right before it does, it writes a console line with the card type
-  and the error: search for `custom:grib-overlay-card` (switch "Preserve log" on
-  before reloading) and expand that line — it says where it went wrong.
+  and the error. **From 0.38.0 you do not have to be there to catch it:** the
+  card reads that line itself and posts it to the integration. Home Assistant
+  then shows a notification ("the card failed in the browser") with the error in
+  it, and the same text is in the log (Settings → System → Logs). It also says
+  whether the page was loaded or **reloaded**, which browser it was, and whether
+  more than one copy of the card file is loaded. The same failure is reported
+  once every five minutes, so a card that keeps failing cannot fill the log.
 - **“Configuration error” where the card should be** — Home Assistant waits only
   a couple of seconds for a custom card to register itself; if the browser does
   not have the card by then (slow or mobile connection, many custom cards at

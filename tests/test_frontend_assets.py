@@ -204,3 +204,73 @@ def test_a_second_copy_of_the_card_does_not_take_the_file_down() -> None:
     assert "console.warn(" in body
     for tag in ("grib-overlay-card", "grib-overlay-compare-card", "grib-overlay-weathermap-card"):
         assert f'gribDefineCard("{tag}"' in JS
+
+
+def test_a_blank_configuration_error_is_reported_back_to_home_assistant() -> None:
+    """The only account of a message-less "configuration error" is the line the
+    frontend writes to the browser console just before it -- the card type and
+    the error. On a phone there is no console to read it in, so the card takes a
+    copy and posts it to the integration, which logs it and shows it."""
+    body = JS.split("function gribWatchForCardErrors() {", 1)[1].split("\n}\n", 1)[0]
+    # Home Assistant's own line, and nothing else: matching our own warnings
+    # would put the hook in a loop with itself.
+    assert 'first.startsWith("custom:grib-overlay-")' in body
+    assert "window.__gribOverlayErrorHook" in body  # a second copy must not hook twice
+    assert "original.apply(this, args)" in body  # the console still gets the line
+    assert 'const GRIB_REPORT_PATH = "grib_overlay/client_error";' in JS
+    assert 'hass.callApi("POST", GRIB_REPORT_PATH' in JS
+    # A card that throws on every state change would otherwise post endlessly.
+    assert "gribReportsSent >= GRIB_REPORT_MAX" in JS
+    # Reporting failures with console.error would feed the hook its own output.
+    send = JS.split("async function gribSendReport() {", 1)[1].split("\n}\n", 1)[0]
+    assert "console.warn(" in send and "console.error(" not in send
+
+
+def test_a_report_says_what_state_the_card_was_in() -> None:
+    """A `hass` assignment throws for three reasons, and each one shows up in
+    the element: a getter without a setter, a frozen element, or an element
+    built by an older copy of the file. Look while it is still there."""
+    body = JS.split("function gribElementState(el) {", 1)[1].split("\n}\n", 1)[0]
+    assert "getter without a setter" in body
+    assert "Object.isFrozen(el)" in body
+    assert "customElements.get(tag) === el.constructor" in body
+    assert "gribNavigationType" in JS  # "reload" is not the same failure as "navigate"
+    assert "window.__gribOverlayLoads" in JS  # a second copy changes every other clue
+
+
+def test_a_card_nobody_can_see_stops_animating() -> None:
+    """Home Assistant keeps the cards of a view it is not showing. The particle
+    layer is a requestAnimationFrame loop, so a few of these would spend the
+    browser's animation budget on cards nobody is looking at."""
+    body = JS.split("  _setWindAnimation(running) {", 1)[1].split("\n  }\n", 1)[0]
+    assert "layer._clearWind()" in body
+    # Leaflet goes on drawing, and the layer restarts itself 750 ms after every
+    # draw: stopping the loop once is not enough.
+    assert "layer._startWindy = () => {};" in body
+    assert "delete layer._startWindy;" in body
+    awake = JS.split("  _setAwake(awake) {", 1)[1].split("\n  }\n", 1)[0]
+    assert "this._setWindAnimation(awake)" in awake
+    assert "this._suspendPlayback()" in awake and "this._resumePlayback()" in awake
+    watch = JS.split("  _watchVisibility() {", 1)[1].split("\n  }\n", 1)[0]
+    assert "new IntersectionObserver(" in watch
+    assert 'document.addEventListener("visibilitychange"' in watch
+    assert 'document.removeEventListener("visibilitychange"' in JS
+    assert "this._visibilityObserver.disconnect();" in JS
+
+
+def test_the_playback_button_keeps_its_place_while_the_card_sleeps() -> None:
+    """Coming back to the page should find the animation running, so pausing
+    off-screen must not look like the user pressing stop."""
+    suspend = JS.split("  _suspendPlayback() {", 1)[1].split("\n  }\n", 1)[0]
+    assert "playPauseBtn" not in suspend
+    assert "this._playbackSuspended = true;" in suspend
+    resume = JS.split("  _resumePlayback() {", 1)[1].split("\n  }\n", 1)[0]
+    assert "this._startPlaybackTimer();" in resume
+
+
+def test_the_chart_card_does_not_poll_for_a_page_nobody_has_open() -> None:
+    """Ten minutes apart, for every hidden dashboard page, over Nabu Casa."""
+    body = JS.split("  async _load(refresh = false) {", 1)[1].split("\n  }\n", 1)[0]
+    assert "if (refresh && !this._isVisible()) {" in body
+    assert "this._missedRefresh = true;" in body
+    assert "this._missedRefresh && this._load(true)" in JS  # caught up on return

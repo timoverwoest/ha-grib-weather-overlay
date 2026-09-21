@@ -13,17 +13,23 @@ import math
 
 from aiohttp import web
 
+from homeassistant.components import persistent_notification
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
+from . import client_errors
 from . import field_grid
+from . import labels
 from . import observations
 from . import weather_maps
-from .const import CONF_ALIAS, CONF_DATASET, CONF_SOURCE, DOMAIN, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_ALL_PATH, HTTP_POINT_PATH, HTTP_STATION_OBS_PATH, HTTP_STATIONS_PATH, HTTP_WEATHER_MAPS_PATH, HTTP_WIND_PATH
+from .const import CONF_ALIAS, CONF_DATASET, CONF_SOURCE, DOMAIN, HTTP_CLIENT_ERROR_PATH, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_ALL_PATH, HTTP_POINT_PATH, HTTP_STATION_OBS_PATH, HTTP_STATIONS_PATH, HTTP_WEATHER_MAPS_PATH, HTTP_WIND_PATH
 from .coordinator import GribOverlayCoordinator, enabled_parameter_keys
 from .sources.base import direction_key_for
 
 _LOGGER = logging.getLogger(__name__)
+
+# Failures already reported by a browser, so one broken card cannot fill the log.
+CLIENT_ERRORS_SEEN = f"{DOMAIN}_client_errors_seen"
 
 
 def _coordinator(hass: HomeAssistant, entry_id: str) -> GribOverlayCoordinator | None:
@@ -447,6 +453,41 @@ class GribOverlayWeatherMapImageView(HomeAssistantView):
         return web.Response(body=data, content_type="image/gif", headers={"Cache-Control": "max-age=600"})
 
 
+class GribOverlayClientErrorView(HomeAssistantView):
+    """Takes the card's own account of why the browser dropped it.
+
+    Home Assistant replaces a card with a message-less "configuration error"
+    as soon as handing it ``hass`` throws, and writes the reason to the browser
+    console only. The card watches for that line and posts it here, so the
+    reason ends up where the person running the instance can reach it: the log,
+    and a notification.
+    """
+
+    url = HTTP_CLIENT_ERROR_PATH
+    name = "api:grib_overlay:client_error"
+    requires_auth = True
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        try:
+            report = await request.json()
+        except ValueError:
+            return web.Response(status=400, text="not JSON")
+        if not isinstance(report, dict) or not client_errors.events(report):
+            return web.Response(status=400, text="no card errors in the report")
+        seen = hass.data.setdefault(CLIENT_ERRORS_SEEN, {})
+        if not client_errors.is_new(seen, report):
+            return web.json_response({"logged": False, "reason": "already reported"})
+        _LOGGER.error("%s", client_errors.format_report(report))
+        persistent_notification.async_create(
+            hass,
+            client_errors.notification(report, labels.language(hass)),
+            title=client_errors.TITLE.get(labels.language(hass), client_errors.TITLE["en"]),
+            notification_id=f"{DOMAIN}_client_error",
+        )
+        return web.json_response({"logged": True})
+
+
 VIEWS = (
     GribOverlayEntriesView,
     GribOverlayFramesView,
@@ -459,4 +500,5 @@ VIEWS = (
     GribOverlayStationsView,
     GribOverlayWeatherMapsView,
     GribOverlayWeatherMapImageView,
+    GribOverlayClientErrorView,
 )

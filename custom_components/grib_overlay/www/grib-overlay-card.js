@@ -129,6 +129,190 @@ function gribDefineCard(tag, cls) {
   customElements.define(tag, cls);
 }
 
+// ---------------------------------------------------------------------------
+// A "configuration error" with nothing in it: report it back to Home Assistant.
+//
+// Home Assistant hands a card a fresh `hass` on every state change, and swaps
+// the card for a red block the moment that assignment throws. The block has no
+// text; the only account of what happened is the line the frontend writes just
+// before it -- `console.error("custom:grib-overlay-card", err)` -- and that
+// line sits in the browser console, where nobody is looking (and on a phone
+// there is no console to look in at all).
+//
+// So: watch for that line, note what state our elements are in while the one
+// that failed is still in the page, and post the lot to the integration. It
+// ends up in the Home Assistant log and as a notification -- somewhere the
+// person running the instance can actually read it.
+const GRIB_REPORT_PATH = "grib_overlay/client_error";
+const GRIB_REPORT_MAX = 4; // posts per page load; a failing card fires endlessly
+const GRIB_REPORT_DELAY_MS = 1500; // collect the burst that one reload produces
+const GRIB_LIVE_CARDS = new Set();
+
+let gribReportHass = null;
+let gribReportsSent = 0;
+let gribReportTimer = null;
+let gribReportQueue = [];
+
+// How many copies of this file the page has loaded. More than one is a real
+// possibility -- a stale service worker cache, or the card added as a Lovelace
+// resource on top of the integration -- and it changes what every other clue
+// in a report means.
+try {
+  window.__gribOverlayLoads = (Number(window.__gribOverlayLoads) || 0) + 1;
+} catch (err) {
+  /* no window to count in */
+}
+
+// Keep track of the cards in the page, so a report can say what state they
+// were in. Ones that have left the DOM are dropped on the way in; the card
+// that is failing is still there when we look.
+function gribTrackCard(el) {
+  if (GRIB_LIVE_CARDS.has(el)) return; // every state change comes through here
+  try {
+    for (const other of GRIB_LIVE_CARDS) {
+      if (!other.isConnected) GRIB_LIVE_CARDS.delete(other);
+    }
+    GRIB_LIVE_CARDS.add(el);
+  } catch (err) {
+    /* tracking is a nicety, never a reason to fail */
+  }
+}
+
+// The last `hass` any card was given: the report is posted with it. Setting
+// `hass` is what fails, so a card that never got one cannot post -- the queue
+// waits for the next card that does.
+function gribRememberHass(hass) {
+  if (hass && typeof hass.callApi === "function") {
+    gribReportHass = hass;
+    if (gribReportQueue.length) gribScheduleReport();
+  }
+}
+
+// What an element looked like at the moment Home Assistant dropped it. The
+// three ways an assignment can throw all show up here: a `hass` that is a
+// getter without a setter, an element that was frozen, and an element built by
+// an older copy of this file.
+function gribElementState(el) {
+  const tag = String(el.tagName || "").toLowerCase();
+  const proto = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el) || {}, "hass");
+  const own = Object.getOwnPropertyDescriptor(el, "hass");
+  return {
+    tag,
+    connected: !!el.isConnected,
+    current: customElements.get(tag) === el.constructor,
+    extensible: Object.isExtensible(el),
+    frozen: Object.isFrozen(el),
+    prototype_hass: !proto
+      ? "missing"
+      : proto.set
+        ? "setter"
+        : proto.get
+          ? "getter without a setter"
+          : "a plain value",
+    own_hass: !own ? "none" : own.writable === false ? "read-only value" : "a value",
+  };
+}
+
+function gribCardStates() {
+  const states = [];
+  for (const el of GRIB_LIVE_CARDS) {
+    try {
+      states.push(gribElementState(el));
+    } catch (err) {
+      states.push({ tag: "?", note: String(err) });
+    }
+  }
+  return states;
+}
+
+function gribReportCardError(card, err) {
+  if (gribReportsSent >= GRIB_REPORT_MAX || gribReportQueue.length >= 10) return;
+  gribReportQueue.push({
+    card: String(card || ""),
+    name: (err && err.name) || "",
+    message: (err && (err.message || String(err))) || "(no message)",
+    stack: String((err && err.stack) || "").slice(0, 2000),
+    elements: gribCardStates(),
+    at: new Date().toISOString(),
+  });
+  gribScheduleReport();
+}
+
+function gribScheduleReport() {
+  if (gribReportTimer || !gribReportHass) return;
+  gribReportTimer = setTimeout(gribSendReport, GRIB_REPORT_DELAY_MS);
+}
+
+// "reload" is the one that matters: a card that only fails on a refresh fails
+// for a different reason than one that fails on a fresh page.
+function gribNavigationType() {
+  try {
+    const nav = performance.getEntriesByType("navigation")[0];
+    return (nav && nav.type) || "";
+  } catch (err) {
+    return "";
+  }
+}
+
+async function gribSendReport() {
+  gribReportTimer = null;
+  const hass = gribReportHass;
+  if (!hass || typeof hass.callApi !== "function" || !gribReportQueue.length) return;
+  const events = gribReportQueue.splice(0, 10);
+  gribReportsSent += 1;
+  try {
+    await hass.callApi("POST", GRIB_REPORT_PATH, {
+      version: GRIB_ASSET_VERSION || "dev",
+      url: GRIB_ASSET_URL,
+      loads: window.__gribOverlayLoads || 1,
+      navigation: gribNavigationType(),
+      page: String(location.pathname || ""),
+      user_agent: String(navigator.userAgent || ""),
+      service_worker: String(
+        (navigator.serviceWorker && navigator.serviceWorker.controller
+          ? navigator.serviceWorker.controller.scriptURL
+          : "") || ""
+      ),
+      events,
+    });
+  } catch (err) {
+    // console.warn, not error: our own hook watches console.error.
+    console.warn("grib-overlay-card: could not report the card error to Home Assistant", err);
+  }
+}
+
+// Home Assistant logs `console.error(<card type>, <error>)` immediately before
+// it replaces the card, so that call is the only moment the error object
+// exists. Pass it through untouched -- a console is not ours to rewrite -- and
+// take a copy on the way past.
+function gribWatchForCardErrors() {
+  if (typeof console === "undefined" || typeof window === "undefined") return;
+  if (window.__gribOverlayErrorHook) return; // a second copy must not hook twice
+  window.__gribOverlayErrorHook = true;
+  const original = console.error;
+  console.error = function (...args) {
+    try {
+      const first = args[0];
+      if (typeof first === "string" && first.startsWith("custom:grib-overlay-")) {
+        gribReportCardError(first, args[1]);
+      }
+    } catch (err) {
+      /* reporting must never break logging */
+    }
+    return original.apply(this, args);
+  };
+  // A throw while this file is being evaluated, or while the browser upgrades
+  // an element to one of our classes, never reaches Home Assistant's own
+  // handler -- but it does reach here.
+  window.addEventListener("error", (event) => {
+    if (String(event.filename || "").includes("grib-overlay-card.js")) {
+      gribReportCardError("grib-overlay-card.js", event.error || { message: event.message });
+    }
+  });
+}
+
+gribWatchForCardErrors();
+
 function gribApplyLanguage(root) {
   if (!root) return;
   for (const el of root.querySelectorAll("[data-i18n]")) {
@@ -1681,6 +1865,8 @@ class GribOverlayCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     gribGuard("hass update", () => {
+      gribTrackCard(this);
+      gribRememberHass(hass);
       // setConfig (and thus the first paint) runs before Home Assistant hands
       // over `hass`, so the static chrome is re-labelled here once the user's
       // own language is known -- and again if they ever switch it.
@@ -1753,6 +1939,7 @@ class GribOverlayCard extends HTMLElement {
   }
 
   connectedCallback() {
+    gribTrackCard(this);
     this._connected = true;
     // First attach: build the map now that we have a sized, in-DOM container.
     this._tryInitialize();
@@ -1770,6 +1957,7 @@ class GribOverlayCard extends HTMLElement {
     // for points that have saved measurements.
     if (this._map) {
       this._observeResize();
+    this._watchVisibility();
       this._scheduleInvalidate();
       this._adoptSharedPoint();
       this._renderSavedMarkers();
@@ -1815,6 +2003,14 @@ class GribOverlayCard extends HTMLElement {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
     }
+    if (this._visibilityObserver) {
+      this._visibilityObserver.disconnect();
+      this._visibilityObserver = null;
+    }
+    if (this._boundPageVisibility) {
+      document.removeEventListener("visibilitychange", this._boundPageVisibility);
+    }
+    this._visibilityWatched = false;
   }
 
   _onSharedPoint(ev) {
@@ -1952,6 +2148,65 @@ class GribOverlayCard extends HTMLElement {
       }
     });
     this._resizeObserver.observe(this._els.mapContainer);
+  }
+
+  // Home Assistant keeps the cards of a view it is not showing: they stay in
+  // the page, hidden, still running. The particle animation is a
+  // requestAnimationFrame loop and the frame player a timer, so a dashboard
+  // with a few of these would spend a browser's whole animation budget on
+  // cards nobody can see -- and, on a laptop, its battery. Follow whether this
+  // card is actually on screen, and let it sleep when it is not.
+  _watchVisibility() {
+    if (this._visibilityWatched || !this._els || !this._els.mapContainer) return;
+    this._visibilityWatched = true;
+    // Another browser tab in front: requestAnimationFrame is throttled there
+    // anyway, but the frame player is not.
+    this._boundPageVisibility = () => this._setAwake(this._isVisible());
+    document.addEventListener("visibilitychange", this._boundPageVisibility);
+    if (!window.IntersectionObserver) return;
+    this._visibilityObserver = new IntersectionObserver(
+      (entries) => this._setAwake(entries.some((e) => e.isIntersecting) && !document.hidden),
+      { threshold: 0 }
+    );
+    this._visibilityObserver.observe(this._els.mapContainer);
+  }
+
+  _isVisible() {
+    const el = this._els && this._els.mapContainer;
+    return !document.hidden && !!(el && el.offsetWidth && el.offsetHeight);
+  }
+
+  _setAwake(awake) {
+    awake = !!awake;
+    if (awake === this._awake) return;
+    this._awake = awake;
+    this._setWindAnimation(awake);
+    if (awake) this._resumePlayback();
+    else this._suspendPlayback();
+  }
+
+  // The particle layer is vendored, so its internals are ours to drive:
+  // _clearWind stops the animation loop, _clearAndRestart starts a fresh one
+  // for the size and bounds the map has now.
+  //
+  // Stopping it once is not enough. Leaflet goes on drawing -- a view being
+  // hidden shrinks the map to nothing, and a resize to zero is still a resize
+  // -- and the layer restarts its loop 750 ms after every draw. So take the
+  // restart away too, for as long as the card is off screen.
+  _setWindAnimation(running) {
+    const layer = this._windLayer;
+    if (!layer) return;
+    try {
+      if (running) {
+        delete layer._startWindy; // back to the vendored one on the prototype
+        if (typeof layer._clearAndRestart === "function") layer._clearAndRestart();
+      } else {
+        layer._startWindy = () => {};
+        if (typeof layer._clearWind === "function") layer._clearWind();
+      }
+    } catch (err) {
+      console.warn("grib-overlay-card: could not pause the particle layer", err);
+    }
   }
 
   // Leaflet needs invalidateSize after its container gains size/visibility.
@@ -2341,6 +2596,7 @@ class GribOverlayCard extends HTMLElement {
     // Observe resizes and force an initial re-measure, so tiles/overlay render
     // even when the card was first laid out at zero/unknown size.
     this._observeResize();
+    this._watchVisibility();
     this._applyLayout();
     this._scheduleInvalidate();
 
@@ -2851,6 +3107,8 @@ class GribOverlayCard extends HTMLElement {
     } else {
       this._windLayer.setData(data);
     }
+    // Built for a view that is not on screen: do not let it start animating.
+    if (this._awake === false) this._setWindAnimation(false);
   }
 
   // Particle options, with contrast-oriented defaults (thicker lines than the
@@ -4726,7 +4984,24 @@ class GribOverlayCard extends HTMLElement {
       clearInterval(this._playTimer);
       this._playTimer = null;
     }
+    this._playbackSuspended = false;
     if (this._els?.playPauseBtn) this._els.playPauseBtn.textContent = "▶";
+  }
+
+  // Off-screen: hold the animation where it is. The button keeps saying it is
+  // playing, because as far as the user is concerned it is -- they will find
+  // it running when they come back to the page.
+  _suspendPlayback() {
+    if (!this._playTimer) return;
+    clearInterval(this._playTimer);
+    this._playTimer = null;
+    this._playbackSuspended = true;
+  }
+
+  _resumePlayback() {
+    if (!this._playbackSuspended) return;
+    this._playbackSuspended = false;
+    this._startPlaybackTimer();
   }
 }
 
@@ -5700,6 +5975,8 @@ class GribCompareCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     gribGuard("hass update", () => {
+      gribTrackCard(this);
+      gribRememberHass(hass);
       // setConfig (and thus the first paint) runs before Home Assistant hands
       // over `hass`, so the static chrome is re-labelled here once the user's
       // own language is known -- and again if they ever switch it.
@@ -5721,6 +5998,7 @@ class GribCompareCard extends HTMLElement {
   }
 
   connectedCallback() {
+    gribTrackCard(this);
     this._connected = true;
     this._tryInitialize();
     // (Re)attach the cross-card listeners here so they survive HA view switches
@@ -6358,6 +6636,8 @@ class GribWeatherMapCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     gribGuard("hass update", () => {
+      gribTrackCard(this);
+      gribRememberHass(hass);
       if (gribSyncLang(hass) && this._built) {
         gribApplyLanguage(this.shadowRoot);
         this._show();
@@ -6379,13 +6659,27 @@ class GribWeatherMapCard extends HTMLElement {
   }
 
   connectedCallback() {
+    gribTrackCard(this);
     if (this._hass && !this._loaded) this._load();
     this._timer = this._timer || setInterval(() => this._load(true), WEATHER_MAP_REFRESH_MS);
+    this._boundPageVisibility =
+      this._boundPageVisibility || (() => this._missedRefresh && this._load(true));
+    document.addEventListener("visibilitychange", this._boundPageVisibility);
+  }
+
+  // Charts only change every few hours, so "visible" is good enough at the
+  // card's own resolution: no observer, just the page coming back to the front
+  // and the card being laid out at all.
+  _isVisible() {
+    return !document.hidden && !!(this.offsetWidth && this.offsetHeight);
   }
 
   disconnectedCallback() {
     clearInterval(this._timer);
     this._timer = null;
+    if (this._boundPageVisibility) {
+      document.removeEventListener("visibilitychange", this._boundPageVisibility);
+    }
   }
 
   _render() {
@@ -6455,6 +6749,15 @@ class GribWeatherMapCard extends HTMLElement {
 
   async _load(refresh = false) {
     if (!this._hass || (this._loading && !refresh)) return;
+    // A ten-minute poll for a card on a dashboard page nobody has open is a
+    // request Home Assistant answers into the void (and, behind Nabu Casa, a
+    // round trip over the internet). Skip it, and catch up when the card comes
+    // back into view.
+    if (refresh && !this._isVisible()) {
+      this._missedRefresh = true;
+      return;
+    }
+    this._missedRefresh = false;
     this._loading = true;
     try {
       const data = await this._hass.callApi("GET", "grib_overlay/weather_maps");
