@@ -517,6 +517,21 @@ function gribScanOnce() {
 // blank -- whatever the reason. Say so through the same channel as a card
 // Home Assistant dropped: that is the one thing a user cannot read out of a
 // console, and on a phone there is no console at all.
+// Leaflet pins `position: relative` inline on the container it is given when
+// it reads that container's computed position as static -- which is what an
+// element reports while its shadow root is not attached to the document yet,
+// exactly the state a card is in while Home Assistant is assembling a
+// dashboard. That inline style then beats our own `position: absolute;
+// inset: 0`, `inset` stops doing anything, and the map collapses to nothing:
+// the card is there, the controls work, the map area is zero pixels high, and
+// it stays that way until the page is reloaded. Hand the element back to the
+// stylesheet.
+function gribFixMapPosition(mapDiv) {
+  if (!mapDiv || mapDiv.style.position !== "relative") return false;
+  mapDiv.style.position = "";
+  return true;
+}
+
 function gribReportBlankMap(card, mapDiv, detail) {
   if (!mapDiv || !mapDiv.offsetWidth || !mapDiv.offsetHeight) return; // hidden, not blank
   if (mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
@@ -2315,6 +2330,7 @@ class GribOverlayCard extends HTMLElement {
       await new Promise((resolve) => setTimeout(resolve, wait));
       if (!this._map || !this.isConnected) return;
       if (this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
+      gribFixMapPosition(this._els.mapDiv);
       if (!this._els.mapDiv.offsetWidth) continue; // still hidden: nothing to measure
       this._map.invalidateSize({ pan: false });
       if (this._applyPendingFit()) return;
@@ -2385,6 +2401,7 @@ class GribOverlayCard extends HTMLElement {
     if (this._resizeObserver) this._resizeObserver.disconnect();
     this._resizeObserver = new ResizeObserver(() => {
       if (!this._map) return;
+      gribFixMapPosition(this._els.mapDiv);
       this._map.invalidateSize();
       this._applyPendingFit();
       // Becoming visible again (another dashboard page, a state-switch, the
@@ -2439,6 +2456,7 @@ class GribOverlayCard extends HTMLElement {
   // time it had to rebuild may have been days and a hundred page switches ago.
   _recoverIfBlank() {
     if (!this._map || !this._els || !this._els.mapDiv) return;
+    if (gribFixMapPosition(this._els.mapDiv)) this._map.invalidateSize();
     if (this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
     this._rebuilds = 0;
     this._blankReported = false;
@@ -2834,6 +2852,7 @@ class GribOverlayCard extends HTMLElement {
       center: sharedStart ? [sharedStart.lat, sharedStart.lng] : this._config.center || [52.1, 5.3],
       zoom: this._config.zoom || 7,
     });
+    gribFixMapPosition(this._els.mapDiv);
     if (sharedStart) this._boundsFit = true; // keep the shared centre; skip auto-fit
     // Our arrows/isobars live in this pane so they sit above the raster
     // (overlayPane, z-index 400) but below Leaflet's popups (popupPane, 700) --
@@ -6744,6 +6763,7 @@ class GribCompareCard extends HTMLElement {
     if (window.ResizeObserver) {
       this._resizeObserver = new ResizeObserver(() => {
         if (!this._map) return;
+        gribFixMapPosition(this._els.mapDiv);
         this._map.invalidateSize();
         if (this._els.mapDiv.offsetWidth && !this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) {
           this._ensureTiles();
@@ -6774,6 +6794,7 @@ class GribCompareCard extends HTMLElement {
 
   _buildMap(center, zoom) {
     this._map = window.L.map(this._els.mapDiv, { center, zoom });
+    gribFixMapPosition(this._els.mapDiv);
     addBaseLayers(this._map, this._config, () => this._hass);
     // A CSS dot (divIcon) instead of Leaflet's default PNG marker, whose image
     // assets aren't served here.
@@ -6807,6 +6828,7 @@ class GribCompareCard extends HTMLElement {
 
   _recoverIfBlank() {
     if (!this._map || !this._els || !this._els.mapDiv) return;
+    if (gribFixMapPosition(this._els.mapDiv)) this._map.invalidateSize();
     if (this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
     this._rebuilds = 0; // a fresh budget every time the card comes back on screen
     this._ensureTiles();
@@ -6833,6 +6855,7 @@ class GribCompareCard extends HTMLElement {
         await new Promise((resolve) => setTimeout(resolve, wait));
         if (!this._map || !this.isConnected) return;
         if (this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
+        gribFixMapPosition(this._els.mapDiv);
         if (!this._els.mapDiv.offsetWidth) continue; // still hidden
         this._map.invalidateSize({ pan: false });
         this._map.eachLayer((layer) => {

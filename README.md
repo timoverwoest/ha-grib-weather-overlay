@@ -925,6 +925,16 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
   laatste van het bestand: staat hij er niet, dan is het bestand niet (volledig)
   geladen en komt een "Configuratiefout" daarvandaan. Staat hij er wel, dan zegt
   de tijd erachter of het bestand van de schijf kwam of over de lijn moest.
+- **Het kaartvak is nul pixels hoog** (0.40.1) — Leaflet zet `position:
+  relative` rechtstreeks op de map-div zodra het de positie ervan als `static`
+  afleest, en dat is wat een element meldt zolang het nog niet in de pagina
+  hangt: precies de toestand van een card die Home Assistant aan het opbouwen is
+  bij een dashboardwissel. Die inline stijl wint het van onze eigen `position:
+  absolute; inset: 0`, waardoor `inset` niets meer doet en de map tot niets
+  inklapt — de card staat er, de knoppen werken, het kaartvak is leeg, en dat
+  blijft zo tot je de pagina ververst. De card geeft het element nu terug aan
+  zijn eigen stylesheet, zodra Leaflet klaar is én telkens als hij weer in beeld
+  komt.
 - **De kaart staat er, maar de map en de overlay zijn leeg** — meestal na een
   wissel naar een ander dashboard: Leaflet gooit de tegels van een map weg die
   uit de pagina gehaald wordt, en opnieuw opmeten alleen haalt ze niet terug.
@@ -2095,6 +2105,16 @@ What you will see in the log (Settings → System → Logs):
   the file: if it is missing, the file was not (fully) loaded and a
   "configuration error" comes from that. If it is there, the timing says whether
   the file came from the browser's cache or had to travel.
+- **The map area is zero pixels high** (0.40.1) — Leaflet writes `position:
+  relative` straight onto the map div as soon as it reads that div's position as
+  `static`, which is what an element reports while it is not in the page yet:
+  exactly the state of a card Home Assistant is assembling during a dashboard
+  switch. That inline style beats our own `position: absolute; inset: 0`, so
+  `inset` stops doing anything and the map collapses to nothing — the card is
+  there, the controls work, the map area is empty, and it stays that way until
+  the page is reloaded. The card now hands the element back to its own
+  stylesheet, as soon as Leaflet is done with it and every time it comes back on
+  screen.
 - **The card is there, but the map and the overlay are empty** — usually after
   switching to another dashboard: Leaflet drops the tiles of a map taken out of
   the page, and re-measuring alone does not bring them back. Every

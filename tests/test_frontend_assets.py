@@ -398,3 +398,22 @@ def test_an_error_block_is_read_in_both_the_old_and_the_new_shape() -> None:
     body = JS.split("function gribErrorCardRecord(node) {", 1)[1].split("\n}\n", 1)[0]
     assert body.count("_config.message") == 2
     assert body.count("_config.error") == 2
+
+
+def test_leaflet_may_not_pin_the_map_to_no_height() -> None:
+    """Leaflet writes `position: relative` inline on a container whose computed
+    position it reads as static -- what an element reports while its shadow root
+    is not attached yet, which is the state a card is in while Home Assistant
+    assembles a dashboard. That inline style beats our own `position: absolute;
+    inset: 0`, so `inset` stops doing anything and the map becomes zero pixels
+    high: the card is there, the controls work, the map area is empty."""
+    body = JS.split("function gribFixMapPosition(mapDiv) {", 1)[1].split("\n}\n", 1)[0]
+    assert 'mapDiv.style.position !== "relative"' in body
+    assert 'mapDiv.style.position = "";' in body  # back to the stylesheet, not another value
+    # Both maps are handed back the moment Leaflet has had the container...
+    assert JS.count("gribFixMapPosition(this._els.mapDiv);\n") >= 2
+    # ...and anything already in that state is healed on the way back on screen.
+    for method in ("  _recoverIfBlank() {",):
+        for block in JS.split(method)[1:]:
+            assert "gribFixMapPosition(this._els.mapDiv)" in block.split("\n  }\n", 1)[0]
+    assert JS.count("gribFixMapPosition") >= 8  # both resize observers and both retry loops
