@@ -102,7 +102,7 @@ def test_the_card_announces_itself_with_its_version() -> None:
     """The banner is the answer to "is the card loaded, and which version?" --
     it runs last, so a console without it means the file never finished."""
     assert "GRIB-OVERLAY-CARD %c ${GRIB_ASSET_VERSION" in JS
-    banner = JS.index("console.info(")
+    banner = JS.index("GRIB-OVERLAY-CARD %c ${GRIB_ASSET_VERSION")
     assert banner > JS.index('gribDefineCard("grib-overlay-weathermap-card"')
     assert JS[banner:].count("gribDefineCard(") == 0
 
@@ -358,3 +358,43 @@ def test_a_map_that_is_on_screen_and_blank_says_so() -> None:
     assert "querySelector(GRIB_PAINTED_TILE)" in body
     assert '"blank-map"' in body
     assert "this._blankCheck = setTimeout(" in JS
+
+
+def test_a_registry_that_replaced_the_browsers_own_is_told_about_the_cards() -> None:
+    """Home Assistant puts this file in the page as a module, so it is evaluated
+    beside the frontend's own bundle -- and from a service worker cache, on a
+    reload, it can get there first. The bundle then installs a replacement for
+    `window.customElements` that starts out empty, so `customElements.get()` --
+    the question asked before a card is built -- answers "no such element" for a
+    card that is perfectly fine, and Home Assistant draws a red block over it."""
+    body = JS.split("function gribTeachRegistry() {", 1)[1].split("\n}\n", 1)[0]
+    assert "registry.get = (tag) => get(tag) || GRIB_DEFINED.get(tag);" in body
+    # Home Assistant waits on whenDefined before rebuilding a card it gave up on.
+    assert "registry.whenDefined = (tag) =>" in body
+    # Nothing is redefined and no name but ours is answered for.
+    assert "customElements.define" not in body
+    assert "GRIB_DEFINED.has(tag)" in body
+    # The check has to run before Home Assistant's two-second placeholder shows,
+    # and again after, because the registry can be swapped at any point.
+    assert "const GRIB_REGISTRY_CHECKS_MS = [0, 100, 300, 700, 1500, 2500];" in JS
+    assert JS.index("gribWatchRegistry();") > JS.index('gribDefineCard("grib-overlay-weathermap-card"')
+
+
+def test_a_card_home_assistant_gave_up_on_is_asked_for_again() -> None:
+    """The promise it was waiting on came from the registry that never knew us,
+    so it will not resolve by itself."""
+    body = JS.split("function gribRebuildErrorCards(found) {", 1)[1].split("\n}\n", 1)[0]
+    assert 'new CustomEvent("ll-rebuild", { bubbles: true, composed: true })' in body
+    once = JS.split("function gribScanOnce() {", 1)[1].split("\n}\n", 1)[0]
+    assert "gribTeachRegistry();" in once
+    # Rebuilt cards are not worth reporting; only the ones that stay broken are.
+    assert "if (gribRebuildErrorCards(found)) {" in once
+
+
+def test_an_error_block_is_read_in_both_the_old_and_the_new_shape() -> None:
+    """Older frontends put the text in `_config.error`, newer ones in
+    `_config.message` -- reading only one of them turned "Custom element doesn't
+    exist" into a report that said there was no message at all."""
+    body = JS.split("function gribErrorCardRecord(node) {", 1)[1].split("\n}\n", 1)[0]
+    assert body.count("_config.message") == 2
+    assert body.count("_config.error") == 2

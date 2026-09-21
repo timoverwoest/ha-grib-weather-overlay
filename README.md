@@ -937,6 +937,20 @@ Wat je in het logboek ziet (Instellingen → Systeem → Logboek):
   vól tegels én volledig leeg, en gold daarvóór ten onrechte als gezond. Blijft
   hij toch leeg, dan meldt de card dat zelf in het logboek en als melding, met
   de afmeting van de container erbij.
+- **Rode blokken op de plek van álle GRIB-cards, alleen na een refresh, alleen
+  in Chromium-browsers (Vivaldi, Edge, Chrome)** — dit is opgelost in 0.40.0.
+  Home Assistant zet dit bestand als `<script type="module">` in de pagina, dus
+  de browser voert het uit náást HA's eigen bundel. Bij een refresh komt het uit
+  de cache van de service worker en is het eerder klaar — en die bundel
+  vervángt daarna `window.customElements` door een eigen, lege registratie, die
+  niets weet van elementen die daarvóór geregistreerd zijn. De cards zijn dan
+  perfect in orde (`document.createElement("grib-overlay-card")` geeft gewoon de
+  juiste klasse), maar `customElements.get(...)` — precies de vraag die Home
+  Assistant stelt vóór het bouwen van een card — antwoordt "bestaat niet", en je
+  krijgt een rood blok. Vanaf 0.40.0 vertelt de card die nieuwe registratie over
+  zijn eigen drie namen (verder wordt er niets aangeraakt) en vraagt hij Home
+  Assistant de card opnieuw te bouwen. Meestal gebeurt dat binnen de twee
+  seconden die HA wacht, zodat je het rode blok niet eens ziet.
 - **"Configuratiefout" zonder tekst eronder** — Home Assistant vervangt een
   card door zo'n leeg blok als het toekennen van `hass`, `preview` of `layout`
   aan de card een fout geeft. Vlak daarvoor zet het een regel in de
@@ -2092,6 +2106,20 @@ What you will see in the log (Settings → System → Logs):
   part of the page that goes away — Chromium most eagerly) was full of tiles and
   completely blank, and used to pass for healthy. If it stays empty, the card
   says so itself, in the log and as a notification, with the container's size.
+- **Red blocks where *all* the GRIB cards should be, only after a refresh, only
+  in Chromium browsers (Vivaldi, Edge, Chrome)** — fixed in 0.40.0. Home
+  Assistant puts this file in the page as a `<script type="module">`, so the
+  browser runs it beside the frontend's own bundle. On a refresh it comes from
+  the service worker's cache and finishes first — and that bundle then
+  *replaces* `window.customElements` with its own, empty registry, which has
+  never heard of an element registered before it arrived. The cards are
+  perfectly fine (`document.createElement("grib-overlay-card")` returns the
+  right class), but `customElements.get(...)` — exactly the question Home
+  Assistant asks before building a card — answers "no such element", and you get
+  a red block. From 0.40.0 the card tells that new registry about its own three
+  names (nothing else is touched) and asks Home Assistant to build the card
+  again. Usually that happens inside the two seconds HA waits, so the red block
+  is never drawn.
 - **“Configuration error” with no text under it** — Home Assistant replaces a
   card with that empty block when assigning `hass`, `preview` or `layout` to the
   card throws. Right before it does, it writes a console line with the card type

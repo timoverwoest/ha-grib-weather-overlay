@@ -125,8 +125,11 @@ function gribGuard(what, fn) {
 // out a cached older version beside the new one, or the card added as a
 // Lovelace resource as well as by the integration). Say so, and leave the
 // first one in place.
+const GRIB_DEFINED = new Map();
+
 function gribDefineCard(tag, cls) {
   const existing = customElements.get(tag);
+  GRIB_DEFINED.set(tag, cls);
   if (existing) {
     console.warn(
       `grib-overlay-card: ${tag} was already defined by another copy of this ` +
@@ -136,6 +139,77 @@ function gribDefineCard(tag, cls) {
     return;
   }
   customElements.define(tag, cls);
+}
+
+// Home Assistant puts this file in the page it serves as a <script
+// type="module">, so the browser evaluates it alongside Home Assistant's own
+// bundle -- and on a reload, served straight from the service worker's cache,
+// ours can get there first. That matters, because the frontend bundle then
+// installs a replacement for `window.customElements` (a scoped-registry
+// polyfill) which starts out empty: it has never heard of an element that was
+// defined before it arrived. `document.createElement("grib-overlay-card")`
+// still gives our class -- the browser's own registry is intact -- but
+// `customElements.get("grib-overlay-card")`, which is the question Home
+// Assistant asks before building a card, answers "no such element". The card is
+// then drawn as a red "configuration error" over a card that is perfectly fine,
+// and only on a reload, and only in a browser fast enough to lose that race.
+//
+// So tell the new registry about our three names. Nothing is redefined and no
+// other name is touched: only the lookup is answered for tags that are ours.
+function gribTeachRegistry() {
+  try {
+    const registry = window.customElements;
+    if (!registry || !GRIB_DEFINED.size) return false;
+    let unknown = false;
+    for (const tag of GRIB_DEFINED.keys()) {
+      if (!registry.get(tag)) unknown = true;
+    }
+    if (!unknown) return false;
+    const get = registry.get.bind(registry);
+    const whenDefined = registry.whenDefined.bind(registry);
+    registry.get = (tag) => get(tag) || GRIB_DEFINED.get(tag);
+    // Home Assistant waits on this before it rebuilds a card it gave up on.
+    registry.whenDefined = (tag) =>
+      GRIB_DEFINED.has(tag) ? Promise.resolve(GRIB_DEFINED.get(tag)) : whenDefined(tag);
+    console.info(
+      "grib-overlay-card: this page replaced its custom element registry after the " +
+        "cards had registered; the new one has been told about them."
+    );
+    return true;
+  } catch (err) {
+    console.warn("grib-overlay-card: could not tell the new registry about the cards", err);
+    return false;
+  }
+}
+
+// A card Home Assistant already gave up on does not come back by itself: the
+// promise it is waiting on was handed out by the registry that never knew us.
+// Ask it to build the card again.
+function gribRebuildErrorCards(found) {
+  let rebuilt = 0;
+  for (const record of found.ours) {
+    const inner = record.node && record.node._element;
+    if (!inner || !inner.isConnected) continue;
+    inner.dispatchEvent(new CustomEvent("ll-rebuild", { bubbles: true, composed: true }));
+    rebuilt += 1;
+  }
+  return rebuilt;
+}
+
+// Home Assistant hides its placeholder for two seconds before showing it. Get
+// in before that and the red block is never drawn at all; keep looking after,
+// because the registry can be replaced at any point during a page load.
+const GRIB_REGISTRY_CHECKS_MS = [0, 100, 300, 700, 1500, 2500];
+
+function gribWatchRegistry() {
+  if (typeof window === "undefined") return;
+  for (const delay of GRIB_REGISTRY_CHECKS_MS) {
+    setTimeout(() => {
+      if (!gribTeachRegistry()) return;
+      const found = gribScanForErrorCards();
+      if (found.ours.length) gribRebuildErrorCards(found);
+    }, delay);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -358,18 +432,22 @@ function gribErrorCardRecord(node) {
       const type = String((host && host.config && host.config.type) || "");
       if (!type) return null;
       return {
+        node: host,
         type,
         ours: type.startsWith("custom:grib-overlay-"),
-        message: String((node._config && node._config.error) || ""),
+        message: String((node._config && node._config.error) || node._config.message || ""),
       };
     }
     const inner = node._element;
     if (!inner || inner.localName !== "hui-error-card") return null;
     const type = String((node.config && node.config.type) || "?");
     return {
+      node,
       type,
       ours: type.startsWith("custom:grib-overlay-"),
-      message: String((inner._config && inner._config.error) || ""),
+      // Older builds carry the text as `error`, newer ones as `message`; both
+      // are empty when Home Assistant dropped the card without a reason.
+      message: String((inner._config && (inner._config.error || inner._config.message)) || ""),
     };
   } catch (err) {
     return null; // another Home Assistant version keeps these elsewhere
@@ -397,10 +475,17 @@ function gribScanForErrorCards() {
 
 function gribScanOnce() {
   if (gribErrorCardsReported || typeof document === "undefined" || !document.body) return;
-  const found = gribScanForErrorCards();
+  gribTeachRegistry();
+  let found = gribScanForErrorCards();
   // Other cards failing is their business -- worth naming only as company for
   // one of ours, never on its own.
   if (!found.ours.length) return;
+  // Most of these come back the moment the registry knows us again; only the
+  // ones that do not are worth anybody's attention.
+  if (gribRebuildErrorCards(found)) {
+    setTimeout(gribScanOnce, 4000);
+    return;
+  }
   gribErrorCardsReported = true;
   const dropped = found.ours
     .map((r) => `${r.type}${r.message ? ": " + r.message : " (no message under it)"}`)
@@ -7145,6 +7230,10 @@ window.customCards.push({
   name: gribT("wmCardName"),
   description: gribT("wmCardDescription"),
 });
+
+// The three cards are registered now, so the registry can be checked -- and
+// re-checked, because the one this page ends up with may not be this one.
+gribWatchRegistry();
 
 // Like every other card in the HACS ecosystem: announce yourself. A console
 // without this line means the browser never finished loading the card -- which
