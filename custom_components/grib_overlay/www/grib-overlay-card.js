@@ -188,6 +188,20 @@ function gribRememberHass(hass) {
   }
 }
 
+// ...and if every card on the page failed on the way in, there is no such card
+// left. Home Assistant's own root element is holding the same object, so ask it
+// directly rather than let the one failure that matters go unreported.
+function gribHassForReport() {
+  if (gribReportHass) return gribReportHass;
+  try {
+    const root = document.querySelector("home-assistant");
+    if (root && root.hass && typeof root.hass.callApi === "function") return root.hass;
+  } catch (err) {
+    /* not running inside Home Assistant */
+  }
+  return null;
+}
+
 // What an element looked like at the moment Home Assistant dropped it. The
 // three ways an assignment can throw all show up here: a `hass` that is a
 // getter without a setter, an element that was frozen, and an element built by
@@ -239,7 +253,7 @@ function gribReportCardError(card, err) {
 }
 
 function gribScheduleReport() {
-  if (gribReportTimer || !gribReportHass) return;
+  if (gribReportTimer || !gribHassForReport()) return;
   gribReportTimer = setTimeout(gribSendReport, GRIB_REPORT_DELAY_MS);
 }
 
@@ -256,8 +270,8 @@ function gribNavigationType() {
 
 async function gribSendReport() {
   gribReportTimer = null;
-  const hass = gribReportHass;
-  if (!hass || typeof hass.callApi !== "function" || !gribReportQueue.length) return;
+  const hass = gribHassForReport();
+  if (!hass || !gribReportQueue.length) return;
   const events = gribReportQueue.splice(0, 10);
   gribReportsSent += 1;
   try {

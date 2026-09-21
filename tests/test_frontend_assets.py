@@ -274,3 +274,13 @@ def test_the_chart_card_does_not_poll_for_a_page_nobody_has_open() -> None:
     assert "if (refresh && !this._isVisible()) {" in body
     assert "this._missedRefresh = true;" in body
     assert "this._missedRefresh && this._load(true)" in JS  # caught up on return
+
+
+def test_a_page_where_every_card_failed_can_still_report_it() -> None:
+    """The report travels on a `hass` a card was given -- and being given one is
+    exactly what fails. If that was every card on the page, ask Home Assistant's
+    own root element instead of letting the failure go unreported."""
+    body = JS.split("function gribHassForReport() {", 1)[1].split("\n}\n", 1)[0]
+    assert 'document.querySelector("home-assistant")' in body
+    assert "gribHassForReport()" in JS.split("function gribScheduleReport() {", 1)[1]
+    assert "gribReportHass;" not in JS.split("async function gribSendReport() {", 1)[1]
