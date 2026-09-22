@@ -851,6 +851,34 @@ houden: je ziet dan tegels met **"Access blocked"**. Daarom:
 - **Eigen tegelserver:** zet `tile_url` (en `tile_attribution`) in de card;
   die vervangt OpenStreetMap in de lagenknop.
 
+## Prestaties
+
+Wat de integratie doet om licht te blijven, en wat je daarvan merkt. De cijfers
+hieronder zijn gemeten op een echte instance met **veertien** ingestelde
+bronnen.
+
+- **De zware roosters gaan gecomprimeerd over de lijn.** Eén windframe is
+  ruim 200 kB aan getallen-als-tekst — het grootste dat de card ooit ophaalt —
+  en dat is ongeveer **vier keer** zo klein gezipt. De gezipte kopie wordt de
+  eerste keer dat een frame wordt opgevraagd naast het bestand gelegd en gaat
+  weg met de run waar hij bij hoort, dus er is geen rekenwerk per verzoek.
+- **Een kaartpagina haalt niets dubbel op.** De caches in de card bewaren het
+  *verzoek*, niet het antwoord; twee delen van de card die tegelijk om
+  hetzelfde frame vragen, wachten nu op dezelfde ophaalactie. En alle cards op
+  een pagina delen één lijst met bronnen in plaats van er elk één op te halen.
+- **De weerkaart laat zien wat hij heeft.** KNMI's kaarten opvragen en
+  binnenhalen duurt een paar seconden en de kaarten veranderen maar om de paar
+  uur, dus je krijgt meteen de lijst die er al is en wordt de nieuwe erachter
+  opgehaald. Alleen een card die nog helemaal niets heeft, wacht.
+- **Elke bron heeft zijn eigen moment.** Home Assistant start ze allemaal in
+  dezelfde seconde, dus zonder meer zouden veertien bronnen elk half uur
+  tegelijk gaan downloaden en decoderen. Elke bron wacht nu eerst zijn eigen
+  plek in het interval af, afgeleid van zijn id, dus die plek is na elke
+  herstart dezelfde.
+- **Cards die je niet ziet, doen niets.** De deeltjesanimatie en de
+  tijdsanimatie slapen zolang de card niet in beeld is, en de weerkaart slaat
+  zijn tien-minutenpoll over voor een pagina die niemand open heeft.
+
 ## Sleutels & problemen oplossen
 
 KNMI gebruikt **drie losse sleutels**. Ze zijn niet uitwisselbaar; een sleutel
@@ -2034,6 +2062,33 @@ you then see tiles saying **"Access blocked"**. So:
   not the dashboard path).
 - **Your own tile server:** set `tile_url` (and `tile_attribution`) on the card;
   it replaces OpenStreetMap in the layer button.
+
+## Performance
+
+What the integration does to stay light, and what you get out of it. The
+numbers below were measured on a real instance with **fourteen** configured
+sources.
+
+- **The heavy grids travel compressed.** One wind frame is over 200 kB of
+  numbers written out as text — the biggest thing the card ever downloads — and
+  about **four times** smaller gzipped. The compressed copy is written beside
+  the file the first time a frame is asked for and goes away with the run it
+  belongs to, so there is no work per request.
+- **A dashboard page fetches nothing twice.** The card's caches hold the
+  *request*, not the answer, so two parts of the card asking for the same frame
+  at the same moment now wait on one fetch. And every card on a page shares one
+  list of configured sources instead of each fetching its own.
+- **The chart card shows what it has.** Listing KNMI's charts and fetching them
+  takes a couple of seconds, and the charts change every few hours — so you get
+  the list that is already there at once and the new one is fetched behind it.
+  Only a card with nothing at all to show waits.
+- **Every source has its own moment.** Home Assistant starts them all within
+  the same second, so without more, fourteen sources would download and decode
+  on the same second of every half hour. Each one now waits out its own slot in
+  the interval, derived from its id, so it is the same slot after every restart.
+- **Cards you cannot see do nothing.** The particle animation and the time
+  animation sleep while the card is off screen, and the chart card skips its
+  ten-minute poll for a page nobody has open.
 
 ## Keys & troubleshooting
 

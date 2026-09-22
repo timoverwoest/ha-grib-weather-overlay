@@ -113,6 +113,7 @@ class WeatherMaps:
         self._charts: list[Chart] = []
         self._listed_at = 0.0
         self._lock = asyncio.Lock()
+        self._refreshing: asyncio.Task | None = None
 
     async def _cache_dir(self) -> Path:
         if self._dir is None:
@@ -142,22 +143,54 @@ class WeatherMaps:
         return resp
 
     async def charts(self) -> list[Chart]:
-        """The current chart list, refreshed (and its images fetched) when stale."""
+        """The current chart list, refreshed (and its images fetched) when stale.
+
+        Listing the charts and fetching the ones we do not have takes a couple
+        of seconds against KNMI -- measured at two on a real instance -- and it
+        used to happen while the card sat waiting for its answer, which made
+        this the slowest thing on the page by a wide margin. Charts change
+        every few hours, so a list ten minutes old is still the right answer:
+        hand it over at once and fetch the new one behind it. Only a card that
+        has nothing at all to show waits.
+        """
+        if self._charts and time.monotonic() - self._listed_at < _LIST_TTL_SECONDS:
+            return self._charts
+        if self._charts:
+            self._refresh_in_background()
+            return self._charts
         async with self._lock:
-            if self._charts and time.monotonic() - self._listed_at < _LIST_TTL_SECONDS:
+            if self._charts:
                 return self._charts
-            key = knmi_api_key(self._hass)
-            if not key:
-                raise WeatherMapError("no KNMI entry configured")
-            resp = await self._get(
-                f"{API_BASE_URL}/{DATASET_PATH}?maxKeys=40&orderBy=lastModified&sorting=desc", key
-            )
-            async with resp:
-                listing = await resp.json(content_type=None)
-            charts = select_charts(listing.get("files") or [])
-            await self._fetch_images(charts, key)
-            self._charts, self._listed_at = charts, time.monotonic()
-            return charts
+            return await self._refresh()
+
+    def _refresh_in_background(self) -> None:
+        if self._refreshing is not None and not self._refreshing.done():
+            return
+        self._refreshing = self._hass.async_create_background_task(
+            self._refresh_quietly(), f"{DOMAIN}_weather_maps_refresh"
+        )
+
+    async def _refresh_quietly(self) -> None:
+        async with self._lock:
+            try:
+                await self._refresh()
+            except WeatherMapError as err:
+                # The card keeps the charts it has; say why the new ones are late.
+                _LOGGER.debug("Weather charts could not be refreshed: %s", err)
+
+    async def _refresh(self) -> list[Chart]:
+        key = knmi_api_key(self._hass)
+        if not key:
+            raise WeatherMapError("no KNMI entry configured")
+        resp = await self._get(
+            f"{API_BASE_URL}/{DATASET_PATH}?maxKeys=40&orderBy=lastModified&sorting=desc", key
+        )
+        async with resp:
+            listing = await resp.json(content_type=None)
+        charts = select_charts(listing.get("files") or [])
+        await self._fetch_images(charts, key)
+        self._charts, self._listed_at = charts, time.monotonic()
+        return charts
 
     async def _fetch_images(self, charts: list[Chart], key: str) -> None:
         folder = await self._cache_dir()

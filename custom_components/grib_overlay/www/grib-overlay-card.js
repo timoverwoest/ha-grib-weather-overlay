@@ -526,6 +526,30 @@ function gribScanOnce() {
 // the card is there, the controls work, the map area is zero pixels high, and
 // it stays that way until the page is reloaded. Hand the element back to the
 // stylesheet.
+// Every card on a page asks for the same list of configured sources, and on a
+// dashboard with a few of them that is the same 13 kB fetched a few times over
+// -- each one a round trip, which over a remote connection is the slowest part
+// of it. Share one request: a card that arrives a moment later gets the answer
+// without going out again. The list only changes when the user adds or removes
+// a source, so half a minute is plenty.
+const GRIB_ENTRIES_TTL_MS = 30000;
+let gribEntriesRequest = null;
+let gribEntriesAt = 0;
+
+function gribFetchEntries(hass) {
+  const now = Date.now();
+  if (!gribEntriesRequest || now - gribEntriesAt > GRIB_ENTRIES_TTL_MS) {
+    gribEntriesAt = now;
+    gribEntriesRequest = hass.callApi("GET", "grib_overlay/entries");
+    gribEntriesRequest.catch(() => {
+      gribEntriesRequest = null; // a failure must not be remembered
+    });
+  }
+  // Each card gets its own array to filter and sort; the entries inside are
+  // read-only as far as every card is concerned.
+  return gribEntriesRequest.then((data) => ({ ...data, entries: (data.entries || []).slice() }));
+}
+
 function gribFixMapPosition(mapDiv) {
   if (!mapDiv || mapDiv.style.position !== "relative") return false;
   mapDiv.style.position = "";
@@ -2903,7 +2927,7 @@ class GribOverlayCard extends HTMLElement {
 
   async _loadEntries() {
     try {
-      const data = await this._hass.callApi("GET", "grib_overlay/entries");
+      const data = await gribFetchEntries(this._hass);
       this._allEntries = data.entries || [];
     } catch (err) {
       this._els.note.textContent = gribT("errEntries") + (err.message || err);
@@ -3192,11 +3216,15 @@ class GribOverlayCard extends HTMLElement {
     this._readoutSource = source;
   }
 
+  // The cache holds the REQUEST, not the answer. Filling it after the await
+  // means two callers that both ask before the first one is back each fetch
+  // the file -- and these files are the biggest thing the card downloads.
   async _fetchJson(url, cache) {
     if (cache.has(url)) return cache.get(url);
-    const data = await this._hass.callApi("GET", url.replace(/^\/api\//, ""));
-    cache.set(url, data);
-    return data;
+    const pending = this._hass.callApi("GET", url.replace(/^\/api\//, ""));
+    cache.set(url, pending);
+    pending.catch(() => cache.delete(url)); // a failure must not be remembered
+    return pending;
   }
 
   // Value at a lat/lon for the current parameter, formatted in display units.
@@ -3298,13 +3326,17 @@ class GribOverlayCard extends HTMLElement {
   async _fetchParamFrames(paramKey) {
     if (this._paramFramesCache.has(paramKey)) return this._paramFramesCache.get(paramKey);
     const entry = this._currentEntry();
-    const data = await this._hass.callApi(
-      "GET",
-      `grib_overlay/frames/${entry.entry_id}?parameter=${encodeURIComponent(paramKey)}`
-    );
-    const frames = (data[paramKey] || []).slice().sort((a, b) => a.valid_time.localeCompare(b.valid_time));
-    this._paramFramesCache.set(paramKey, frames);
-    return frames;
+    const pending = this._hass
+      .callApi(
+        "GET",
+        `grib_overlay/frames/${entry.entry_id}?parameter=${encodeURIComponent(paramKey)}`
+      )
+      .then((data) =>
+        (data[paramKey] || []).slice().sort((a, b) => a.valid_time.localeCompare(b.valid_time))
+      );
+    this._paramFramesCache.set(paramKey, pending);
+    pending.catch(() => this._paramFramesCache.delete(paramKey));
+    return pending;
   }
 
   async _frameForParamAt(paramKey, validTime) {
@@ -3378,9 +3410,10 @@ class GribOverlayCard extends HTMLElement {
   async _fetchWind(url) {
     if (this._windCache.has(url)) return this._windCache.get(url);
     // url is like "/api/grib_overlay/wind/..."; hass.callApi wants it without /api/.
-    const data = await this._hass.callApi("GET", url.replace(/^\/api\//, ""));
-    this._windCache.set(url, data);
-    return data;
+    const pending = this._hass.callApi("GET", url.replace(/^\/api\//, ""));
+    this._windCache.set(url, pending); // the request, so a second caller waits on it
+    pending.catch(() => this._windCache.delete(url));
+    return pending;
   }
 
   async _updateWindLayer(frame) {
@@ -6775,7 +6808,7 @@ class GribCompareCard extends HTMLElement {
     this._scheduleInvalidate();
 
     try {
-      const data = await this._hass.callApi("GET", "grib_overlay/entries");
+      const data = await gribFetchEntries(this._hass);
       this._allEntries = data.entries || [];
       this._entries = filterCardEntries(this._allEntries, this._config);
     } catch (err) {

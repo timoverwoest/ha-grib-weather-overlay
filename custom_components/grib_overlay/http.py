@@ -7,6 +7,7 @@ different datasets, or later a different source) can coexist.
 
 from __future__ import annotations
 
+import gzip
 import json
 import logging
 import math
@@ -118,6 +119,42 @@ def _wind_direction(wind, lat: float, lon: float) -> float | None:
     if u is None or v is None or math.hypot(u, v) < 0.3:
         return None  # calm: direction is meaningless
     return round((270.0 - math.degrees(math.atan2(v, u))) % 360.0, 0)
+
+
+# The wind and field grids are tens of thousands of numbers written out as
+# text: 210 kB for one wind frame, measured on a real instance, and the biggest
+# thing the card ever downloads. As text they compress about fourfold, but
+# aiohttp does not compress a response by itself. So keep a gzipped copy beside
+# the file -- written the first time it is asked for, thrown away with the run
+# it belongs to -- and hand that over to any browser that takes it.
+def _read_for_transfer(path, accepts_gzip: bool) -> tuple[bytes, str | None]:
+    """Blocking: the file's bytes, gzipped when the caller can take them."""
+    if not accepts_gzip:
+        return path.read_bytes(), None
+    gz = path.with_name(path.name + ".gz")
+    try:
+        if gz.stat().st_mtime >= path.stat().st_mtime:
+            return gz.read_bytes(), "gzip"
+    except OSError:
+        pass  # no copy yet, or an unreadable one: make it below
+    raw = path.read_bytes()
+    blob = gzip.compress(raw, 6)
+    try:
+        tmp = path.with_name(path.name + ".gz.tmp")
+        tmp.write_bytes(blob)
+        tmp.replace(gz)
+    except OSError:
+        pass  # a read-only cache still gets the compressed response
+    return blob, "gzip"
+
+
+async def _grid_response(hass: HomeAssistant, request: web.Request, path) -> web.Response:
+    accepts_gzip = "gzip" in (request.headers.get("Accept-Encoding") or "")
+    body, encoding = await hass.async_add_executor_job(_read_for_transfer, path, accepts_gzip)
+    headers = {"Cache-Control": "max-age=3600"}
+    if encoding:
+        headers["Content-Encoding"] = encoding
+    return web.Response(body=body, content_type="application/json", headers=headers)
 
 
 class GribOverlayEntriesView(HomeAssistantView):
@@ -259,10 +296,7 @@ class GribOverlayWindView(HomeAssistantView):
         frame = coordinator.get_frame(parameter_key, frame_id)
         if frame is None or frame.wind_path is None or not frame.wind_path.exists():
             return web.Response(status=404)
-        data = await hass.async_add_executor_job(frame.wind_path.read_bytes)
-        return web.Response(
-            body=data, content_type="application/json", headers={"Cache-Control": "max-age=3600"}
-        )
+        return await _grid_response(hass, request, frame.wind_path)
 
 
 class GribOverlayFieldView(HomeAssistantView):
@@ -282,10 +316,7 @@ class GribOverlayFieldView(HomeAssistantView):
         frame = coordinator.get_frame(parameter_key, frame_id)
         if frame is None or frame.field_path is None or not frame.field_path.exists():
             return web.Response(status=404)
-        data = await hass.async_add_executor_job(frame.field_path.read_bytes)
-        return web.Response(
-            body=data, content_type="application/json", headers={"Cache-Control": "max-age=3600"}
-        )
+        return await _grid_response(hass, request, frame.field_path)
 
 
 class GribOverlayPointView(HomeAssistantView):

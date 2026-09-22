@@ -23,6 +23,8 @@ import shutil
 import tarfile
 import threading
 import time
+import zlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -32,7 +34,7 @@ import numpy as np
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from . import field_grid, grib_decode, render, storage_paths, velocity
@@ -130,6 +132,10 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             update_interval=timedelta(minutes=update_minutes),
         )
         self.entry = entry
+        # Spread over the first half of the interval, at most ten minutes in.
+        span = min(int(timedelta(minutes=update_minutes).total_seconds()) // 2, 600)
+        self._poll_offset = zlib.crc32(entry.entry_id.encode()) % span if span else 0
+        self._unsub_offset: Callable[[], None] | None = None
         source_cls = get_source_class(entry.data[CONF_SOURCE])
         session = async_get_clientsession(hass)
         # A separate notification/MQTT key (options override entry data) is used
@@ -329,10 +335,33 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         # This coordinator has no entities/listeners, so it never self-schedules
         # periodic refreshes -- drive polling ourselves as a fallback for when
         # push notifications are unavailable.
+        # Home Assistant starts every configured source within the same second,
+        # so their timers would line up: a dozen sources going out to a dozen
+        # providers, and starting a dozen decodes, on the same second of every
+        # half hour. Each entry waits out its own slot first -- derived from its
+        # id, so it is the same slot after every restart -- and runs its interval
+        # from there.
+        self.entry.async_on_unload(self._cancel_offset)
+        if self._poll_offset:
+            self._unsub_offset = async_call_later(
+                self.hass, self._poll_offset, self._start_polling
+            )
+        else:
+            self._start_polling()
+
+    @callback
+    def _start_polling(self, _now=None) -> None:
+        self._unsub_offset = None
         self._unsub_poll = async_track_time_interval(
             self.hass, self._scheduled_poll, self.update_interval
         )
         self.entry.async_on_unload(self._unsub_poll)
+
+    @callback
+    def _cancel_offset(self) -> None:
+        if self._unsub_offset is not None:
+            self._unsub_offset()
+            self._unsub_offset = None
 
     @callback
     def _scheduled_poll(self, _now) -> None:
