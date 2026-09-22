@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 
@@ -471,3 +473,73 @@ async def test_options_flow_needs_at_least_one_parameter(hass: HomeAssistant) ->
     assert result["type"] == "form"
     assert result["errors"] == {"base": "no_parameters_selected"}
     assert CONF_PARAMETERS not in entry.options
+
+
+def _gfs_entry(hass: HomeAssistant, options: dict | None = None) -> MockConfigEntry:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_SOURCE: "noaa",
+            CONF_API_KEY: "",
+            CONF_DATASET: "gfs",
+            CONF_PARAMETERS: ["wind_10m"],
+        },
+        options=options or {},
+    )
+    entry.add_to_hass(hass)
+    return entry
+
+
+async def _horizon_range(hass: HomeAssistant, entry: MockConfigEntry):
+    """The validator behind the forecast-horizon field of the options form."""
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    return result, result["data_schema"].schema[CONF_FORECAST_HORIZON_HOURS]
+
+
+async def test_the_horizon_may_go_as_far_as_the_dataset_reaches(hass: HomeAssistant) -> None:
+    """GFS runs to +384 h. A cap left over from when the longest model was DMI's
+    +132 h stopped anyone from asking for more than a week of it."""
+    entry = _gfs_entry(hass)
+    result, validator = await _horizon_range(hass, entry)
+    assert validator(384) == 384
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_PARAMETERS: ["wind_10m"],
+            CONF_FORECAST_HORIZON_HOURS: 240,
+            CONF_RETAIN_RUNS: 2,
+            CONF_UPDATE_INTERVAL_MINUTES: 30,
+        },
+    )
+    assert result["type"] == "create_entry"
+    assert entry.options[CONF_FORECAST_HORIZON_HOURS] == 240
+
+
+async def test_the_horizon_stops_at_what_a_shorter_dataset_has(hass: HomeAssistant) -> None:
+    """EWAM ends at +78 h; asking for more just yields its last lead time."""
+    _, validator = await _horizon_range(hass, _ewam_entry(hass))
+    assert validator(78) == 78
+    with pytest.raises(vol.Invalid):
+        validator(120)
+
+
+async def test_a_horizon_already_set_is_never_refused(hass: HomeAssistant) -> None:
+    """An earlier version allowed up to 168 h on any dataset. The options form
+    must still open -- and save -- on such a value, not reject its own default."""
+    entry = _ewam_entry(hass)
+    hass.config_entries.async_update_entry(entry, options={CONF_FORECAST_HORIZON_HOURS: 168})
+    result, validator = await _horizon_range(hass, entry)
+    assert validator(168) == 168
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_PARAMETERS: ["wave_height"],
+            CONF_FORECAST_HORIZON_HOURS: 168,
+            CONF_RETAIN_RUNS: 2,
+            CONF_UPDATE_INTERVAL_MINUTES: 30,
+        },
+    )
+    assert result["type"] == "create_entry"
+    assert entry.options[CONF_FORECAST_HORIZON_HOURS] == 168

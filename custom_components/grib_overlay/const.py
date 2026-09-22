@@ -34,6 +34,10 @@ CONF_COLOR_SCALES = "color_scales"
 
 DEFAULT_RETAIN_RUNS = 2
 DEFAULT_FORECAST_HORIZON_HOURS = 24
+# The longest reach any dataset has (NOAA GFS). Only a fallback: the options
+# flow caps the horizon at the chosen dataset's own forecast_horizon_hours,
+# and uses this when the source could not be listed to ask.
+MAX_FORECAST_HORIZON_HOURS = 384
 DEFAULT_UPDATE_INTERVAL_MINUTES = 30
 
 HTTP_ENTRIES_PATH = "/api/grib_overlay/entries"

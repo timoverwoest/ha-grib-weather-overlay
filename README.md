@@ -244,7 +244,8 @@ worden zonder de kaart of de rest van de backend te wijzigen):
    **Configureren** (zie stap 5): zo zet je bijvoorbeeld deining aan op een
    bestaande EWAM-instantie, zonder die te verwijderen.
 5. Optioneel: pas via de integratie-opties de **parameters**, de voorspellingshorizon (default
-   24 uur, max 168 uur; KNMI HARMONIE reikt tot 60 uur, de DMI-modellen tot 120–132 uur), het aantal
+   24 uur; het maximum is wat de gekozen dataset zelf reikt — KNMI HARMONIE 60 uur,
+   EWAM 78, de DMI-modellen 120–132, GWAM 174 en GFS 384), het aantal
    bewaarde forecast-runs (default 2), het poll-interval (default 30 minuten) en
    **eigen kleurschalen per parameter** (zie hieronder) aan.
 
@@ -830,7 +831,7 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 | Sleutel | Type | Default | Bereik / vorm |
 | --- | --- | --- | --- |
 | `parameters` | lijst | de keuze bij het toevoegen | welke parameters van de dataset gedownload en getoond worden. Een parameter die je aanzet verschijnt zodra de huidige run opnieuw is verwerkt; dat begint direct na opslaan |
-| `forecast_horizon_hours` | getal (uren) | `24` | 1–168. Maak je hem langer, dan wordt de huidige run direct opnieuw verwerkt; korter knipt de al verwerkte run in |
+| `forecast_horizon_hours` | getal (uren) | `24` | Van 1 tot wat de dataset zelf reikt (60 bij HARMONIE, 78 bij EWAM, 174 bij GWAM, 384 bij GFS). Maak je hem langer, dan wordt de huidige run direct opnieuw verwerkt; korter knipt de al verwerkte run in |
 | `retain_runs` | geheel getal | `2` | 1–10 |
 | `update_interval_minutes` | geheel getal (min) | `30` | 5–180 |
 | `notification_api_key` | tekst | (leeg) | **aparte** KNMI Notification Service-sleutel voor push. Niet je Open Data-sleutel: die weigert de broker met `Not authorized`. Leeg = alleen pollen, geen MQTT-poging |
@@ -1615,7 +1616,8 @@ changing the map card or the rest of the backend):
    under **Configure** (see step 5) — for instance to switch swell on for an
    existing EWAM instance without removing it.
 5. Optional: via the integration options, adjust the **parameters**, the forecast horizon (default
-   24 hours, max 168 hours; KNMI HARMONIE reaches 60 hours, the DMI models 120–132 hours),
+   24 hours; the maximum is however far the chosen dataset itself reaches — KNMI
+   HARMONIE 60 hours, EWAM 78, the DMI models 120–132, GWAM 174 and GFS 384),
    the number of forecast runs to keep (default 2), the polling interval (default
    30 minutes) and **custom colour scales per parameter** (see below).
 
@@ -2198,7 +2200,7 @@ include `swell_direction` too, or the swell rows have no arrows.
 | Key | Type | Default | Range / form |
 | --- | --- | --- | --- |
 | `parameters` | list | the choice made when adding | which parameters of the dataset are downloaded and shown. A parameter you switch on appears once the current run has been processed again; that starts right after saving |
-| `forecast_horizon_hours` | number (hours) | `24` | 1–168. Making it longer processes the current run again right away; shorter cuts the run already processed |
+| `forecast_horizon_hours` | number (hours) | `24` | From 1 to however far the dataset itself reaches (60 for HARMONIE, 78 for EWAM, 174 for GWAM, 384 for GFS). Making it longer processes the current run again right away; shorter cuts the run already processed |
 | `retain_runs` | integer | `2` | 1–10 |
 | `update_interval_minutes` | integer (min) | `30` | 5–180 |
 | `notification_api_key` | text | (empty) | **separate** KNMI Notification Service key for push. Not your Open Data key: the broker refuses that with `Not authorized`. Empty = polling only, no MQTT attempt |

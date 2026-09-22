@@ -32,6 +32,7 @@ from .const import (
     DEFAULT_RETAIN_RUNS,
     DEFAULT_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
+    MAX_FORECAST_HORIZON_HOURS,
 )
 from .sources.base import GribDatasetInfo, GribSourceAuthError, GribSourceError
 from .sources.registry import SOURCE_REGISTRY, get_source_class
@@ -219,6 +220,16 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
         # re-processing the current run after the reload.
         enabled = list(options.get(CONF_PARAMETERS, data.get(CONF_PARAMETERS, [])))
         dataset = await self._dataset()
+        # Cap the horizon at what the chosen dataset actually reaches: HARMONIE
+        # stops at +60 h, EWAM at +78, GFS runs to +384, and asking for more
+        # than a dataset has just yields its last lead time. Never below what is
+        # already configured, so the form cannot refuse to reopen on a value an
+        # earlier version allowed; the longest reach of any dataset is the
+        # fallback for when the source could not be listed to ask.
+        max_horizon = max(
+            dataset.forecast_horizon_hours if dataset else MAX_FORECAST_HORIZON_HOURS,
+            float(options.get(CONF_FORECAST_HORIZON_HOURS, DEFAULT_FORECAST_HORIZON_HOURS)),
+        )
         parameter_field: dict = {}
         if dataset is not None:
             lang = labels.language(self.hass)
@@ -236,9 +247,7 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(
                     CONF_FORECAST_HORIZON_HOURS,
                     default=options.get(CONF_FORECAST_HORIZON_HOURS, DEFAULT_FORECAST_HORIZON_HOURS),
-                # HARMONIE runs to +60 h, DMI's waves to +132 h; a longer
-                # horizon than a dataset has just yields its last lead time.
-                ): vol.All(vol.Coerce(float), vol.Range(min=1, max=168)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=1, max=max_horizon)),
                 vol.Required(
                     CONF_RETAIN_RUNS,
                     default=options.get(CONF_RETAIN_RUNS, DEFAULT_RETAIN_RUNS),
