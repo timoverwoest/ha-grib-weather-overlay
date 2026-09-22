@@ -1,6 +1,6 @@
 # GRIB Weather Overlay voor Home Assistant
 
-> **Taal / Language:** 🇳🇱 Nederlands (hieronder) · 🇬🇧 [English documentation](#english) (onderaan deze pagina)
+> **Taal / Language:** 🇳🇱 Nederlands (hieronder) · 🇬🇧 [English documentation](#grib-weather-overlay-for-home-assistant--english) (onderaan deze pagina)
 
 Toont GRIB-weerdata (wind, neerslag, temperatuur, druk, zicht, bewolking, ...)
 als kleurenlaag over een [OpenSeaMap](https://map.openseamap.org)-kaart in
@@ -12,10 +12,10 @@ worden zonder de kaart of de rest van de backend te wijzigen):
 
 - [KNMI Data Platform](https://dataplatform.knmi.nl/) — HARMONIE-AROME
   (Nederland en Europa/DINI), GRIB1. Vereist een gratis Open Data-sleutel.
-- [DWD Open Data](https://opendata.dwd.de/) — het **EWAM golfmodel** voor de
-  Europese zeeën (golfhoogte, deining en windgolven, met richting en periode) en
-  het **ICON-D2 weermodel** (2,2 km, heel Nederland en de zuidelijke Noordzee),
-  GRIB2, **zonder sleutel**.
+- [DWD Open Data](https://opendata.dwd.de/) — de golfmodellen **EWAM** (Europese
+  zeeën) en **GWAM** (wereldwijd, tot +174 uur) met golfhoogte, deining en
+  windgolven inclusief richting en periode, plus het **ICON-D2 weermodel**
+  (2,2 km, heel Nederland en de zuidelijke Noordzee), GRIB2, **zonder sleutel**.
 - [BSH](https://www.bsh.de/) — **zeestroming** (oppervlakte-u/v) voor de hele
   Noordzee incl. de Nederlandse, Belgische en noord-Franse kust, 15-minuten-
   stappen, GRIB1, **zonder sleutel** (open FTP).
@@ -24,12 +24,53 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   stormvloedmodel **DKSS** (stroming, waterstand en watertemperatuur van
   Skagerrak tot het Kanaal), tot 5 dagen vooruit, GRIB1, **zonder sleutel**.
 - [Rijkswaterstaat](https://noos.matroos.rws.nl/) (NOOS-Matroos) — het
-  **DCSM-model** (waterstand en stroming van de Noorse kust tot Noord-Spanje) en
-  de **SWAN-golfmodellen** (Noordzee, en fijnmazig langs de Nederlandse kust),
+  **DCSM-model** (waterstand en stroming van de Noorse kust tot Noord-Spanje,
+  en het fijnere **ZUNO-nest** voor de zuidelijke Noordzee) en de
+  **SWAN-golfmodellen** (Noordzee, en fijnmazig langs de Nederlandse kust),
   48 uur vooruit, NetCDF, **zonder sleutel**.
 - [MET Norway](https://api.met.no/weatherapi/gribfiles/1.1/documentation) — weer
   (MEPS), golven (4 km) en stroming (800 m-model) voor **Oslofjord, Skagerrak en
   Sørlandet**, 3 tot 5 dagen vooruit, GRIB1, **zonder sleutel**.
+- [NOAA](https://nomads.ncep.noaa.gov/) (NCEP NOMADS) — het wereldmodel **GFS**
+  en het golfmodel **GFS-Wave**, allebei tot **+384 uur** op 0,25°: het enige
+  model hier dat verder dan een paar dagen kijkt, GRIB2, **zonder sleutel**.
+
+## Inhoud
+
+- [Features](#features)
+- [Bronnen en datasets](#bronnen-en-datasets)
+  - [Waar kies ik uit?](#waar-kies-ik-uit)
+  - [KNMI Data Platform (`knmi`) — sleutel nodig](#knmi-data-platform-knmi--sleutel-nodig)
+  - [DWD Open Data (`dwd`) — geen sleutel](#dwd-open-data-dwd--geen-sleutel)
+  - [NOAA (`noaa`) — geen sleutel](#noaa-noaa--geen-sleutel)
+  - [Rijkswaterstaat (`rws`) — geen sleutel](#rijkswaterstaat-rws--geen-sleutel)
+  - [DMI Open Data (`dmi`) — geen sleutel](#dmi-open-data-dmi--geen-sleutel)
+  - [BSH (`bsh`) — geen sleutel](#bsh-bsh--geen-sleutel)
+  - [MET Norway (`metno`) — geen sleutel](#met-norway-metno--geen-sleutel)
+- [Vereisten](#vereisten)
+- [Installatie](#installatie)
+- [Configuratie](#configuratie)
+- [Cards toevoegen aan een dashboard](#cards-toevoegen-aan-een-dashboard)
+- [Vier voorbeeld-cards](#vier-voorbeeld-cards)
+- [Alle instellingen — referentie](#alle-instellingen--referentie)
+  - [Bronnen (`source`)](#bronnen-source)
+  - [Datasets (`dataset`)](#datasets-dataset)
+  - [Parameters (`parameter` / `parameters`)](#parameters-parameter--parameters)
+  - [Integratie: setup-velden (config-flow)](#integratie-setup-velden-config-flow)
+  - [Integratie: opties (Configureren)](#integratie-opties-configureren)
+  - [Card-instellingen (Lovelace-YAML)](#card-instellingen-lovelace-yaml)
+  - [Modelvergelijking-card (`grib-overlay-compare-card`)](#modelvergelijking-card-grib-overlay-compare-card-1)
+  - [Weerkaart-card (`grib-overlay-weathermap-card`)](#weerkaart-card-grib-overlay-weathermap-card-1)
+  - [Eenheden (geldige waarden + aliassen)](#eenheden-geldige-waarden--aliassen)
+  - [Kaartlagen](#kaartlagen)
+- [Prestaties](#prestaties)
+- [Sleutels & problemen oplossen](#sleutels--problemen-oplossen)
+- [Taal](#taal)
+- [Back-ups](#back-ups)
+- [Bekende beperkingen](#bekende-beperkingen)
+- [Ontwikkelen & testen](#ontwikkelen--testen)
+- [Architectuur / nieuwe bronnen toevoegen](#architectuur--nieuwe-bronnen-toevoegen)
+- [Licentie](#licentie)
 
 ## Features
 
@@ -193,6 +234,191 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   een Open Data-sleutel met `Not authorized`. Zonder zo'n sleutel wordt er geen
   MQTT-verbinding geprobeerd en pollt de integratie gewoon door.
 
+## Bronnen en datasets
+
+Elke dataset is een **eigen instantie** van de integratie: je voegt ze los toe
+(Integratie toevoegen → GRIB Weather Overlay) en kiest per instantie welke
+parameters je wilt. Daarna staan ze samen in de keuzelijst van de overlay-card
+en naast elkaar in de modelvergelijking. Van alle bronnen hieronder heeft er
+maar één een sleutel nodig.
+
+### Waar kies ik uit?
+
+| Ik wil… | Dataset |
+| --- | --- |
+| weer en wind, zo fijn mogelijk boven Nederland | `harmonie_arome_cy43_p1` (2 km) of `icon_d2` (2,2 km) |
+| weer en wind voor een overtocht verderop in Europa | `harmonie_arome_cy43_p3` (DINI) |
+| weer en wind verder dan drie dagen vooruit | `gfs` (tot 16 dagen) |
+| golven op de Noordzee, dicht bij huis | `rws_swan_dcsm`, of `rws_swan_kuststrook` langs de kust |
+| golven én deining, met piekperiodes | `ewam` of `dmi_wam_nsb` |
+| deining die nog dagen onderweg is | `gwam` (+174 u) of `gfs_wave` (+384 u) |
+| stroming en waterstand op de eigen kust | `rws_dcsm_zuno` |
+| stroming met kwartierdetail voor het getij | `bsh_current_northsea` |
+| watertemperatuur | `dmi_dkss_nsbs` |
+| de Noorse zuidkust | `metno_oslofjord`, `metno_skagerrak`, `metno_sorlandet` |
+
+Twee bronnen naast elkaar zetten is trouwens geen verspilling: dát is wat de
+modelvergelijking-card laat zien.
+
+### KNMI Data Platform (`knmi`) — sleutel nodig
+
+Het Nederlandse model, en het fijnste dat er over eigen water bestaat. Vraag een
+gratis Open Data-sleutel aan op het
+[KNMI Developer Portal](https://developer.dataplatform.knmi.nl/).
+
+- **`harmonie_arome_cy43_p1`** — HARMONIE-AROME over Nederland, 2 km, uurlijks
+  tot +60 uur, elke 6 uur een nieuwe run. Negen parameters: wind, windstoten,
+  temperatuur, dauwpunt, luchtvochtigheid, neerslag, luchtdruk, zicht en
+  bewolking. Windstoten komen hier als u/v, dus mét richting.
+- **`harmonie_arome_cy43_p3`** — hetzelfde model op het Europese DINI-domein
+  (39–72°N, 25°W–40°O), op een geroteerd rooster dat bij het decoderen naar een
+  gewoon geografisch rooster wordt geprojecteerd — inclusief het meedraaien van
+  de wind naar echt noord/oost. Groter gebied, dus meer download en meer
+  rekentijd dan Nederland.
+
+Eén run is een tar-archief van ~850 MB, ook als je maar één parameter aanzet:
+er is geen API om losse lead times op te halen. Houd de voorspellingshorizon
+daarom niet hoger dan je nodig hebt.
+
+```yaml
+type: custom:grib-overlay-card
+dataset: harmonie_arome_cy43_p1
+parameter: wind_gust_10m
+wind_unit: kn
+```
+
+### DWD Open Data (`dwd`) — geen sleutel
+
+- **`ewam`** — het Europese golfmodel, ~0,05° over de Noordzee, de Atlantische
+  Oceaan en de Middellandse Zee (30–66°N, 10,5°W–42°O), uurlijks tot +78 uur,
+  twee runs per dag. Elf parameters: golfhoogte, en van deining én windgolven
+  apart de hoogte, richting, gemiddelde periode en piekperiode.
+- **`gwam`** — dezelfde velden wereldwijd op 0,25°, elke 3 uur tot **+174 uur**.
+  Voor de Atlantische aanloop en voor deining die nog dagen onderweg is. Het
+  wereldrooster wordt bij het decoderen teruggebracht tot 30–72°N, 40°W–30°O.
+- **`icon_d2`** — weermodel op 2,2 km over Midden-Europa (43–58°N, 4°W–20°O),
+  uurlijks tot +48 uur, elke 3 uur een nieuwe run. Dezelfde negen parameters als
+  KNMI plus **CAPE**. Windstoten zijn hier het maximum van het afgelopen uur,
+  dus zonder eigen richting, en neerslag komt als totaal sinds de start van de
+  run — de integratie rekent dat om naar millimeters per uur.
+
+ICON-D2 is per parameter per uur een los bestand van ~1 MB: met alle tien
+parameters en 24 uur horizon is een run ~250 MB. Zet aan wat je gebruikt.
+
+```yaml
+type: custom:grib-overlay-card
+dataset: gwam
+parameter: swell_height
+render_mode: wavevectors
+```
+
+### NOAA (`noaa`) — geen sleutel
+
+Het lange eind. Grof (0,25°, ~25 km) vergeleken met HARMONIE of ICON-D2, maar
+het enige model hier dat verder dan een paar dagen kijkt. Vier runs per dag,
+uurlijks tot +120 uur en daarna elke 3 uur tot +384. Het gebied ligt vast op
+40–65°N, 25°W–15°O: Biskaje en Ierland tot IJsland, Noorwegen en de Oostzee.
+
+- **`gfs`** — dezelfde tien parameters als ICON-D2. Let op de neerslag: GFS
+  levert een **intensiteit** (mm/u) waar KNMI en ICON-D2 een hoeveelheid per uur
+  (mm) geven.
+- **`gfs_wave`** — WAVEWATCH III, aangedreven door GFS: golfhoogte, piekperiode
+  en richting van de dominante golf, plus deining en windgolven, en de wind
+  waarmee het golfmodel is gevoed.
+
+```yaml
+type: custom:grib-overlay-card
+dataset: gfs
+parameter: pressure_msl
+show_isobars: true
+```
+
+### Rijkswaterstaat (`rws`) — geen sleutel
+
+De modellen die Rijkswaterstaat zelf gebruikt, via NOOS-Matroos. Alles uurlijks
+tot +48 uur; de integratie haalt één run per 6 uur op om de dienst te ontzien.
+
+- **`rws_dcsm`** — waterstand en oppervlaktestroming van de Noorse kust tot
+  Noord-Spanje (43–64°N, 12°W–13°O) op 0,05°.
+- **`rws_dcsm_zuno`** — het ZUNO-nest van datzelfde model: het Kanaal, de
+  Nederlandse, Belgische en Duitse kust, de Wadden en de Duitse Bocht
+  (49,4–57°N, 3,4°W–9,6°O) op 0,025°. Twee keer zo fijn, en daarmee de keuze
+  voor wie langs de kust vaart. Draai niet allebei — dat is hetzelfde model
+  twee keer.
+- **`rws_swan_dcsm`** — SWAN-golven voor de Noordzee en het Kanaal (48–64°N,
+  12°W–9°O) op 0,05°: golfhoogte (Hm0), periode (Tm-1,0) en richting (Th0).
+- **`rws_swan_kuststrook`** — dezelfde velden voor de Nederlandse kuststrook
+  (51–54,4°N) op 0,02°.
+
+De waterstand is zoals het model hem levert, niet omgerekend naar NAP of een
+lokaal peil.
+
+```yaml
+type: custom:grib-overlay-card
+dataset: rws_dcsm_zuno
+parameter: current
+render_mode: particles
+```
+
+### DMI Open Data (`dmi`) — geen sleutel
+
+Het Deense instituut, en de enige bron hier met watertemperatuur. Elke 6 uur een
+nieuwe run.
+
+- **`dmi_wam_nsb`** — WAM-golven voor Noordzee, Kanaal en Oostzee (47–66°N,
+  13°W–30°O, ~5 km), uurlijks tot **+132 uur**.
+- **`dmi_wam_natlant`** — dezelfde velden voor de Noord-Atlantische Oceaan
+  (30–78°N, 69°W–30°O, 0,25°), inclusief de Golf van Biskaje en de Noorse kust.
+- **`dmi_dkss_nsbs`** — het stormvloedmodel DKSS: oppervlaktestroming,
+  waterstand en **watertemperatuur** van Skagerrak tot het Kanaal (48,5–65,9°N,
+  vanaf 4,1°W), uurlijks tot +120 uur.
+
+De DKSS-waterstand is ten opzichte van het gemiddelde zeeniveau van dát model,
+niet ten opzichte van NAP; vergelijk hem niet één-op-één met Nederlandse peilen.
+De standaardhorizon van 24 uur gebruikt maar een fractie van de 5 dagen die
+deze modellen leveren.
+
+```yaml
+type: custom:grib-overlay-card
+dataset: dmi_dkss_nsbs
+parameter: water_temperature
+```
+
+### BSH (`bsh`) — geen sleutel
+
+- **`bsh_current_northsea`** — oppervlaktestroming voor de hele Noordzee
+  inclusief de Nederlandse, Belgische en noord-Franse kust (48,6–60,6°N,
+  3,9°W–8,9°O, ~5,5 km), tot +48 uur.
+
+Het bijzondere hier is de tijdstap: **elk kwartier**, waar alle andere bronnen
+uurlijks zijn. Dat geeft echte getijdetails, maar ook veel frames — 24 uur
+horizon is 96 beelden.
+
+```yaml
+type: custom:grib-overlay-card
+dataset: bsh_current_northsea
+parameter: current
+render_mode: vectors
+```
+
+### MET Norway (`metno`) — geen sleutel
+
+Drie kant-en-klare gebieden langs de Noorse zuidkust, elk met weer, golven én
+stroming in één dataset, op 0,05°: **`metno_oslofjord`** (58,9–60,0°N,
+9,8–11,2°O), **`metno_skagerrak`** (57,7–59,4°N, 7,8–12,0°O) en
+**`metno_sorlandet`** (57,8–58,8°N, 7,0–9,4°O).
+
+Elk gebied combineert drie modellen: wind, neerslag en luchtdruk uit MEPS
+(~66 uur), golven uit WAVEWATCH III op 4 km (~72 uur) en stroming op 3 meter
+diepte uit NorKyst op 800 m (~120 uur). De stroming is dus niet aan het
+oppervlak maar op diepte, en de bestanden zijn klein (0,2–1,2 MB).
+
+```yaml
+type: custom:grib-overlay-card
+dataset: metno_skagerrak
+parameter: current
+```
+
 ## Vereisten
 
 - Home Assistant OS of Supervised. Alle dependencies zijn pure-Python /
@@ -286,75 +512,6 @@ De integratie levert **drie** Lovelace-cards:
   hoge- en lagedrukgebieden en **fronten**: de laatste analyses en de
   verwachtingskaarten tot 48 uur vooruit.
 
-## Zo zien de cards eruit
-
-Vier voorbeelden, elk met precies de YAML die hem oplevert. Plak de YAML
-in een handmatige card en je krijgt wat eronder staat.
-
-### Wind als deeltjes, met isobaren en drukcentra
-
-```yaml
-type: custom:grib-overlay-card
-title: Wind en druk
-dataset: harmonie_arome_cy43_p1
-parameter: wind_10m
-render_mode: particles
-show_isobars: true
-wind_unit: kn
-center: [52.4, 4.3]
-zoom: 7
-```
-
-De overlay-card in zijn meest gebruikte vorm: windsnelheid als kleurenlaag, de
-deeltjes die met de wind meestromen, en de isobaren-laag eroverheen met **H**-
-en **L**-centra. Wind in knopen.
-
-### Golven, met richtingspijlen
-
-```yaml
-type: custom:grib-overlay-card
-title: Golven en deining
-parameters: [golven]
-parameter: wave_height
-render_mode: wavevectors
-center: [53.2, 3.6]
-zoom: 6
-```
-
-Dezelfde card, maar gefilterd op golfdata (`parameters: [golven]`) en in
-`wavevectors`-weergave: de pijlen wijzen de golfrichting aan die bij de gekozen
-hoogte hoort.
-
-### Modelvergelijking op een punt
-
-```yaml
-type: custom:grib-overlay-compare-card
-title: Modelvergelijking
-parameter: wind_10m
-meteogram_resolution: 3uur
-wind_unit: kn
-center: [52.4, 4.5]
-zoom: 8
-```
-
-Klik een punt op de mini-kaart en elke geconfigureerde bron komt als lijn in de
-grafiek en als rij in de tabel — hier drie modellen voor wind op 10 m, in
-kolommen van 3 uur.
-
-### De KNMI-weerkaart
-
-```yaml
-type: custom:grib-overlay-weathermap-card
-title: Weerkaart
-```
-
-Analyses en verwachtingskaarten tot 48 uur vooruit, met fronten, isobaren en
-drukgebieden — de kaart die het KNMI zelf publiceert.
-
-> De voorbeelden staan ook in `dev/shots.html`, dat ze één voor één op een
-> vaste breedte rendert tegen de mock-server (`?card=overlay`, `waves`,
-> `compare`, `weathermap`). Een test bewaakt dat die pagina en de YAML
-> hierboven niet uit elkaar lopen.
 ### Overlay-card (`grib-overlay-card`)
 
 Voeg een kaart van het type `custom:grib-overlay-card` toe, bijvoorbeeld via
@@ -623,6 +780,75 @@ is puur een weergavekeuze in de kaart (de onderliggende data verandert niet):
 
 De legenda en het label in de parameterkeuze worden dan automatisch omgerekend.
 
+## Vier voorbeeld-cards
+
+Vier startpunten, elk met precies de YAML die hem oplevert. Plak de YAML in een
+handmatige card en je krijgt wat eronder beschreven staat.
+
+### Wind als deeltjes, met isobaren en drukcentra
+
+```yaml
+type: custom:grib-overlay-card
+title: Wind en druk
+dataset: harmonie_arome_cy43_p1
+parameter: wind_10m
+render_mode: particles
+show_isobars: true
+wind_unit: kn
+center: [52.4, 4.3]
+zoom: 7
+```
+
+De overlay-card in zijn meest gebruikte vorm: windsnelheid als kleurenlaag, de
+deeltjes die met de wind meestromen, en de isobaren-laag eroverheen met **H**-
+en **L**-centra. Wind in knopen.
+
+### Golven, met richtingspijlen
+
+```yaml
+type: custom:grib-overlay-card
+title: Golven en deining
+parameters: [golven]
+parameter: wave_height
+render_mode: wavevectors
+center: [53.2, 3.6]
+zoom: 6
+```
+
+Dezelfde card, maar gefilterd op golfdata (`parameters: [golven]`) en in
+`wavevectors`-weergave: de pijlen wijzen de golfrichting aan die bij de gekozen
+hoogte hoort.
+
+### Modelvergelijking op een punt
+
+```yaml
+type: custom:grib-overlay-compare-card
+title: Modelvergelijking
+parameter: wind_10m
+meteogram_resolution: 3uur
+wind_unit: kn
+center: [52.4, 4.5]
+zoom: 8
+```
+
+Klik een punt op de mini-kaart en elke geconfigureerde bron komt als lijn in de
+grafiek en als rij in de tabel — hier drie modellen voor wind op 10 m, in
+kolommen van 3 uur.
+
+### De KNMI-weerkaart
+
+```yaml
+type: custom:grib-overlay-weathermap-card
+title: Weerkaart
+```
+
+Analyses en verwachtingskaarten tot 48 uur vooruit, met fronten, isobaren en
+drukgebieden — de kaart die het KNMI zelf publiceert.
+
+> De voorbeelden staan ook in `dev/shots.html`, dat ze één voor één op een
+> vaste breedte rendert tegen de mock-server (`?card=overlay`, `waves`,
+> `compare`, `weathermap`). Een test bewaakt dat die pagina en de YAML
+> hierboven niet uit elkaar lopen.
 ## Alle instellingen — referentie
 
 Volledige, exacte lijst van alle sleutels en waarden die je in de integratie
@@ -1338,7 +1564,7 @@ python3 -m pip install -r requirements-dev.txt  # numpy, Pillow, paho-mqtt, home
 python3 -m pytest tests/
 ```
 
-Twee losse dev-scripts werken zonder Home Assistant:
+Een paar losse dev-hulpmiddelen werken zonder Home Assistant:
 
 - `dev/verify_knmi_source.py` — controleert de KNMI-source-implementatie
   tegen de echte Open Data API (dataset-catalogus, file listing, download-URL).
@@ -1350,6 +1576,14 @@ Twee losse dev-scripts werken zonder Home Assistant:
   `dev/render_preview.py`), zonder dat er een Home Assistant-instantie nodig is.
   Met `?lang=en` (of `?lang=nl`) bootst de harness de taalkeuze van de
   HA-gebruiker na, zodat je beide talen kunt controleren.
+- `dev/shots.html` — rendert de vier voorbeeld-cards uit
+  [Vier voorbeeld-cards](#vier-voorbeeld-cards) los van elkaar op een vaste
+  breedte, elk op zijn eigen URL (`/shots.html?card=overlay`, `waves`,
+  `compare`, `weathermap`), tegen diezelfde mock-server. De YAML staat in die
+  pagina zelf en een test bewaakt dat de README dezelfde blokken toont.
+- `python3 dev/toc.py` — bouwt de twee inhoudsopgaven opnieuw uit de koppen van
+  de README. Draai dit als je een hoofdstuk toevoegt of hernoemt;
+  `tests/test_readme.py` faalt anders.
 - `dev/verify_knmi_mqtt.py <api-key>` — controleert de verbinding met KNMI's
   MQTT Notification Service en toont binnenkomende "nieuw bestand"-meldingen.
   Let op: hiervoor is een **eigen geregistreerde** API-sleutel nodig, de
@@ -1392,10 +1626,10 @@ changing the map card or the rest of the backend):
 
 - [KNMI Data Platform](https://dataplatform.knmi.nl/) — HARMONIE-AROME
   (Netherlands and Europe/DINI), GRIB1. Requires a free Open Data key.
-- [DWD Open Data](https://opendata.dwd.de/) — the **EWAM wave model** for the
-  European seas (wave height, swell and wind waves, with direction and period) and
-  the **ICON-D2 weather model** (2.2 km, all of the Netherlands and the southern
-  North Sea), GRIB2, **no key**.
+- [DWD Open Data](https://opendata.dwd.de/) — the **EWAM** (European seas) and
+  **GWAM** (global, to +174 hours) wave models, with wave height, swell and wind
+  waves including direction and period, plus the **ICON-D2 weather model**
+  (2.2 km, all of the Netherlands and the southern North Sea), GRIB2, **no key**.
 - [BSH](https://www.bsh.de/) — **sea current** (surface u/v) for the whole North
   Sea including the Dutch, Belgian and northern French coast, 15-minute steps,
   GRIB1, **no key** (open FTP).
@@ -1404,12 +1638,53 @@ changing the map card or the rest of the backend):
   storm-surge model (currents, water level and water temperature from the
   Skagerrak to the Channel), up to 5 days ahead, GRIB1, **no key**.
 - [Rijkswaterstaat](https://noos.matroos.rws.nl/) (NOOS-Matroos) — the **DCSM**
-  model (water level and currents from the Norwegian coast to northern Spain) and
-  the **SWAN** wave models (North Sea, and at a fine grid along the Dutch coast),
-  48 hours ahead, NetCDF, **no key**.
+  model (water level and currents from the Norwegian coast to northern Spain, plus
+  the finer **ZUNO nest** for the southern North Sea) and the **SWAN** wave models
+  (North Sea, and at a fine grid along the Dutch coast), 48 hours ahead, NetCDF,
+  **no key**.
 - [MET Norway](https://api.met.no/weatherapi/gribfiles/1.1/documentation) —
   weather (MEPS), waves (4 km) and currents (800 m model) for the **Oslofjord,
   Skagerrak and Sørlandet**, 3 to 5 days ahead, GRIB1, **no key**.
+- [NOAA](https://nomads.ncep.noaa.gov/) (NCEP NOMADS) — the **GFS** global model
+  and the **GFS-Wave** wave model, both to **+384 hours** at 0.25°: the only model
+  here that looks further than a few days, GRIB2, **no key**.
+
+## Contents
+
+- [Features](#features-1)
+- [Sources and datasets](#sources-and-datasets)
+  - [Which one do I pick?](#which-one-do-i-pick)
+  - [KNMI Data Platform (`knmi`) — key required](#knmi-data-platform-knmi--key-required)
+  - [DWD Open Data (`dwd`) — no key](#dwd-open-data-dwd--no-key)
+  - [NOAA (`noaa`) — no key](#noaa-noaa--no-key)
+  - [Rijkswaterstaat (`rws`) — no key](#rijkswaterstaat-rws--no-key)
+  - [DMI Open Data (`dmi`) — no key](#dmi-open-data-dmi--no-key)
+  - [BSH (`bsh`) — no key](#bsh-bsh--no-key)
+  - [MET Norway (`metno`) — no key](#met-norway-metno--no-key)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Adding cards to a dashboard](#adding-cards-to-a-dashboard)
+- [Four example cards](#four-example-cards)
+- [All settings — reference](#all-settings--reference)
+  - [Sources (`source`)](#sources-source)
+  - [Datasets (`dataset`)](#datasets-dataset-1)
+  - [Parameters (`parameter` / `parameters`)](#parameters-parameter--parameters-1)
+  - [Integration: setup fields (config flow)](#integration-setup-fields-config-flow)
+  - [Integration: options (Configure)](#integration-options-configure)
+  - [Card settings (Lovelace YAML)](#card-settings-lovelace-yaml)
+  - [Model-comparison card (`grib-overlay-compare-card`)](#model-comparison-card-grib-overlay-compare-card-1)
+  - [Weather-map card (`grib-overlay-weathermap-card`)](#weather-map-card-grib-overlay-weathermap-card-1)
+  - [Units (valid values + aliases)](#units-valid-values--aliases)
+  - [Map layers](#map-layers)
+- [Performance](#performance)
+- [Keys & troubleshooting](#keys--troubleshooting)
+- [Language](#language)
+- [Backups](#backups)
+- [Known limitations](#known-limitations)
+- [Development & testing](#development--testing)
+- [Architecture / adding new sources](#architecture--adding-new-sources)
+- [License](#license)
 
 ## Features
 
@@ -1568,6 +1843,187 @@ changing the map card or the rest of the backend):
   Open Data and refuses an Open Data key with `Not authorized`. Without such a
   key no MQTT connection is attempted and the integration simply keeps polling.
 
+## Sources and datasets
+
+Every dataset is its **own instance** of the integration: you add them
+separately (Add integration → GRIB Weather Overlay) and pick the parameters you
+want per instance. They then sit together in the overlay card's picker and side
+by side in the model comparison. Of all the sources below, only one needs a
+key.
+
+### Which one do I pick?
+
+| I want… | Dataset |
+| --- | --- |
+| weather and wind, as fine as it gets over the Netherlands | `harmonie_arome_cy43_p1` (2 km) or `icon_d2` (2.2 km) |
+| weather and wind for a crossing elsewhere in Europe | `harmonie_arome_cy43_p3` (DINI) |
+| weather and wind further than three days ahead | `gfs` (up to 16 days) |
+| waves on the North Sea, close to home | `rws_swan_dcsm`, or `rws_swan_kuststrook` along the coast |
+| waves *and* swell, with peak periods | `ewam` or `dmi_wam_nsb` |
+| swell that is still days away | `gwam` (+174 h) or `gfs_wave` (+384 h) |
+| currents and water level on your own coast | `rws_dcsm_zuno` |
+| currents in quarter-hour detail for the tide | `bsh_current_northsea` |
+| water temperature | `dmi_dkss_nsbs` |
+| the south coast of Norway | `metno_oslofjord`, `metno_skagerrak`, `metno_sorlandet` |
+
+Running two sources side by side is not a waste, by the way: that is exactly
+what the model-comparison card shows.
+
+### KNMI Data Platform (`knmi`) — key required
+
+The Dutch model, and the finest there is over Dutch water. Request a free Open
+Data key at the
+[KNMI Developer Portal](https://developer.dataplatform.knmi.nl/).
+
+- **`harmonie_arome_cy43_p1`** — HARMONIE-AROME over the Netherlands, 2 km,
+  hourly to +60 h, a new run every 6 hours. Nine parameters: wind, gusts,
+  temperature, dew point, humidity, precipitation, pressure, visibility and
+  cloud cover. Gusts arrive as u/v here, so with a direction of their own.
+- **`harmonie_arome_cy43_p3`** — the same model on the European DINI domain
+  (39–72°N, 25°W–40°E), on a rotated grid that is projected onto a plain
+  geographic one while decoding — including turning the wind back to true
+  north/east. A bigger area, so more download and more work than the Dutch one.
+
+One run is a ~850 MB tar archive even if you enable a single parameter: there is
+no API for individual lead times. Keep the forecast horizon no higher than you
+need.
+
+```yaml
+type: custom:grib-overlay-card
+dataset: harmonie_arome_cy43_p1
+parameter: wind_gust_10m
+wind_unit: kn
+```
+
+### DWD Open Data (`dwd`) — no key
+
+- **`ewam`** — the European wave model, ~0.05° over the North Sea, the Atlantic
+  and the Mediterranean (30–66°N, 10.5°W–42°E), hourly to +78 h, two runs a day.
+  Eleven parameters: wave height, and for swell *and* wind waves separately the
+  height, direction, mean period and peak period.
+- **`gwam`** — the same fields globally at 0.25°, every 3 hours to **+174 h**.
+  For the Atlantic approaches and for swell that is still days away. The global
+  grid is cut down to 30–72°N, 40°W–30°E while decoding.
+- **`icon_d2`** — a 2.2 km weather model over central Europe (43–58°N, 4°W–20°E),
+  hourly to +48 h, a new run every 3 hours. The same nine parameters as KNMI plus
+  **CAPE**. Gusts here are the maximum over the past hour, so without a direction
+  of their own, and precipitation arrives as a total since the run started — the
+  integration turns that into millimetres per hour.
+
+ICON-D2 is a separate ~1 MB file per parameter per hour: with all ten parameters
+and a 24-hour horizon a run is ~250 MB. Enable what you use.
+
+```yaml
+type: custom:grib-overlay-card
+dataset: gwam
+parameter: swell_height
+render_mode: wavevectors
+```
+
+### NOAA (`noaa`) — no key
+
+The long end. Coarse (0.25°, ~25 km) next to HARMONIE or ICON-D2, but the only
+model here that looks further than a few days. Four runs a day, hourly to +120 h
+and every 3 hours to +384 after that. The window is fixed at 40–65°N, 25°W–15°E:
+Biscay and Ireland to Iceland, Norway and the Baltic.
+
+- **`gfs`** — the same ten parameters as ICON-D2. Mind the precipitation: GFS
+  gives a **rate** (mm/h) where KNMI and ICON-D2 give an amount per hour (mm).
+- **`gfs_wave`** — WAVEWATCH III driven by GFS: wave height, peak period and
+  direction of the dominant wave, plus swell and wind waves, and the wind the
+  wave model was fed with.
+
+```yaml
+type: custom:grib-overlay-card
+dataset: gfs
+parameter: pressure_msl
+show_isobars: true
+```
+
+### Rijkswaterstaat (`rws`) — no key
+
+The models Rijkswaterstaat uses itself, through NOOS-Matroos. All hourly to
++48 h; the integration fetches one run per 6 hours to go easy on the service.
+
+- **`rws_dcsm`** — water level and surface currents from the Norwegian coast to
+  northern Spain (43–64°N, 12°W–13°E) at 0.05°.
+- **`rws_dcsm_zuno`** — the ZUNO nest of that same model: the Channel, the
+  Dutch, Belgian and German coast, the Wadden and the German Bight (49.4–57°N,
+  3.4°W–9.6°E) at 0.025°. Twice as fine, and therefore the one to pick if you
+  sail along the coast. Do not run both — that is the same model twice.
+- **`rws_swan_dcsm`** — SWAN waves for the North Sea and the Channel (48–64°N,
+  12°W–9°E) at 0.05°: wave height (Hm0), period (Tm-1,0) and direction (Th0).
+- **`rws_swan_kuststrook`** — the same fields for the Dutch coastal strip
+  (51–54.4°N) at 0.02°.
+
+The water level is as the model delivers it, not converted to NAP or any local
+datum.
+
+```yaml
+type: custom:grib-overlay-card
+dataset: rws_dcsm_zuno
+parameter: current
+render_mode: particles
+```
+
+### DMI Open Data (`dmi`) — no key
+
+The Danish institute, and the only source here with water temperature. A new run
+every 6 hours.
+
+- **`dmi_wam_nsb`** — WAM waves for the North Sea, the Channel and the Baltic
+  (47–66°N, 13°W–30°E, ~5 km), hourly to **+132 h**.
+- **`dmi_wam_natlant`** — the same fields for the North Atlantic (30–78°N,
+  69°W–30°E, 0.25°), including the Bay of Biscay and the Norwegian coast.
+- **`dmi_dkss_nsbs`** — the DKSS storm-surge model: surface currents, water
+  level and **water temperature** from the Skagerrak to the Channel
+  (48.5–65.9°N, from 4.1°W), hourly to +120 h.
+
+DKSS's water level is relative to that model's own mean sea level, not to NAP;
+do not compare it one to one with Dutch datums. The default 24-hour horizon uses
+only a fraction of the 5 days these models deliver.
+
+```yaml
+type: custom:grib-overlay-card
+dataset: dmi_dkss_nsbs
+parameter: water_temperature
+```
+
+### BSH (`bsh`) — no key
+
+- **`bsh_current_northsea`** — surface currents for the whole North Sea
+  including the Dutch, Belgian and northern French coast (48.6–60.6°N,
+  3.9°W–8.9°E, ~5.5 km), to +48 h.
+
+What is special here is the time step: **every quarter of an hour**, where every
+other source is hourly. That gives real tidal detail, but also a lot of frames —
+a 24-hour horizon is 96 images.
+
+```yaml
+type: custom:grib-overlay-card
+dataset: bsh_current_northsea
+parameter: current
+render_mode: vectors
+```
+
+### MET Norway (`metno`) — no key
+
+Three ready-made areas along the south coast of Norway, each with weather, waves
+*and* currents in one dataset, at 0.05°: **`metno_oslofjord`** (58.9–60.0°N,
+9.8–11.2°E), **`metno_skagerrak`** (57.7–59.4°N, 7.8–12.0°E) and
+**`metno_sorlandet`** (57.8–58.8°N, 7.0–9.4°E).
+
+Each area combines three models: wind, precipitation and pressure from MEPS
+(~66 h), waves from WAVEWATCH III at 4 km (~72 h) and currents at 3 metres depth
+from NorKyst at 800 m (~120 h). So the current is not at the surface but at
+depth, and the files are small (0.2–1.2 MB).
+
+```yaml
+type: custom:grib-overlay-card
+dataset: metno_skagerrak
+parameter: current
+```
+
 ## Requirements
 
 - Home Assistant OS or Supervised. All dependencies are pure-Python / universal
@@ -1657,74 +2113,6 @@ The integration provides **three** Lovelace cards:
   isobars, high and low pressure centres and **fronts**: the latest analyses and
   the forecast charts up to 48 hours ahead.
 
-## What the cards look like
-
-Four examples, each with exactly the YAML that produces it. Paste the YAML
-into a manual card and you get what is described below it.
-
-### Wind as particles, with isobars and pressure centres
-
-```yaml
-type: custom:grib-overlay-card
-title: Wind en druk
-dataset: harmonie_arome_cy43_p1
-parameter: wind_10m
-render_mode: particles
-show_isobars: true
-wind_unit: kn
-center: [52.4, 4.3]
-zoom: 7
-```
-
-The overlay card in its most common form: wind speed as a colour layer,
-particles flowing with the wind, and the isobar layer on top with **H** and
-**L** centres. Wind in knots.
-
-### Waves, with direction arrows
-
-```yaml
-type: custom:grib-overlay-card
-title: Golven en deining
-parameters: [golven]
-parameter: wave_height
-render_mode: wavevectors
-center: [53.2, 3.6]
-zoom: 6
-```
-
-The same card, filtered to wave data (`parameters: [golven]`) and in
-`wavevectors` mode: the arrows point the wave direction that belongs to the
-chosen height.
-
-### Model comparison at a point
-
-```yaml
-type: custom:grib-overlay-compare-card
-title: Modelvergelijking
-parameter: wind_10m
-meteogram_resolution: 3uur
-wind_unit: kn
-center: [52.4, 4.5]
-zoom: 8
-```
-
-Click a point on the mini map and every configured source becomes a line in the
-chart and a row in the table — three models for 10 m wind here, in 3-hour
-columns.
-
-### The KNMI weather chart
-
-```yaml
-type: custom:grib-overlay-weathermap-card
-title: Weerkaart
-```
-
-Analyses and forecast charts up to 48 hours ahead, with fronts, isobars and
-pressure systems — the chart KNMI publishes itself.
-
-> The examples also live in `dev/shots.html`, which renders them one by one at
-> a fixed width against the mock server (`?card=overlay`, `waves`, `compare`,
-> `weathermap`). A test keeps that page and the YAML above from drifting apart.
 ### Overlay card (`grib-overlay-card`)
 
 Add a card of type `custom:grib-overlay-card`, for example via a dashboard's YAML
@@ -1993,6 +2381,74 @@ display choice in the card (the underlying data does not change):
 
 The legend and the label in the parameter picker are then converted automatically.
 
+## Four example cards
+
+Four starting points, each with exactly the YAML that produces it. Paste the YAML
+into a manual card and you get what is described below it.
+
+### Wind as particles, with isobars and pressure centres
+
+```yaml
+type: custom:grib-overlay-card
+title: Wind en druk
+dataset: harmonie_arome_cy43_p1
+parameter: wind_10m
+render_mode: particles
+show_isobars: true
+wind_unit: kn
+center: [52.4, 4.3]
+zoom: 7
+```
+
+The overlay card in its most common form: wind speed as a colour layer,
+particles flowing with the wind, and the isobar layer on top with **H** and
+**L** centres. Wind in knots.
+
+### Waves, with direction arrows
+
+```yaml
+type: custom:grib-overlay-card
+title: Golven en deining
+parameters: [golven]
+parameter: wave_height
+render_mode: wavevectors
+center: [53.2, 3.6]
+zoom: 6
+```
+
+The same card, filtered to wave data (`parameters: [golven]`) and in
+`wavevectors` mode: the arrows point the wave direction that belongs to the
+chosen height.
+
+### Model comparison at a point
+
+```yaml
+type: custom:grib-overlay-compare-card
+title: Modelvergelijking
+parameter: wind_10m
+meteogram_resolution: 3uur
+wind_unit: kn
+center: [52.4, 4.5]
+zoom: 8
+```
+
+Click a point on the mini map and every configured source becomes a line in the
+chart and a row in the table — three models for 10 m wind here, in 3-hour
+columns.
+
+### The KNMI weather chart
+
+```yaml
+type: custom:grib-overlay-weathermap-card
+title: Weerkaart
+```
+
+Analyses and forecast charts up to 48 hours ahead, with fronts, isobars and
+pressure systems — the chart KNMI publishes itself.
+
+> The examples also live in `dev/shots.html`, which renders them one by one at
+> a fixed width against the mock server (`?card=overlay`, `waves`, `compare`,
+> `weathermap`). A test keeps that page and the YAML above from drifting apart.
 ## All settings — reference
 
 Complete, exact list of every key and value you can use in the integration
@@ -2708,6 +3164,14 @@ The following standalone dev scripts work without Home Assistant:
   needing a Home Assistant instance.
   `?lang=en` (or `?lang=nl`) mimics the Home Assistant user's language choice,
   so both languages can be checked.
+- `dev/shots.html` — renders the four example cards from
+  [Four example cards](#four-example-cards) one at a time at a fixed width, each
+  on its own URL (`/shots.html?card=overlay`, `waves`, `compare`,
+  `weathermap`), against that same mock server. The YAML lives in that page and
+  a test keeps the README showing the same blocks.
+- `python3 dev/toc.py` — rebuilds the two contents lists from the README's own
+  headings. Run it when you add or rename a chapter; `tests/test_readme.py`
+  fails otherwise.
 - `dev/verify_knmi_mqtt.py <api-key>` — checks the connection to KNMI's MQTT
   Notification Service and shows incoming "new file" messages. Note: this needs a
   **self-registered** API key; the public anonymous demo key (which the REST API
