@@ -72,6 +72,18 @@ _MODELS = {
         last_lead=48,
         despike=("sep",),
     ),
+    # The southern North Sea nest of the same DCSM run: the Channel's eastern
+    # end, the Dutch, Belgian and German coast, the Wadden and the German Bight,
+    # on a grid twice as fine as the full-domain model above.
+    "rws_dcsm_zuno": _Model(
+        source="dcsm7_harmonie_bf_f2w_zuno",
+        fields=("sep", "velu", "velv"),
+        bbox=(49.4, -3.4, 57.0, 9.6),
+        step_deg=0.025,
+        run_interval_hours=6,
+        last_lead=48,
+        despike=("sep",),
+    ),
     "rws_swan_dcsm": _Model(
         source="swan_dcsm_harmonie",
         fields=("wave_height_hm0", "wave_period_tm10", "wave_dir_th0"),
@@ -132,6 +144,24 @@ KNOWN_DATASETS: tuple[GribDatasetInfo, ...] = (
         ),
         grid_type="regular_latlon",
         bounds=_MODELS["rws_dcsm"].bbox,
+        output_frequency_hours=1,
+        forecast_horizon_hours=48,
+        parameters=(_CURRENT, _WATER_LEVEL),
+    ),
+    GribDatasetInfo(
+        key="rws_dcsm_zuno",
+        name="RWS DCSM-ZUNO - stroming en waterstand Zuidelijke Noordzee (fijn)",
+        version="1",
+        description=(
+            "Het ZUNO-nest van hetzelfde Rijkswaterstaat-model DCSM via NOOS-Matroos "
+            "(49,4-57°N, 3,4°W-9,6°O, op 0,025°): waterstand en oppervlaktestroming "
+            "voor het Kanaal, de Nederlandse, Belgische en Duitse kust, de Wadden en "
+            "de Duitse Bocht, uurlijks tot +48 uur. Twee keer zo fijn als het hele "
+            "DCSM-gebied, en daarmee de keuze voor wie langs de kust vaart. "
+            "Geen sleutel."
+        ),
+        grid_type="regular_latlon",
+        bounds=_MODELS["rws_dcsm_zuno"].bbox,
         output_frequency_hours=1,
         forecast_horizon_hours=48,
         parameters=(_CURRENT, _WATER_LEVEL),

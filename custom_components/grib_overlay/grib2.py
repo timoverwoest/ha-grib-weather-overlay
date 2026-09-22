@@ -78,13 +78,18 @@ class Grib2Message:
     def matches(self, filt: dict) -> bool:
         """True if every (key, value) in ``filt`` matches. Keys are GRIB2 fields:
         discipline / parameterCategory / parameterNumber / indicatorOfTypeOfLevel
-        / level."""
+        / level / productDefinitionTemplateNumber."""
         mapping = {
             "discipline": self.discipline,
             "parameterCategory": self.parameter_category,
             "parameterNumber": self.parameter_number,
             "indicatorOfTypeOfLevel": self.type_of_level,
             "level": self.level,
+            # 8 carries a statistical interval, 0 does not. Filtering on it is
+            # how a quantity a centre publishes both ways in one file (GFS ships
+            # an instantaneous rate next to an interval mean of it) is pinned to
+            # the one that was asked for, rather than to whichever comes first.
+            "productDefinitionTemplateNumber": 8 if self.end_time else 0,
         }
         for key, expected in filt.items():
             if mapping.get(key) != expected:

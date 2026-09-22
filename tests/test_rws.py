@@ -221,3 +221,28 @@ async def test_non_netcdf_answer_fails(tmp_path) -> None:
         await RwsSource(_Err([])).async_download_run(
             DCSM, "202609161200", tmp_path, ["current"], horizon_hours=2
         )
+
+
+ZUNO = next(d for d in KNOWN_DATASETS if d.key == "rws_dcsm_zuno")
+
+
+def test_the_zuno_nest_is_the_same_model_on_a_finer_grid() -> None:
+    """Matroos interpolates every request itself, so the nest is worth having
+    only if it is asked for more finely than the full domain."""
+    full = rws._MODELS["rws_dcsm"]
+    nest = rws._MODELS["rws_dcsm_zuno"]
+    assert nest.source.startswith(full.source)
+    assert nest.step_deg < full.step_deg
+    assert nest.fields == full.fields
+    assert nest.despike == full.despike  # the same coastal spikes to mask
+
+
+def test_the_zuno_nest_covers_the_dutch_coast() -> None:
+    south, west, north, east = ZUNO.bounds
+    # Vlissingen, Den Helder, Terschelling, Borkum, and the Channel's east end.
+    for lat, lon in ((51.44, 3.57), (52.96, 4.75), (53.36, 5.22), (53.58, 6.66), (50.95, 1.85)):
+        assert south <= lat <= north and west <= lon <= east
+
+
+def test_the_zuno_nest_offers_the_same_parameters_as_the_full_domain() -> None:
+    assert [p.key for p in ZUNO.parameters] == [p.key for p in DCSM.parameters]

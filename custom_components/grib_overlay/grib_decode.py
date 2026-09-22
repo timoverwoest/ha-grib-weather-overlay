@@ -134,7 +134,45 @@ def _empty_interval(message) -> bool:
     return end_time is not None and end_time == message.reference_time
 
 
-def decode_parameter(path: Path, parameter: GribParameter) -> DecodedField:
+Crop = tuple[float, float, float, float]  # (south, west, north, east)
+
+
+def _crop_plan(lats: np.ndarray, lons: np.ndarray, crop: Crop):
+    """Row/column indices and the axes they leave, or None if nothing to cut.
+
+    A grid published from 0 to 360 -- DWD's global wave model -- comes out of
+    the decoder wrapped to -180..180 but still in its original order, so its
+    longitude axis jumps from 179.75 to -180 halfway. Sorting it first is what
+    makes a window reaching west of Greenwich (every North Sea window does) one
+    contiguous block instead of two.
+    """
+    south, west, north, east = crop
+    cols = np.arange(len(lons))
+    if np.any(np.diff(lons) <= 0):
+        order = np.argsort(lons, kind="stable")
+        lons, cols = lons[order], cols[order]
+    rows = np.flatnonzero((lats >= south) & (lats <= north))
+    keep = np.flatnonzero((lons >= west) & (lons <= east))
+    if rows.size == 0 or keep.size == 0:
+        raise GribDecodeError(
+            f"crop window {crop} lies outside the grid "
+            f"({lats[0]:.2f}..{lats[-1]:.2f}N, {lons[0]:.2f}..{lons[-1]:.2f}E)"
+        )
+    cols = cols[keep]
+    unchanged = rows.size == lats.size and np.array_equal(cols, np.arange(len(lons)))
+    return None if unchanged else (rows, cols, lats[rows], lons[keep])
+
+
+def _cropped(plan, *grids: np.ndarray) -> tuple[np.ndarray, ...]:
+    """Each grid cut down to ``plan``'s rows and columns."""
+    rows, cols, _, _ = plan
+    index = np.ix_(rows, cols)
+    return tuple(grid[index] for grid in grids)
+
+
+def decode_parameter(
+    path: Path, parameter: GribParameter, crop: Crop | None = None
+) -> DecodedField:
     """Extract one GribParameter's field from a single-lead-time GRIB file."""
     messages = _load_messages(path)
 
@@ -165,6 +203,10 @@ def decode_parameter(path: Path, parameter: GribParameter) -> DecodedField:
         if msg.rotation is not None:
             data, lats, lons = reproject.regrid_scalar(data, lats, lons, msg.rotation)
 
+    if crop is not None and (plan := _crop_plan(lats, lons, crop)) is not None:
+        (data,) = _cropped(plan, data)
+        lats, lons = plan[2], plan[3]
+
     return DecodedField(
         parameter_key=parameter.key,
         data=data,
@@ -176,7 +218,9 @@ def decode_parameter(path: Path, parameter: GribParameter) -> DecodedField:
     )
 
 
-def decode_vector_components(path: Path, parameter: GribParameter) -> DecodedVector:
+def decode_vector_components(
+    path: Path, parameter: GribParameter, crop: Crop | None = None
+) -> DecodedVector:
     """Extract the raw u/v components of a vector parameter (wind), unscaled (m/s)."""
     if parameter.kind != "vector":
         raise GribDecodeError(f"Parameter '{parameter.key}' is not a vector parameter")
@@ -196,6 +240,9 @@ def decode_vector_components(path: Path, parameter: GribParameter) -> DecodedVec
         u_grid, v_grid, lats, lons = reproject.regrid_vector(
             u_grid, v_grid, lats, lons, u_msg.rotation
         )
+    if crop is not None and (plan := _crop_plan(lats, lons, crop)) is not None:
+        u_grid, v_grid = _cropped(plan, u_grid, v_grid)
+        lats, lons = plan[2], plan[3]
     return DecodedVector(
         u=u_grid, v=v_grid, lats=lats, lons=lons, valid_time=valid_time, run_time=run_time
     )

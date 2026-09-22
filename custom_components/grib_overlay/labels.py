@@ -31,7 +31,9 @@ PARAMETER_NAMES_EN: dict[str, str] = {
     "cloud_cover": "Cloud cover",
     "wave_height": "Wave height (significant)",
     "wave_period": "Wave period (mean)",
-    "wave_direction": "Wave direction (mean)",
+    # Not "(mean)": EWAM and DMI publish a mean over the spectrum, GFS-Wave the
+    # direction of the dominant wave. One key, so the label stays neutral.
+    "wave_direction": "Wave direction",
     "wave_peak_period": "Waves: peak period",
     "swell_height": "Swell: height",
     "swell_period": "Swell: period (mean)",
@@ -52,11 +54,17 @@ DATASET_NAMES_EN: dict[str, str] = {
     "harmonie_arome_cy43_p3": "HARMONIE-AROME Cy43 - Europe (DINI), near-surface parameters",
     "ewam": "DWD EWAM - European waves (North Sea, Atlantic Ocean, Mediterranean)",
     "icon_d2": "DWD ICON-D2 - weather model 2.2 km (Germany, Benelux, southern North Sea)",
+    "gwam": "DWD GWAM - global waves (Atlantic approaches, to +174 h)",
+    "gfs": "NOAA GFS - global model 0.25° (to +384 h)",
+    "gfs_wave": "NOAA GFS-Wave - global waves 0.25° (to +384 h)",
     "bsh_current_northsea": "BSH - North Sea currents (NL/BE/FR coast)",
     "dmi_wam_nsb": "DMI WAM - waves North Sea and Baltic (~5 km)",
     "dmi_wam_natlant": "DMI WAM - waves North Atlantic (0.25°)",
     "dmi_dkss_nsbs": "DMI DKSS - currents and water level North Sea and Baltic (~5 km)",
     "rws_dcsm": "RWS DCSM - currents and water level (Norwegian coast to northern Spain)",
+    "rws_dcsm_zuno": (
+        "RWS DCSM-ZUNO - currents and water level southern North Sea (fine)"
+    ),
     "rws_swan_dcsm": "RWS SWAN - waves North Sea",
     "rws_swan_kuststrook": "RWS SWAN - waves Dutch coast (fine)",
     "metno_oslofjord": "MET Norway - Oslofjord: weather, waves and currents",

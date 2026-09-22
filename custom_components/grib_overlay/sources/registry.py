@@ -13,6 +13,7 @@ from .dmi import DmiSource
 from .dwd import DwdSource
 from .knmi import KnmiSource
 from .metno import MetnoSource
+from .noaa import NoaaSource
 from .rws import RwsSource
 
 SOURCE_REGISTRY: dict[str, type[GribSource]] = {
@@ -22,6 +23,7 @@ SOURCE_REGISTRY: dict[str, type[GribSource]] = {
     DmiSource.key: DmiSource,
     RwsSource.key: RwsSource,
     MetnoSource.key: MetnoSource,
+    NoaaSource.key: NoaaSource,
 }
 
 

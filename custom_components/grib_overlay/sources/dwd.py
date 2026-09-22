@@ -1,4 +1,4 @@
-"""DWD Open Data GRIB source: the EWAM wave model and the ICON-D2 weather model.
+"""DWD Open Data GRIB source: the EWAM/GWAM wave models and ICON-D2.
 
 Unlike KNMI (one ~GB .tar per run), DWD's Open Data server publishes one small
 GRIB2 file per parameter per lead time under an Apache-style directory index,
@@ -18,6 +18,7 @@ import asyncio
 import bz2
 import functools
 import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,7 +32,8 @@ from .base import (
     GribSourceError,
 )
 
-_BASE = "https://opendata.dwd.de/weather/maritime/wave_models/ewam/grib"
+_EWAM_BASE = "https://opendata.dwd.de/weather/maritime/wave_models/ewam/grib"
+_GWAM_BASE = "https://opendata.dwd.de/weather/maritime/wave_models/gwam/grib"
 _ICON_D2_BASE = "https://opendata.dwd.de/weather/nwp/icon-d2/grib"
 
 # Parallel downloads per run. ICON-D2 is a few hundred ~1 MB files; a handful at
@@ -40,8 +42,8 @@ _DOWNLOAD_CONCURRENCY = 4
 
 _WAVE = {"discipline": 10, "parameterCategory": 0}
 
-# EWAM wave parameters (GRIB2 discipline 10, category 0). ``key`` is our stable
-# id; the DWD server sub-directory it lives in is mapped in _EWAM_DIR below.
+# EWAM/GWAM wave parameters (GRIB2 discipline 10, category 0). ``key`` is our stable
+# id; the DWD server sub-directory it lives in is mapped in _WAVE_DIR below.
 # Parameter numbers verified against real files: 3 = significant wave height,
 # 14 = mean wave direction, 15 = mean wave period; swell 8/7/9 (+36 peak
 # period), wind sea 5/4/6 (+35 peak period).
@@ -49,7 +51,7 @@ _WAVE = {"discipline": 10, "parameterCategory": 0}
 # Keys come in families sharing a prefix (``swell_height`` / ``swell_period`` /
 # ``swell_direction``): that is how the card and the point API know which
 # direction belongs to which height (see base.direction_key_for).
-_EWAM_PARAMETERS: tuple[GribParameter, ...] = (
+_WAVE_PARAMETERS: tuple[GribParameter, ...] = (
     GribParameter(
         key="wave_height",
         name="Golfhoogte (significant)",
@@ -140,13 +142,40 @@ _EWAM_PARAMETERS: tuple[GribParameter, ...] = (
     ),
 )
 
-# EWAM runs at 00 and 12 UTC to +78 h. DWD publishes a run over ~35 minutes,
-# lead time by lead time, starting ~3 h 15 min after the run time.
-_EWAM_RUN_HOURS = ("00", "12")
-_EWAM_LAST_STEP = 78
+@dataclass(frozen=True)
+class _WaveModel:
+    """One of DWD's wave models. They share a server layout and a parameter set.
 
-# key -> DWD Open Data sub-directory name.
-_EWAM_DIR = {
+    Both run at 00 and 12 UTC; DWD publishes a run over ~35 minutes, lead time
+    by lead time, starting ~3 h 15 min after the run time.
+    """
+
+    base: str
+    prefix: str  # file name prefix: EWAM_SWH_..., GWAM_SWH_...
+    last_step: int
+    step_hours: int
+
+    def steps_within(self, horizon_hours: float) -> list[int]:
+        return [s for s in range(0, self.last_step + 1, self.step_hours) if s <= horizon_hours]
+
+
+_WAVE_MODELS = {
+    "ewam": _WaveModel(base=_EWAM_BASE, prefix="EWAM", last_step=78, step_hours=1),
+    "gwam": _WaveModel(base=_GWAM_BASE, prefix="GWAM", last_step=174, step_hours=3),
+}
+
+_WAVE_RUN_HOURS = ("00", "12")
+
+# GWAM is published on the whole globe (1440 x 699 points at 0.25 deg). Keeping
+# that would make every frame a world map, and the wind/field endpoints thin a
+# grid down to a fixed number of points per axis -- so a global field would
+# arrive over the North Sea far coarser than the model actually is. Cut it down
+# to the water this integration is about: mid-Atlantic to the Baltic, the
+# Canaries' latitude up to well north of Norway.
+_GWAM_WINDOW = (30.0, -40.0, 72.0, 30.0)
+
+# key -> DWD Open Data sub-directory name (the same for both wave models).
+_WAVE_DIR = {
     "wave_height": "swh",
     "wave_period": "tm10",
     "wave_direction": "mwd",
@@ -300,7 +329,26 @@ KNOWN_DATASETS: tuple[GribDatasetInfo, ...] = (
         bounds=(30.0, -10.5, 66.0, 42.0),
         output_frequency_hours=1,
         forecast_horizon_hours=78,
-        parameters=_EWAM_PARAMETERS,
+        parameters=_WAVE_PARAMETERS,
+    ),
+    GribDatasetInfo(
+        key="gwam",
+        name="DWD GWAM - wereldwijde golven (Atlantische aanloop, tot +174 uur)",
+        version="1.0",
+        description=(
+            "DWD GWAM golfmodel: dezelfde velden als EWAM maar wereldwijd op "
+            "0,25\u00b0 en tot +174 uur in plaats van +78 - voor de Atlantische "
+            "aanloop en voor deining die nog dagen onderweg is. Elke 3 uur een "
+            "tijdstap. Het rooster wordt bij het decoderen teruggebracht tot "
+            "Noord-Atlantische Oceaan en Europese zeeen. GRIB2, open data, geen "
+            "sleutel nodig."
+        ),
+        grid_type="regular_latlon",
+        bounds=_GWAM_WINDOW,
+        output_frequency_hours=3,
+        forecast_horizon_hours=174,
+        parameters=_WAVE_PARAMETERS,
+        crop=_GWAM_WINDOW,
     ),
     GribDatasetInfo(
         key="icon_d2",
@@ -320,8 +368,12 @@ KNOWN_DATASETS: tuple[GribDatasetInfo, ...] = (
     ),
 )
 
-# EWAM_SWH_2026072200_003.grib2.bz2  ->  (filename, run YYYYMMDDHH, step hours)
-_FILE_RE = re.compile(r'href="(EWAM_[A-Z0-9]+_(\d{10})_(\d{3})\.grib2\.bz2)"')
+@functools.lru_cache(maxsize=None)
+def _wave_file_re(prefix: str) -> re.Pattern:
+    # EWAM_SWH_2026072200_003.grib2.bz2 -> (filename, run YYYYMMDDHH, step hours)
+    return re.compile(
+        rf'href="({re.escape(prefix)}_[A-Z0-9]+_(\d{{10}})_(\d{{3}})\.grib2\.bz2)"'
+    )
 
 
 def _icon_d2_file_re(dwd_dir: str) -> re.Pattern:
@@ -348,7 +400,7 @@ def _require_steps(run: str, dwd_dir: str, steps: dict, wanted: list[int]) -> No
 
 
 class DwdSource(GribSource):
-    """GribSource for DWD Open Data (opendata.dwd.de): EWAM waves and ICON-D2."""
+    """GribSource for DWD Open Data (opendata.dwd.de): EWAM/GWAM waves and ICON-D2."""
 
     key = "dwd"
     name = "DWD Open Data"
@@ -373,25 +425,38 @@ class DwdSource(GribSource):
 
     # -- EWAM -------------------------------------------------------------------
 
-    async def _runs_for(self, dwd_dir: str) -> dict[str, list[tuple[int, str, str]]]:
+    async def _runs_for(
+        self, model: _WaveModel, dwd_dir: str
+    ) -> dict[str, list[tuple[int, str, str]]]:
         """Map run id -> [(step_hours, run_hour, filename)] for one parameter dir."""
         runs: dict[str, list[tuple[int, str, str]]] = {}
-        for hh in _EWAM_RUN_HOURS:
-            html = await self._list_dir(f"{_BASE}/{hh}/{dwd_dir}/")
-            for filename, run, step in _FILE_RE.findall(html):
+        for hh in _WAVE_RUN_HOURS:
+            html = await self._list_dir(f"{model.base}/{hh}/{dwd_dir}/")
+            for filename, run, step in _wave_file_re(model.prefix).findall(html):
                 runs.setdefault(run, []).append((int(step), hh, filename))
         return runs
 
-    async def _download_ewam_run(
-        self, run_id: str, run_dir: Path, param_keys: list[str], horizon_hours: float, loop
+    async def _download_wave_run(
+        self,
+        model: _WaveModel,
+        run_id: str,
+        run_dir: Path,
+        param_keys: list[str],
+        horizon_hours: float,
+        loop,
     ) -> list[Path]:
-        wanted_steps = [s for s in range(_EWAM_LAST_STEP + 1) if s <= horizon_hours]
-        keys = [k for k in param_keys if k in _EWAM_DIR]
-        listings = await asyncio.gather(*(self._runs_for(_EWAM_DIR[k]) for k in keys))
+        wanted_steps = model.steps_within(horizon_hours)
+        keys = [k for k in param_keys if k in _WAVE_DIR]
+        listings = await asyncio.gather(*(self._runs_for(model, _WAVE_DIR[k]) for k in keys))
         available: dict[str, dict[int, str]] = {}
         for key, runs in zip(keys, listings):
-            steps = {step: f"{_BASE}/{hh}/{_EWAM_DIR[key]}/{name}" for step, hh, name in runs.get(run_id, [])}
-            _require_steps(f"EWAM run {run_id}", _EWAM_DIR[key], steps, wanted_steps)
+            steps = {
+                step: f"{model.base}/{hh}/{_WAVE_DIR[key]}/{name}"
+                for step, hh, name in runs.get(run_id, [])
+            }
+            _require_steps(
+                f"{model.prefix} run {run_id}", _WAVE_DIR[key], steps, wanted_steps
+            )
             available[key] = steps
         return await self._fetch_all(
             [([available[k][s]], run_dir / f"{k}_{s:03d}.grib2") for k in keys for s in wanted_steps],
@@ -488,14 +553,15 @@ class DwdSource(GribSource):
         if dataset.key == "icon_d2":
             latest = await self._icon_d2_latest_complete_run()
         else:
+            model = _WAVE_MODELS[dataset.key]
             # swh is always present; probe with it. Only a run whose last lead time
             # is out counts: DWD publishes over ~35 minutes, and a run picked up
             # halfway would stay that way until the next one, 12 hours later.
-            runs = await self._runs_for("swh")
+            runs = await self._runs_for(model, "swh")
             complete = [
                 run
                 for run, entries in runs.items()
-                if any(step == _EWAM_LAST_STEP for step, _, _ in entries)
+                if any(step == model.last_step for step, _, _ in entries)
             ]
             latest = max(complete) if complete else None
         if latest is None:
@@ -524,7 +590,9 @@ class DwdSource(GribSource):
             return await self._download_icon_d2_run(
                 run_id, run_dir, param_keys, horizon_hours, loop
             )
-        return await self._download_ewam_run(run_id, run_dir, param_keys, horizon_hours, loop)
+        return await self._download_wave_run(
+            _WAVE_MODELS[dataset.key], run_id, run_dir, param_keys, horizon_hours, loop
+        )
 
     async def _download_bunzip(self, urls: list[str], dest: Path, loop) -> None:
         """Download one or more .bz2 GRIB files and write them, joined, to ``dest``."""

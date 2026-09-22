@@ -511,7 +511,13 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
         try:
             new_frames = await self.hass.async_add_executor_job(
-                self._decode_members, member_paths, run_dir, filename, parameters, horizon_hours
+                self._decode_members,
+                member_paths,
+                run_dir,
+                filename,
+                parameters,
+                horizon_hours,
+                dataset.crop,
             )
             if any(new_frames.values()):
                 self.frames = new_frames
@@ -555,6 +561,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         run_filename: str,
         parameters: list[GribParameter],
         horizon_hours: float,
+        crop: tuple[float, float, float, float] | None = None,
     ) -> dict[str, list[Frame]]:
         """Blocking: filter each member by horizon, decode+render every parameter it holds.
 
@@ -586,7 +593,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             for parameter in parameters:
                 try:
                     frame = self._process_parameter(
-                        parameter, member_path, run_dir, running_totals
+                        parameter, member_path, run_dir, running_totals, crop
                     )
                 except (grib_decode.GribDecodeError, OSError) as err:
                     _LOGGER.debug(
@@ -645,11 +652,12 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         grib_path: Path,
         run_dir: Path,
         running_totals: dict[str, tuple[datetime, np.ndarray]] | None = None,
+        crop: tuple[float, float, float, float] | None = None,
     ) -> Frame:
         """Decode one parameter, render the PNG, and (for wind) save velocity JSON."""
         wind_path: Path | None = None
         if parameter.kind == "vector":
-            vec = grib_decode.decode_vector_components(grib_path, parameter)
+            vec = grib_decode.decode_vector_components(grib_path, parameter, crop)
             magnitude = np.hypot(vec.u, vec.v) * parameter.scale + parameter.offset
             field = grib_decode.DecodedField(
                 parameter_key=parameter.key,
@@ -667,7 +675,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                 )
             )
         else:
-            field = grib_decode.decode_parameter(grib_path, parameter)
+            field = grib_decode.decode_parameter(grib_path, parameter, crop)
             if parameter.accumulated:
                 field = self._deaccumulate(
                     field, running_totals if running_totals is not None else {}

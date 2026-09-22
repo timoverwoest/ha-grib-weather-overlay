@@ -57,6 +57,14 @@ worden zonder de kaart of de rest van de backend te wijzigen):
   (SWAN) — dezelfde modellen die Rijkswaterstaat zelf gebruikt.
 - **De Noorse kant** (MET Norway): wind, neerslag, luchtdruk, golven en stroming
   tot in de Oslofjord.
+- **Ver vooruit kijken** (NOAA GFS en GFS-Wave, tot +384 uur): waar HARMONIE,
+  ICON-D2 en EWAM na twee of drie dagen ophouden, loopt GFS door tot zestien
+  dagen. Grof (0,25°), dus geen vervanging van de fijne modellen maar de
+  aanvulling erop — en dankzij server-side uitsnede kost een tijdstap maar
+  tientallen kilobytes.
+- **Golven voor de Atlantische aanloop** (DWD GWAM, tot +174 uur): dezelfde
+  velden als EWAM, maar wereldwijd en meer dan twee keer zo ver vooruit — voor
+  deining die nog dagen onderweg is.
 - **KNMI-weerkaart met fronten** als eigen card: analyses en verwachtingskaarten
   tot 48 uur vooruit.
 - **Per card kiezen welke datasets erin zitten** (`datasets` / `parameters` en
@@ -277,6 +285,75 @@ De integratie levert **drie** Lovelace-cards:
   hoge- en lagedrukgebieden en **fronten**: de laatste analyses en de
   verwachtingskaarten tot 48 uur vooruit.
 
+## Zo zien de cards eruit
+
+Vier voorbeelden, elk met precies de YAML die hem oplevert. Plak de YAML
+in een handmatige card en je krijgt wat eronder staat.
+
+### Wind als deeltjes, met isobaren en drukcentra
+
+```yaml
+type: custom:grib-overlay-card
+title: Wind en druk
+dataset: harmonie_arome_cy43_p1
+parameter: wind_10m
+render_mode: particles
+show_isobars: true
+wind_unit: kn
+center: [52.4, 4.3]
+zoom: 7
+```
+
+De overlay-card in zijn meest gebruikte vorm: windsnelheid als kleurenlaag, de
+deeltjes die met de wind meestromen, en de isobaren-laag eroverheen met **H**-
+en **L**-centra. Wind in knopen.
+
+### Golven, met richtingspijlen
+
+```yaml
+type: custom:grib-overlay-card
+title: Golven en deining
+parameters: [golven]
+parameter: wave_height
+render_mode: wavevectors
+center: [53.2, 3.6]
+zoom: 6
+```
+
+Dezelfde card, maar gefilterd op golfdata (`parameters: [golven]`) en in
+`wavevectors`-weergave: de pijlen wijzen de golfrichting aan die bij de gekozen
+hoogte hoort.
+
+### Modelvergelijking op een punt
+
+```yaml
+type: custom:grib-overlay-compare-card
+title: Modelvergelijking
+parameter: wind_10m
+meteogram_resolution: 3uur
+wind_unit: kn
+center: [52.4, 4.5]
+zoom: 8
+```
+
+Klik een punt op de mini-kaart en elke geconfigureerde bron komt als lijn in de
+grafiek en als rij in de tabel — hier drie modellen voor wind op 10 m, in
+kolommen van 3 uur.
+
+### De KNMI-weerkaart
+
+```yaml
+type: custom:grib-overlay-weathermap-card
+title: Weerkaart
+```
+
+Analyses en verwachtingskaarten tot 48 uur vooruit, met fronten, isobaren en
+drukgebieden — de kaart die het KNMI zelf publiceert.
+
+> De voorbeelden staan ook in `dev/shots.html`, dat ze één voor één op een
+> vaste breedte rendert tegen de mock-server (`?card=overlay`, `waves`,
+> `compare`, `weathermap`). Een test bewaakt dat die pagina en de YAML
+> hierboven niet uit elkaar lopen.
 ### Overlay-card (`grib-overlay-card`)
 
 Voeg een kaart van het type `custom:grib-overlay-card` toe, bijvoorbeeld via
@@ -561,6 +638,7 @@ hoofdlettergevoelig; gebruik ze exact zoals hieronder.
 | `dmi` | DMI Open Data | nee |
 | `rws` | Rijkswaterstaat (NOOS-Matroos) | nee |
 | `metno` | MET Norway | nee |
+| `noaa` | NOAA GFS (NOMADS) | nee |
 
 ### Datasets (`dataset`)
 
@@ -569,17 +647,21 @@ hoofdlettergevoelig; gebruik ze exact zoals hieronder.
 | `knmi` | `harmonie_arome_cy43_p1` | HARMONIE-AROME Cy43 — Nederland | regulier lat/lon | 60 u | 1 u |
 | `knmi` | `harmonie_arome_cy43_p3` | HARMONIE-AROME Cy43 — Europa (DINI) | rotated lat/lon | 60 u | 1 u |
 | `dwd` | `ewam` | DWD EWAM — Europese golven | regulier lat/lon | 78 u | 1 u |
+| `dwd` | `gwam` | DWD GWAM — wereldwijde golven (uitgesneden 30–72°N, 40°W–30°O) | regulier lat/lon, 0,25° | 174 u | 3 u |
 | `dwd` | `icon_d2` | DWD ICON-D2 — weermodel 2,2 km | regulier lat/lon | 48 u | 1 u |
 | `bsh` | `bsh_current_northsea` | BSH — Zeestroming Noordzee | regulier lat/lon | 48 u | 15 min |
 | `dmi` | `dmi_wam_nsb` | DMI WAM — golven Noordzee en Oostzee (47–66°N, 13°W–30°O, ~5 km) | regulier lat/lon | 132 u | 1 u |
 | `dmi` | `dmi_wam_natlant` | DMI WAM — golven Noord-Atlantisch (30–78°N, 69°W–30°O, 0,25°) | regulier lat/lon | 132 u | 1 u |
 | `dmi` | `dmi_dkss_nsbs` | DMI DKSS — stroming en waterstand (48,5–65,9°N, vanaf 4,1°W, ~5 km) | regulier lat/lon | 120 u | 1 u |
 | `rws` | `rws_dcsm` | RWS DCSM — stroming en waterstand (43–64°N, 12°W–13°O, 0,05°) | regulier lat/lon | 48 u | 1 u |
+| `rws` | `rws_dcsm_zuno` | RWS DCSM-ZUNO — stroming en waterstand Zuidelijke Noordzee (49,4–57°N, 3,4°W–9,6°O, 0,025°) | regulier lat/lon | 48 u | 1 u |
 | `rws` | `rws_swan_dcsm` | RWS SWAN — golven Noordzee en Kanaal (48–64°N, 12°W–9°O, 0,05°) | regulier lat/lon | 48 u | 1 u |
 | `rws` | `rws_swan_kuststrook` | RWS SWAN — golven Nederlandse kust (51–54,4°N, 0,02°) | regulier lat/lon | 48 u | 1 u |
 | `metno` | `metno_oslofjord` | MET Norway — Oslofjord (58,9–60,0°N, 9,8–11,2°O) | regulier lat/lon, 0,05° | 66–120 u | 1 u |
 | `metno` | `metno_skagerrak` | MET Norway — Skagerrak (57,7–59,4°N, 7,8–12,0°O) | regulier lat/lon, 0,05° | 66–120 u | 1 u |
 | `metno` | `metno_sorlandet` | MET Norway — Sørlandet (57,8–58,8°N, 7,0–9,4°O) | regulier lat/lon, 0,05° | 66–120 u | 1 u |
+| `noaa` | `gfs` | NOAA GFS — wereldmodel (uitgesneden 40–65°N, 25°W–15°O) | regulier lat/lon, 0,25° | 384 u | 1 u (≤120 u), daarna 3 u |
+| `noaa` | `gfs_wave` | NOAA GFS-Wave — wereldwijde golven (zelfde uitsnede) | regulier lat/lon, 0,25° | 384 u | 1 u (≤120 u), daarna 3 u |
 
 ### Parameters (`parameter` / `parameters`)
 
@@ -597,7 +679,7 @@ hoofdlettergevoelig; gebruik ze exact zoals hieronder.
 | `visibility` | Zicht | km | scalar |
 | `cloud_cover` | Bewolking | % | scalar |
 
-**DWD** (`ewam`):
+**DWD** (`ewam` en `gwam`, identiek):
 
 | `parameter` | Naam | Eenheid | Type |
 | --- | --- | --- | --- |
@@ -653,7 +735,7 @@ van een run (+0 u) bestaan die twee nog niet, dus die beelden ontbreken daar.
 | `water_level` | Waterstand | m | scalar |
 | `water_temperature` | Watertemperatuur | °C | scalar |
 
-**RWS** (`rws_dcsm`):
+**RWS** (`rws_dcsm` en `rws_dcsm_zuno`, identiek):
 
 | `parameter` | Naam | Eenheid | Type |
 | --- | --- | --- | --- |
@@ -679,6 +761,46 @@ van een run (+0 u) bestaan die twee nog niet, dus die beelden ontbreken daar.
 | `wave_direction` | Golfrichting (gemiddeld) | ° | scalar | WAVEWATCH III 4 km, ~72 u |
 | `current` | Zeestroming (3 m diep) | m/s | vector | NorKyst 800 m, ~120 u |
 
+**NOAA** (`gfs`) — dezelfde sleutels als KNMI en ICON-D2:
+
+| `parameter` | Naam | Eenheid | Type |
+| --- | --- | --- | --- |
+| `wind_10m` | Wind (10m) | m/s | vector |
+| `wind_gust_10m` | Windstoten (10m) | m/s | scalar (alleen snelheid) |
+| `temperature_2m` | Temperatuur (2m) | °C | scalar |
+| `dewpoint_2m` | Dauwpunt (2m) | °C | scalar |
+| `humidity_2m` | Relatieve luchtvochtigheid (2m) | % | scalar |
+| `precipitation` | Neerslag (intensiteit) | mm/u | scalar |
+| `pressure_msl` | Luchtdruk (zeeniveau) | hPa | scalar |
+| `visibility` | Zicht | km | scalar |
+| `cloud_cover` | Bewolking | % | scalar |
+| `cape` | CAPE (onweersenergie) | J/kg | scalar |
+
+Let op de neerslag: KNMI en ICON-D2 geven een **hoeveelheid per uur** (mm), GFS
+een **intensiteit op dat moment** (mm/u). GFS begint zijn neerslagtotaal elke
+zes uur opnieuw, dus totalen van elkaar aftrekken zou het uur op elke grens
+kwijtmaken; de momentane intensiteit heeft dat probleem niet. In de
+modelvergelijking staan ze dus naast elkaar maar zijn ze niet één op één
+hetzelfde getal.
+
+**NOAA** (`gfs_wave`) — dezelfde sleutels als EWAM en DMI:
+
+| `parameter` | Naam | Eenheid | Type |
+| --- | --- | --- | --- |
+| `wave_height` | Golfhoogte (significant) | m | scalar |
+| `wave_peak_period` | Golf: piekperiode | s | scalar |
+| `wave_direction` | Golfrichting (primaire golf) | ° | scalar |
+| `swell_height`, `swell_period`, `swell_direction` | Deining: hoogte, periode, richting | m, s, ° | scalar |
+| `wind_wave_height`, `wind_wave_period`, `wind_wave_direction` | Windgolven: hoogte, periode, richting | m, s, ° | scalar |
+| `wind_10m` | Wind (10m) | m/s | vector |
+
+GFS-Wave geeft periode en richting van de **dominante** golf, waar EWAM en DMI
+een gemiddelde over het hele spectrum geven; vandaar `wave_peak_period` in
+plaats van `wave_period`. Deining komt bij GFS-Wave in partities (gesorteerd op
+energie); de integratie toont de eerste, de dominante deiningstrein. De
+wind-parameter is de wind waarmee het golfmodel is aangedreven, zodat zeegang en
+wind erboven uit hetzelfde bestand komen.
+
 **BSH** (`bsh_current_northsea`):
 
 | `parameter` | Naam | Eenheid | Type |
@@ -697,7 +819,7 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 
 | Sleutel | Waarden |
 | --- | --- |
-| `source` | `knmi`, `dwd`, `bsh`, `dmi`, `rws` of `metno` |
+| `source` | `knmi`, `dwd`, `bsh`, `dmi`, `rws`, `metno` of `noaa` |
 | `api_key` | KNMI Open Data-sleutel (leeg laten voor DWD/BSH) |
 | `notification_api_key` | optioneel; **aparte** KNMI Notification Service-sleutel (leeg, of je Open Data-sleutel = alleen pollen) |
 | `dataset` | een dataset-sleutel uit de tabel hierboven |
@@ -1134,10 +1256,38 @@ Extra's:
   voorspellingshorizon niet hoger dan nodig.
 - De **ensemble**-variant `harmonie_arome_cy43_p4a` (EPS) wordt nog niet
   ondersteund; die vereist een keuze/aggregatie over de ensembleleden.
-- Van **DWD Open Data** worden het **EWAM golfmodel** en **ICON-D2** ondersteund.
-  Die gebruiken eenvoudige GRIB2-packing en zijn dus zonder binaire library te
-  lezen. ICON-EU, ECMWF en het kustgolfmodel CWAM niet: de eerste twee gebruiken
-  CCSDS/AEC-compressie (vereist zo'n library), en CWAM dekt alleen de Duitse Bocht.
+- Van **DWD Open Data** worden de golfmodellen **EWAM** en **GWAM** en het
+  weermodel **ICON-D2** ondersteund. Die gebruiken eenvoudige GRIB2-packing en
+  zijn dus zonder binaire library te lezen. ICON-EU en ECMWF niet: die gebruiken
+  CCSDS/AEC-compressie, waarvoor zo'n library wél nodig is. Het kustgolfmodel
+  CWAM is wel leesbaar maar begint pas op 6,2°O — oostelijk van Ameland — en
+  wordt daarom (nog) niet aangeboden.
+- **GWAM** staat op het hele wereldrooster (1440 × 699 punten). De integratie
+  snijdt bij het decoderen een vast gebied uit — **30–72°N, 40°W–30°O**, van de
+  breedte van de Canarische Eilanden tot ruim boven Noorwegen en van
+  mid-Atlantisch tot de Oostzee. Dat is geen bezuiniging: de wind- en
+  veld-endpoints dunnen een rooster uit tot een vast aantal punten per as, dus
+  een wereldveld zou boven de Noordzee veel grover aankomen dan het model is.
+  Het gebied staat vast en is niet in te stellen.
+- **NOAA GFS en GFS-Wave** lopen via NCEP's NOMADS-*filter*-dienst, niet via de
+  ruwe bestanden. Dat moet ook: de bestanden op NCEP's eigen servers gebruiken
+  complexe packing met spatial differencing (template 5.3), die de decoder hier
+  niet leest — de filterdienst herverpakt jouw selectie als eenvoudige packing.
+  Diezelfde dienst snijdt server-side een gebied uit, dus een tijdstap met álle
+  parameters is enkele honderden kilobytes in plaats van honderden megabytes.
+  Het gebied staat vast op **40–65°N, 25°W–15°O**. Per tijdstap gaat er één
+  verzoek naar NOMADS (alle ingeschakelde parameters tegelijk), met hoogstens
+  twee tegelijk: het is een gratis publieke dienst.
+- **GFS-runs** verschijnen tijdstap voor tijdstap, vanaf ongeveer 3 uur 20 na de
+  runtijd. De integratie pakt een run op zodra +24 uur online staat. Heb je een
+  langere horizon ingesteld en is die nog niet compleet, dan mislukt die ene
+  poging en probeert de volgende poll het opnieuw — je houdt ondertussen de
+  vorige run.
+- **DCSM-ZUNO** is hetzelfde Rijkswaterstaat-model als `rws_dcsm`, maar het
+  nest voor de Zuidelijke Noordzee: kleiner gebied, twee keer zo fijn gevraagd
+  (0,025° in plaats van 0,05°). Ongeveer 0,8 MB per uur, dus ~20 MB voor een run
+  van 24 uur. Draai je beide, dan vraag je hetzelfde model twee keer op —
+  meestal wil je alleen het nest.
 - **ICON-D2** is per parameter per uur een los bestand van ~1 MB. Met alle 10
   parameters en de standaardhorizon van 24 uur is een run dus ~250 MB download
   (48 uur: ~500 MB). Er komt elke 3 uur een nieuwe run, zo'n 80 minuten na de
@@ -1286,6 +1436,14 @@ changing the map card or the rest of the backend):
   — the models Rijkswaterstaat uses itself.
 - **The Norwegian end** (MET Norway): wind, precipitation, pressure, waves and
   currents, right into the Oslofjord.
+- **Looking far ahead** (NOAA GFS and GFS-Wave, to +384 hours): where HARMONIE,
+  ICON-D2 and EWAM stop after two or three days, GFS runs on to sixteen. It is
+  coarse (0.25°), so not a replacement for the fine-mesh models but the
+  complement to them — and thanks to a server-side cut-out a lead time costs
+  only tens of kilobytes.
+- **Waves for the Atlantic approaches** (DWD GWAM, to +174 hours): the same
+  fields as EWAM, but global and more than twice as far ahead — for swell that
+  is still days away.
 - **KNMI weather map with fronts** as its own card: analyses and forecast charts
   up to 48 hours ahead.
 - **Pick per card which datasets it holds** (`datasets` / `parameters` and their
@@ -1497,6 +1655,74 @@ The integration provides **three** Lovelace cards:
   isobars, high and low pressure centres and **fronts**: the latest analyses and
   the forecast charts up to 48 hours ahead.
 
+## What the cards look like
+
+Four examples, each with exactly the YAML that produces it. Paste the YAML
+into a manual card and you get what is described below it.
+
+### Wind as particles, with isobars and pressure centres
+
+```yaml
+type: custom:grib-overlay-card
+title: Wind en druk
+dataset: harmonie_arome_cy43_p1
+parameter: wind_10m
+render_mode: particles
+show_isobars: true
+wind_unit: kn
+center: [52.4, 4.3]
+zoom: 7
+```
+
+The overlay card in its most common form: wind speed as a colour layer,
+particles flowing with the wind, and the isobar layer on top with **H** and
+**L** centres. Wind in knots.
+
+### Waves, with direction arrows
+
+```yaml
+type: custom:grib-overlay-card
+title: Golven en deining
+parameters: [golven]
+parameter: wave_height
+render_mode: wavevectors
+center: [53.2, 3.6]
+zoom: 6
+```
+
+The same card, filtered to wave data (`parameters: [golven]`) and in
+`wavevectors` mode: the arrows point the wave direction that belongs to the
+chosen height.
+
+### Model comparison at a point
+
+```yaml
+type: custom:grib-overlay-compare-card
+title: Modelvergelijking
+parameter: wind_10m
+meteogram_resolution: 3uur
+wind_unit: kn
+center: [52.4, 4.5]
+zoom: 8
+```
+
+Click a point on the mini map and every configured source becomes a line in the
+chart and a row in the table — three models for 10 m wind here, in 3-hour
+columns.
+
+### The KNMI weather chart
+
+```yaml
+type: custom:grib-overlay-weathermap-card
+title: Weerkaart
+```
+
+Analyses and forecast charts up to 48 hours ahead, with fronts, isobars and
+pressure systems — the chart KNMI publishes itself.
+
+> The examples also live in `dev/shots.html`, which renders them one by one at
+> a fixed width against the mock server (`?card=overlay`, `waves`, `compare`,
+> `weathermap`). A test keeps that page and the YAML above from drifting apart.
 ### Overlay card (`grib-overlay-card`)
 
 Add a card of type `custom:grib-overlay-card`, for example via a dashboard's YAML
@@ -1781,6 +2007,7 @@ exactly as below.
 | `dmi` | DMI Open Data | no |
 | `rws` | Rijkswaterstaat (NOOS-Matroos) | no |
 | `metno` | MET Norway | no |
+| `noaa` | NOAA GFS (NOMADS) | no |
 
 ### Datasets (`dataset`)
 
@@ -1789,17 +2016,21 @@ exactly as below.
 | `knmi` | `harmonie_arome_cy43_p1` | HARMONIE-AROME Cy43 — Netherlands | regular lat/lon | 60 h | 1 h |
 | `knmi` | `harmonie_arome_cy43_p3` | HARMONIE-AROME Cy43 — Europe (DINI) | rotated lat/lon | 60 h | 1 h |
 | `dwd` | `ewam` | DWD EWAM — European waves | regular lat/lon | 78 h | 1 h |
+| `dwd` | `gwam` | DWD GWAM — global waves (cut to 30–72°N, 40°W–30°E) | regular lat/lon, 0.25° | 174 h | 3 h |
 | `dwd` | `icon_d2` | DWD ICON-D2 — weather model 2.2 km | regular lat/lon | 48 h | 1 h |
 | `bsh` | `bsh_current_northsea` | BSH — North Sea current | regular lat/lon | 48 h | 15 min |
 | `dmi` | `dmi_wam_nsb` | DMI WAM — waves North Sea and Baltic (47–66°N, 13°W–30°E, ~5 km) | regular lat/lon | 132 h | 1 h |
 | `dmi` | `dmi_wam_natlant` | DMI WAM — waves North Atlantic (30–78°N, 69°W–30°E, 0.25°) | regular lat/lon | 132 h | 1 h |
 | `dmi` | `dmi_dkss_nsbs` | DMI DKSS — currents and water level (48.5–65.9°N, from 4.1°W, ~5 km) | regular lat/lon | 120 h | 1 h |
 | `rws` | `rws_dcsm` | RWS DCSM — currents and water level (43–64°N, 12°W–13°E, 0.05°) | regular lat/lon | 48 h | 1 h |
+| `rws` | `rws_dcsm_zuno` | RWS DCSM-ZUNO — currents and water level southern North Sea (49.4–57°N, 3.4°W–9.6°E, 0.025°) | regular lat/lon | 48 h | 1 h |
 | `rws` | `rws_swan_dcsm` | RWS SWAN — waves North Sea and Channel (48–64°N, 12°W–9°E, 0.05°) | regular lat/lon | 48 h | 1 h |
 | `rws` | `rws_swan_kuststrook` | RWS SWAN — waves Dutch coast (51–54.4°N, 0.02°) | regular lat/lon | 48 h | 1 h |
 | `metno` | `metno_oslofjord` | MET Norway — Oslofjord (58.9–60.0°N, 9.8–11.2°E) | regular lat/lon, 0.05° | 66–120 h | 1 h |
 | `metno` | `metno_skagerrak` | MET Norway — Skagerrak (57.7–59.4°N, 7.8–12.0°E) | regular lat/lon, 0.05° | 66–120 h | 1 h |
 | `metno` | `metno_sorlandet` | MET Norway — Sørlandet (57.8–58.8°N, 7.0–9.4°E) | regular lat/lon, 0.05° | 66–120 h | 1 h |
+| `noaa` | `gfs` | NOAA GFS — global model (cut to 40–65°N, 25°W–15°E) | regular lat/lon, 0.25° | 384 h | 1 h (≤120 h), 3 h after |
+| `noaa` | `gfs_wave` | NOAA GFS-Wave — global waves (same window) | regular lat/lon, 0.25° | 384 h | 1 h (≤120 h), 3 h after |
 
 ### Parameters (`parameter` / `parameters`)
 
@@ -1817,7 +2048,7 @@ exactly as below.
 | `visibility` | Visibility | km | scalar |
 | `cloud_cover` | Cloud cover | % | scalar |
 
-**DWD** (`ewam`):
+**DWD** (`ewam` and `gwam`, identical):
 
 | `parameter` | Name | Unit | Type |
 | --- | --- | --- | --- |
@@ -1873,7 +2104,7 @@ maximum of the past hour, without a direction of their own. At a run's start tim
 | `water_level` | Water level | m | scalar |
 | `water_temperature` | Water temperature | °C | scalar |
 
-**RWS** (`rws_dcsm`):
+**RWS** (`rws_dcsm` and `rws_dcsm_zuno`, identical):
 
 | `parameter` | Name | Unit | Type |
 | --- | --- | --- | --- |
@@ -1899,6 +2130,45 @@ maximum of the past hour, without a direction of their own. At a run's start tim
 | `wave_direction` | Wave direction (mean) | ° | scalar | WAVEWATCH III 4 km, ~72 h |
 | `current` | Sea current (3 m deep) | m/s | vector | NorKyst 800 m, ~120 h |
 
+**NOAA** (`gfs`) — the same keys as KNMI and ICON-D2:
+
+| `parameter` | Name | Unit | Type |
+| --- | --- | --- | --- |
+| `wind_10m` | Wind (10m) | m/s | vector |
+| `wind_gust_10m` | Gusts (10m) | m/s | scalar (speed only) |
+| `temperature_2m` | Temperature (2m) | °C | scalar |
+| `dewpoint_2m` | Dew point (2m) | °C | scalar |
+| `humidity_2m` | Relative humidity (2m) | % | scalar |
+| `precipitation` | Precipitation (rate) | mm/h | scalar |
+| `pressure_msl` | Pressure (mean sea level) | hPa | scalar |
+| `visibility` | Visibility | km | scalar |
+| `cloud_cover` | Cloud cover | % | scalar |
+| `cape` | CAPE (thunderstorm energy) | J/kg | scalar |
+
+Mind the precipitation: KNMI and ICON-D2 give an **amount per hour** (mm), GFS
+the **rate at that moment** (mm/h). GFS restarts its precipitation total every
+six hours, so subtracting consecutive totals would lose the hour straddling each
+restart; the instantaneous rate does not have that problem. In the comparison
+they sit side by side but are not the same number.
+
+**NOAA** (`gfs_wave`) — the same keys as EWAM and DMI:
+
+| `parameter` | Name | Unit | Type |
+| --- | --- | --- | --- |
+| `wave_height` | Wave height (significant) | m | scalar |
+| `wave_peak_period` | Waves: peak period | s | scalar |
+| `wave_direction` | Wave direction (dominant wave) | ° | scalar |
+| `swell_height`, `swell_period`, `swell_direction` | Swell: height, period, direction | m, s, ° | scalar |
+| `wind_wave_height`, `wind_wave_period`, `wind_wave_direction` | Wind waves: height, period, direction | m, s, ° | scalar |
+| `wind_10m` | Wind (10m) | m/s | vector |
+
+GFS-Wave publishes the period and direction of the **dominant** wave, where EWAM
+and DMI give a mean over the whole spectrum; hence `wave_peak_period` rather
+than `wave_period`. Swell arrives in partitions (ordered by energy); the
+integration shows the first, the dominant swell train. The wind parameter is the
+wind the wave model was driven with, so sea state and the wind over it come from
+the same file.
+
 **BSH** (`bsh_current_northsea`):
 
 | `parameter` | Name | Unit | Type |
@@ -1917,7 +2187,7 @@ include `swell_direction` too, or the swell rows have no arrows.
 
 | Key | Values |
 | --- | --- |
-| `source` | `knmi`, `dwd`, `bsh`, `dmi`, `rws` or `metno` |
+| `source` | `knmi`, `dwd`, `bsh`, `dmi`, `rws`, `metno` or `noaa` |
 | `api_key` | KNMI Open Data key (leave empty for DWD/BSH) |
 | `notification_api_key` | optional; **separate** KNMI Notification Service key (empty, or your Open Data key = polling only) |
 | `dataset` | a dataset key from the table above |
@@ -2346,11 +2616,37 @@ Also:
   the Netherlands — do not set the forecast horizon higher than needed.
 - The **ensemble** variant `harmonie_arome_cy43_p4a` (EPS) is not supported yet;
   that requires a choice/aggregation over the ensemble members.
-- From **DWD Open Data** the **EWAM wave model** and **ICON-D2** are supported.
-  They use simple GRIB2 packing and are therefore readable without a binary
-  library. ICON-EU, ECMWF and the coastal wave model CWAM are not: the first two
-  use CCSDS/AEC compression (which needs such a library), and CWAM only covers the
-  German Bight.
+- From **DWD Open Data** the wave models **EWAM** and **GWAM** and the weather
+  model **ICON-D2** are supported. They use simple GRIB2 packing and are
+  therefore readable without a binary library. ICON-EU and ECMWF are not: they
+  use CCSDS/AEC compression, which does need such a library. The coastal wave
+  model CWAM is readable but starts only at 6.2°E — east of Ameland — and is
+  therefore not offered (yet).
+- **GWAM** is published on the whole global grid (1440 × 699 points). The
+  integration cuts a fixed window out of it while decoding — **30–72°N,
+  40°W–30°E**, from the latitude of the Canaries to well north of Norway and
+  from mid-Atlantic to the Baltic. That is not a saving: the wind and field
+  endpoints thin a grid down to a fixed number of points per axis, so a world
+  field would arrive over the North Sea far coarser than the model is. The
+  window is fixed and not configurable.
+- **NOAA GFS and GFS-Wave** go through NCEP's NOMADS *filter* service, not
+  through the raw files. That is a requirement, not an optimisation: the files
+  on NCEP's own servers use complex packing with spatial differencing (template
+  5.3), which the decoder here does not read — the filter service re-packs your
+  selection with simple packing. The same service cuts out a window server-side,
+  so one lead time with *every* parameter is a few hundred kilobytes instead of
+  hundreds of megabytes. The window is fixed at **40–65°N, 25°W–15°E**. One
+  request per lead time goes to NOMADS (all enabled parameters at once), at most
+  two at a time: it is a free public service.
+- **GFS runs** appear lead time by lead time, starting about 3 h 20 min after
+  the run time. The integration picks a run up once +24 hours is online. With a
+  longer horizon configured that is not complete yet, that one attempt fails and
+  the next poll tries again — you keep the previous run in the meantime.
+- **DCSM-ZUNO** is the same Rijkswaterstaat model as `rws_dcsm`, but the nest
+  for the southern North Sea: a smaller area, asked for twice as finely (0.025°
+  instead of 0.05°). About 0.8 MB per hour, so ~20 MB for a 24-hour run. Running
+  both means asking the same model for the same water twice — usually you only
+  want the nest.
 - **ICON-D2** is a separate file of ~1 MB per parameter per hour. With all 10
   parameters and the default 24-hour horizon a run is therefore a ~250 MB download
   (48 hours: ~500 MB). A new run appears every 3 hours, about 80 minutes after

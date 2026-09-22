@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>grib-overlay-card screenshots</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* The shot is exactly this box: set the browser window to it and capture, or
+     point a headless browser at this page with --window-size=900,<height>. */
+  #shot { width: 900px; margin: 0; padding: 0; }
+  #shot > * { display: block; }
+  #missing { padding: 24px; color: #b00; font: 14px/1.5 monospace; }
+</style>
+</head>
+<body>
+<div id="shot"></div>
+<div id="missing" hidden></div>
+<script src="/grib_overlay_static/grib-overlay-card.js?v=dev"></script>
+<script>
+  // The examples the README shows, as the YAML the README prints. Keeping the
+  // YAML here rather than a config object is what lets a test check that the
+  // two have not drifted apart (tests/test_frontend_assets.py).
+  const SHOTS = {
+    overlay: `type: custom:grib-overlay-card
+title: Wind en druk
+dataset: harmonie_arome_cy43_p1
+parameter: wind_10m
+render_mode: particles
+show_isobars: true
+wind_unit: kn
+center: [52.4, 4.3]
+zoom: 7`,
+    waves: `type: custom:grib-overlay-card
+title: Golven en deining
+parameters: [golven]
+parameter: wave_height
+render_mode: wavevectors
+center: [53.2, 3.6]
+zoom: 6`,
+    compare: `type: custom:grib-overlay-compare-card
+title: Modelvergelijking
+parameter: wind_10m
+meteogram_resolution: 3uur
+wind_unit: kn
+center: [52.4, 4.5]
+zoom: 8`,
+    weathermap: `type: custom:grib-overlay-weathermap-card
+title: Weerkaart`,
+  };
+
+  // Enough YAML for the flat configs above: `key: value`, `key: [a, b]`, and
+  // the scalars true/false/number/string. Nothing here needs more.
+  function parseYaml(text) {
+    const scalar = (raw) => {
+      const v = raw.trim().replace(/^["']|["']$/g, "");
+      if (v === "true" || v === "false") return v === "true";
+      return v !== "" && !Number.isNaN(Number(v)) ? Number(v) : v;
+    };
+    const config = {};
+    for (const line of text.split("\n")) {
+      const m = /^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/.exec(line.trim());
+      if (!m) continue;
+      const [, key, raw] = m;
+      config[key] = raw.startsWith("[")
+        ? raw.slice(1, raw.lastIndexOf("]")).split(",").filter((s) => s.trim()).map(scalar)
+        : scalar(raw);
+    }
+    return config;
+  }
+
+  const name = new URLSearchParams(location.search).get("card") || "overlay";
+  const yaml = SHOTS[name];
+  if (!yaml) {
+    const missing = document.getElementById("missing");
+    missing.hidden = false;
+    missing.textContent = `No such shot: ${name}. Try ?card=${Object.keys(SHOTS).join(" / ?card=")}`;
+  } else {
+    const config = parseYaml(yaml);
+    const hass = {
+      locale: { language: new URLSearchParams(location.search).get("lang") || "nl" },
+      language: new URLSearchParams(location.search).get("lang") || "nl",
+      callWS: async (msg) => {
+        throw { code: "unknown_command", message: `Unknown command ${msg.type}` };
+      },
+      hassUrl: (path = "") => new URL(path, location.origin).toString(),
+      callApi: async (method, path, body) => {
+        const resp = await fetch("/api/" + path, {
+          method,
+          headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+        if (!resp.ok) throw new Error(`${method} /api/${path} -> ${resp.status}`);
+        return resp.json();
+      },
+    };
+    document.documentElement.lang = hass.language;
+    const element = document.createElement(config.type.replace(/^custom:/, ""));
+    element.setConfig(config);
+    element.hass = hass;
+    document.getElementById("shot").appendChild(element);
+  }
+</script>
+</body>
+</html>

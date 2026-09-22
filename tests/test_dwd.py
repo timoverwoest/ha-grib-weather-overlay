@@ -13,8 +13,11 @@ import pytest
 
 from custom_components.grib_overlay.sources.base import GribSourceError
 from custom_components.grib_overlay.sources.dwd import (
-    _BASE,
-    _EWAM_DIR,
+    _EWAM_BASE,
+    _GWAM_BASE,
+    _GWAM_WINDOW,
+    _WAVE_DIR,
+    _WAVE_MODELS,
     _ICON_D2_BASE,
     _ICON_D2_DIRS,
     _ICON_D2_RUN_HOURS,
@@ -23,6 +26,7 @@ from custom_components.grib_overlay.sources.dwd import (
 )
 
 EWAM = next(d for d in KNOWN_DATASETS if d.key == "ewam")
+GWAM = next(d for d in KNOWN_DATASETS if d.key == "gwam")
 ICON_D2 = next(d for d in KNOWN_DATASETS if d.key == "icon_d2")
 
 
@@ -60,8 +64,8 @@ def _listing(run: str, steps: range) -> str:
 @pytest.mark.asyncio
 async def test_lists_latest_run() -> None:
     pages = {
-        f"{_BASE}/00/swh/": _listing("2026072300", range(0, 79)),
-        f"{_BASE}/12/swh/": _listing("2026072312", range(0, 79)),
+        f"{_EWAM_BASE}/00/swh/": _listing("2026072300", range(0, 79)),
+        f"{_EWAM_BASE}/12/swh/": _listing("2026072312", range(0, 79)),
     }
     src = DwdSource(_FakeSession(pages))
     files = await src.async_list_files(EWAM)
@@ -77,8 +81,8 @@ async def test_a_run_still_being_published_is_not_listed() -> None:
     start used to take the run with a single file -- and, since a run is
     processed once, keep that one frame for 12 hours."""
     pages = {
-        f"{_BASE}/00/swh/": _listing("2026091600", range(0, 1)),  # just started
-        f"{_BASE}/12/swh/": _listing("2026091512", range(0, 79)),  # yesterday, complete
+        f"{_EWAM_BASE}/00/swh/": _listing("2026091600", range(0, 1)),  # just started
+        f"{_EWAM_BASE}/12/swh/": _listing("2026091512", range(0, 79)),  # yesterday, complete
     }
     src = DwdSource(_FakeSession(pages))
     files = await src.async_list_files(EWAM)
@@ -89,13 +93,13 @@ async def test_a_run_still_being_published_is_not_listed() -> None:
 async def test_ewam_refuses_a_run_with_a_parameter_still_missing(monkeypatch, tmp_path) -> None:
     run = "2026091600"
     pages = {
-        f"{_BASE}/00/swh/": _listing(run, range(0, 79)),
-        f"{_BASE}/12/swh/": "",
+        f"{_EWAM_BASE}/00/swh/": _listing(run, range(0, 79)),
+        f"{_EWAM_BASE}/12/swh/": "",
         # mwd trails swh by a few seconds per lead time.
-        f"{_BASE}/00/mwd/": "".join(
+        f"{_EWAM_BASE}/00/mwd/": "".join(
             f'<a href="EWAM_MWD_{run}_{s:03d}.grib2.bz2">x</a>' for s in range(0, 40)
         ),
-        f"{_BASE}/12/mwd/": "",
+        f"{_EWAM_BASE}/12/mwd/": "",
     }
     src = DwdSource(_FakeSession(pages))
     fetched: list = []
@@ -115,8 +119,8 @@ async def test_ewam_refuses_a_run_with_a_parameter_still_missing(monkeypatch, tm
 async def test_horizon_limits_downloaded_steps(monkeypatch, tmp_path) -> None:
     run = "2026072312"
     pages = {
-        f"{_BASE}/12/swh/": _listing(run, range(0, 6)),
-        f"{_BASE}/00/swh/": "",
+        f"{_EWAM_BASE}/12/swh/": _listing(run, range(0, 6)),
+        f"{_EWAM_BASE}/00/swh/": "",
     }
     src = DwdSource(_FakeSession(pages))
 
@@ -137,7 +141,7 @@ async def test_horizon_limits_downloaded_steps(monkeypatch, tmp_path) -> None:
 
 def test_every_parameter_has_a_server_directory() -> None:
     """A parameter without a directory would silently never be downloaded."""
-    assert {p.key for p in EWAM.parameters} == set(_EWAM_DIR)
+    assert {p.key for p in EWAM.parameters} == set(_WAVE_DIR)
     assert {p.key for p in ICON_D2.parameters} == set(_ICON_D2_DIRS)
 
 
@@ -145,10 +149,10 @@ def test_every_parameter_has_a_server_directory() -> None:
 async def test_swell_comes_from_its_own_directory(monkeypatch, tmp_path) -> None:
     run = "2026091612"
     pages = {
-        f"{_BASE}/12/shts/": "".join(
+        f"{_EWAM_BASE}/12/shts/": "".join(
             f'<a href="EWAM_SHTS_{run}_{s:03d}.grib2.bz2">x</a>' for s in range(3)
         ),
-        f"{_BASE}/00/shts/": "",
+        f"{_EWAM_BASE}/00/shts/": "",
     }
     src = DwdSource(_FakeSession(pages))
     urls: list[str] = []
@@ -159,7 +163,7 @@ async def test_swell_comes_from_its_own_directory(monkeypatch, tmp_path) -> None
 
     monkeypatch.setattr(src, "_download_bunzip", _fake_dl)
     await src.async_download_run(EWAM, run, tmp_path, ["swell_height"], horizon_hours=2)
-    assert urls == [f"{_BASE}/12/shts/EWAM_SHTS_{run}_{s:03d}.grib2.bz2" for s in range(3)]
+    assert urls == [f"{_EWAM_BASE}/12/shts/EWAM_SHTS_{run}_{s:03d}.grib2.bz2" for s in range(3)]
 
 
 def _d2_name(run: str, step: int, dwd_dir: str) -> str:
@@ -241,3 +245,63 @@ async def test_icon_d2_refuses_a_run_that_is_still_publishing(monkeypatch, tmp_p
             ICON_D2, run, tmp_path, ["temperature_2m", "humidity_2m"], horizon_hours=24
         )
     assert fetched == []  # nothing downloaded before the run is complete
+
+
+def _gwam_listing(run: str, steps: range) -> str:
+    return "".join(
+        f'<a href="GWAM_SWH_{run}_{s:03d}.grib2.bz2">x</a>' for s in steps
+    )
+
+
+def test_gwam_steps_are_three_hourly_up_to_its_own_horizon() -> None:
+    """EWAM publishes every hour to +78, GWAM every third hour to +174."""
+    assert _WAVE_MODELS["ewam"].steps_within(4) == [0, 1, 2, 3, 4]
+    assert _WAVE_MODELS["gwam"].steps_within(10) == [0, 3, 6, 9]
+    assert _WAVE_MODELS["gwam"].steps_within(1000)[-1] == 174
+
+
+def test_gwam_is_cropped_and_ewam_is_not() -> None:
+    """GWAM comes off the server global; without a window every frame would be
+    a world map, thinned down to a handful of points over the North Sea."""
+    assert GWAM.crop == _GWAM_WINDOW
+    assert GWAM.bounds == _GWAM_WINDOW
+    assert EWAM.crop is None
+
+
+def test_the_two_wave_models_offer_the_same_parameters() -> None:
+    """They share a parameter set, so the comparison view lines them up."""
+    assert [p.key for p in GWAM.parameters] == [p.key for p in EWAM.parameters]
+
+
+@pytest.mark.asyncio
+async def test_gwam_run_discovery_reads_its_own_file_prefix() -> None:
+    """The listing regex is per model: EWAM_ files must not count as GWAM runs."""
+    pages = {
+        f"{_GWAM_BASE}/00/swh/": _gwam_listing("2026092100", range(0, 175, 3)),
+        f"{_GWAM_BASE}/12/swh/": _listing("2026092112", range(0, 175, 3)),  # EWAM_ names
+    }
+    src = DwdSource(_FakeSession(pages))
+    files = await src.async_list_files(GWAM)
+    assert [f.filename for f in files] == ["2026092100"]
+
+
+@pytest.mark.asyncio
+async def test_gwam_downloads_three_hourly_steps_from_its_own_directory(
+    monkeypatch, tmp_path
+) -> None:
+    run = "2026092100"
+    pages = {
+        f"{_GWAM_BASE}/00/swh/": _gwam_listing(run, range(0, 175, 3)),
+        f"{_GWAM_BASE}/12/swh/": "",
+    }
+    src = DwdSource(_FakeSession(pages))
+    grabbed: list[tuple[int, str]] = []
+
+    async def _fake_dl(urls, dest, loop):
+        grabbed.append((int(dest.stem.rsplit("_", 1)[1]), urls[0]))
+        dest.write_bytes(b"x")
+
+    monkeypatch.setattr(src, "_download_bunzip", _fake_dl)
+    await src.async_download_run(GWAM, run, tmp_path, ["wave_height"], horizon_hours=9)
+    assert sorted(step for step, _ in grabbed) == [0, 3, 6, 9]
+    assert all(url.startswith(f"{_GWAM_BASE}/00/{_WAVE_DIR['wave_height']}/") for _, url in grabbed)

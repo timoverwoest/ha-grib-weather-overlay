@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import gzip
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -417,3 +418,28 @@ def test_leaflet_may_not_pin_the_map_to_no_height() -> None:
         for block in JS.split(method)[1:]:
             assert "gribFixMapPosition(this._els.mapDiv)" in block.split("\n  }\n", 1)[0]
     assert JS.count("gribFixMapPosition") >= 8  # both resize observers and both retry loops
+
+
+SHOTS_HTML = Path("dev/shots.html").read_text(encoding="utf-8")
+README = Path("README.md").read_text(encoding="utf-8")
+
+
+def _shot_examples() -> dict[str, str]:
+    """The YAML examples dev/shots.html renders, keyed by their ?card= name."""
+    return dict(re.findall(r"^    (\w+): `(.*?)`,$", SHOTS_HTML, re.S | re.M))
+
+
+def test_the_readme_shows_the_yaml_the_screenshot_page_renders() -> None:
+    """The README's examples are what dev/shots.html puts on screen, so a
+    screenshot taken from that page cannot show a card the YAML would not."""
+    examples = _shot_examples()
+    assert set(examples) == {"overlay", "waves", "compare", "weathermap"}
+    for name, yaml in examples.items():
+        # Both languages print the same YAML block, hence twice.
+        assert README.count(f"```yaml\n{yaml}\n```") == 2, name
+
+
+def test_every_screenshot_example_names_a_real_card() -> None:
+    for name, yaml in _shot_examples().items():
+        (card_type,) = re.findall(r"^type: custom:(\S+)$", yaml, re.M)
+        assert f'customElements.define("{card_type}"' in JS or f'"{card_type}"' in JS, name

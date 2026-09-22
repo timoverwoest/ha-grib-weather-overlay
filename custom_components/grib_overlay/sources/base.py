@@ -76,6 +76,10 @@ class GribDatasetInfo:
     output_frequency_hours: float
     forecast_horizon_hours: float
     parameters: tuple[GribParameter, ...]
+    # Window (south, west, north, east) to cut out of each decoded field, for a
+    # provider that only publishes a grid far larger than the dataset is meant
+    # to cover (DWD's GWAM is global). None keeps the grid as published.
+    crop: tuple[float, float, float, float] | None = None
 
 
 @dataclass(frozen=True)

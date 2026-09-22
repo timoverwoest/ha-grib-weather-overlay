@@ -164,6 +164,7 @@ async def test_run_archive_is_downloaded_into_the_scratch_dir(hass, tmp_path) ->
     dataset = SimpleNamespace(
         key=entry.data[CONF_DATASET],
         parameters=[SimpleNamespace(key="wind_10m")],
+        crop=None,
     )
     await coordinator._process_new_run(dataset, "HARM43_V1_P1_2026090219.tar")
 
@@ -195,6 +196,7 @@ async def test_scratch_dir_is_cleaned_up_even_when_decoding_fails(hass, tmp_path
     dataset = SimpleNamespace(
         key=entry.data[CONF_DATASET],
         parameters=[SimpleNamespace(key="wind_10m")],
+        crop=None,
     )
     with pytest.raises(OSError):
         await coordinator._process_new_run(dataset, "run-A.tar")

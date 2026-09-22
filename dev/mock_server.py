@@ -385,6 +385,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/dev.html":
             self._file(DEV_DIR / "dev.html", "text/html")
+        elif parsed.path == "/shots.html":
+            self._file(DEV_DIR / "shots.html", "text/html")
         elif parsed.path == "/module.html":
             # The card as Home Assistant loads it: an ES module, with the
             # version in the query. Nothing else, so the console banner and the
