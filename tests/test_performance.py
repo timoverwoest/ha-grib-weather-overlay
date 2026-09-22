@@ -167,3 +167,33 @@ def test_the_cards_on_a_page_share_one_list_of_sources() -> None:
     assert "(data.entries || []).slice()" in body  # a card may sort and filter its own copy
     assert JS.count('callApi("GET", "grib_overlay/entries")') == 1
     assert JS.count("gribFetchEntries(this._hass)") == 2
+
+
+def test_the_lists_are_compressed_too() -> None:
+    """A frame list for one entry is 49 kB of timestamps and urls, built in
+    memory so there is no file to keep a compressed copy beside."""
+    from custom_components.grib_overlay.http import _COMPRESS_FROM_BYTES, _json
+
+    class _Request:
+        def __init__(self, accept): self.headers = {"Accept-Encoding": accept}
+
+    big = {"frames": [{"valid_time": f"2026-09-22T{h:02d}:00:00+00:00", "url": "/api/x" * 20} for h in range(24)] * 12}
+    compressed = _json(_Request("gzip, deflate"), big)
+    assert compressed.headers["Content-Encoding"] == "gzip"
+    assert len(gzip.decompress(compressed.body)) > 3 * len(compressed.body)
+    # Below a few kB the header costs more than the saving.
+    small = _json(_Request("gzip"), {"error": "unknown entry_id"})
+    assert "Content-Encoding" not in small.headers
+    assert json.loads(small.body) == {"error": "unknown entry_id"}
+    # And a caller that cannot take it gets plain JSON whatever the size.
+    plain = _json(_Request(""), big)
+    assert "Content-Encoding" not in plain.headers
+    assert len(plain.body) >= _COMPRESS_FROM_BYTES
+
+
+def test_the_next_frame_is_only_fetched_when_it_will_be_wanted() -> None:
+    """These images are well over a hundred kilobytes. Prefetching the next one
+    on a page that is only being looked at doubled what the card downloaded."""
+    body = JS.split("  _showFrame(index) {", 1)[1].split("\n  }\n", 1)[0]
+    assert "if (this._playTimer || this._steppedThroughTime) {" in body
+    assert JS.count("this._steppedThroughTime = true;") == 2  # both sliders

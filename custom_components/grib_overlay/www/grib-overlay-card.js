@@ -2828,13 +2828,17 @@ class GribOverlayCard extends HTMLElement {
     this._els.paramSelect.addEventListener("change", () => this._onParameterChange());
     this._els.modeSingleBtn.addEventListener("click", () => this._setMode("single"));
     this._els.modeAnimateBtn.addEventListener("click", () => this._setMode("animate"));
-    this._els.timeSlider.addEventListener("input", () => this._showFrame(Number(this._els.timeSlider.value)));
+    this._els.timeSlider.addEventListener("input", () => {
+      this._steppedThroughTime = true; // from here on, the next frame is worth having ready
+      this._showFrame(Number(this._els.timeSlider.value));
+    });
     this._els.playPauseBtn.addEventListener("click", () => this._togglePlayback());
     this._els.startSelect.addEventListener("change", () => this._clampAnimationRange());
     this._els.endSelect.addEventListener("change", () => this._clampAnimationRange());
     // Scrubbing the animation progress bar pauses playback and jumps to that frame.
     this._els.progressSlider.addEventListener("input", () => {
       this._stopPlayback();
+      this._steppedThroughTime = true;
       this._showFrame(Number(this._els.progressSlider.value));
     });
     // Speed changes take effect immediately while playing.
@@ -3186,11 +3190,16 @@ class GribOverlayCard extends HTMLElement {
     this._updateLegend();
     this._loadReadoutSource(frame);
 
-    // Prefetch the next frame's image so animation playback doesn't flicker.
-    const next = this._frames[index + 1];
-    if (next) {
-      const img = new Image();
-      img.src = next.image_url;
+    // Prefetch the next frame's image so animation playback doesn't flicker --
+    // but only once there is reason to think it will be wanted. These images
+    // are well over a hundred kilobytes; on a dashboard page that is only being
+    // looked at, this was a second one that nobody ever saw.
+    if (this._playTimer || this._steppedThroughTime) {
+      const next = this._frames[index + 1];
+      if (next) {
+        const img = new Image();
+        img.src = next.image_url;
+      }
     }
   }
 

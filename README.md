@@ -862,6 +862,14 @@ bronnen.
   en dat is ongeveer **vier keer** zo klein gezipt. De gezipte kopie wordt de
   eerste keer dat een frame wordt opgevraagd naast het bestand gelegd en gaat
   weg met de run waar hij bij hoort, dus er is geen rekenwerk per verzoek.
+- **Ook de lijsten gaan gecomprimeerd.** De frame-lijst van één bron is 49 kB
+  aan tijdstempels en urls; die wordt in het geheugen gemaakt, dus daar ligt
+  geen gezipte kopie naast — hij wordt op de uitgang gezipt. Korte antwoorden
+  blijven ongemoeid: onder een paar kB kost de kop meer dan hij bespaart.
+- **Het volgende frame wordt pas vooruit geladen als je het nodig hebt.** Tijdens
+  het afspelen, en zodra je zelf door de tijd geschoven hebt. Op een pagina waar
+  alleen naar gekeken wordt, scheelt dat een tweede kaartafbeelding van ruim
+  100 kB die niemand ooit ziet.
 - **Een kaartpagina haalt niets dubbel op.** De caches in de card bewaren het
   *verzoek*, niet het antwoord; twee delen van de card die tegelijk om
   hetzelfde frame vragen, wachten nu op dezelfde ophaalactie. En alle cards op
@@ -2074,6 +2082,14 @@ sources.
   about **four times** smaller gzipped. The compressed copy is written beside
   the file the first time a frame is asked for and goes away with the run it
   belongs to, so there is no work per request.
+- **The lists travel compressed too.** One source's frame list is 49 kB of
+  timestamps and urls; it is built in memory, so there is no compressed copy
+  beside it — it is gzipped on the way out. Short answers are left alone: below
+  a few kB the header costs more than it saves.
+- **The next frame is only fetched ahead when you will want it** — while the
+  animation is playing, and from the moment you move through time yourself. On
+  a page that is only being looked at, that saves a second map image of well
+  over 100 kB that nobody ever sees.
 - **A dashboard page fetches nothing twice.** The card's caches hold the
   *request*, not the answer, so two parts of the card asking for the same frame
   at the same moment now wait on one fetch. And every card on a page shares one

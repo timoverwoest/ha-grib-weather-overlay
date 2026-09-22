@@ -121,6 +121,27 @@ def _wind_direction(wind, lat: float, lon: float) -> float | None:
     return round((270.0 - math.degrees(math.atan2(v, u))) % 360.0, 0)
 
 
+# The lists are built in memory, so there is no file to keep a compressed copy
+# beside: gzip them on the way out instead. A frame list for one entry is 49 kB
+# of timestamps and urls, measured on a real instance, and about a seventh of
+# that compressed. Small answers are left alone -- below a few kB the header
+# costs more than the saving.
+_COMPRESS_FROM_BYTES = 4096
+
+
+def _json(request: web.Request, payload, status: int = 200) -> web.Response:
+    """A JSON response, gzipped when it is worth it and the caller takes it."""
+    body = json.dumps(payload).encode()
+    if len(body) >= _COMPRESS_FROM_BYTES and "gzip" in (request.headers.get("Accept-Encoding") or ""):
+        return web.Response(
+            body=gzip.compress(body, 6),
+            status=status,
+            content_type="application/json",
+            headers={"Content-Encoding": "gzip"},
+        )
+    return web.Response(body=body, status=status, content_type="application/json")
+
+
 # The wind and field grids are tens of thousands of numbers written out as
 # text: 210 kB for one wind frame, measured on a real instance, and the biggest
 # thing the card ever downloads. As text they compress about fourfold, but
@@ -199,7 +220,7 @@ class GribOverlayEntriesView(HomeAssistantView):
                     ],
                 }
             )
-        return web.json_response({"entries": entries})
+        return _json(request, {"entries": entries})
 
 
 class GribOverlayFramesView(HomeAssistantView):
@@ -245,7 +266,7 @@ class GribOverlayFramesView(HomeAssistantView):
                 }
                 for frame in frames
             ]
-        return web.json_response(result)
+        return _json(request, result)
 
 
 class GribOverlayFrameImageView(HomeAssistantView):
@@ -340,7 +361,7 @@ class GribOverlayPointView(HomeAssistantView):
         payload = await hass.async_add_executor_job(
             _point_payload, coordinator, parameter_key, lat, lon
         )
-        return web.json_response(payload)
+        return _json(request, payload)
 
 
 class GribOverlayPointAllView(HomeAssistantView):
@@ -372,7 +393,7 @@ class GribOverlayPointAllView(HomeAssistantView):
             return {key: _point_payload(coordinator, key, lat, lon) for key in keys}
 
         params = await hass.async_add_executor_job(_sample_all_params)
-        return web.json_response({"params": params})
+        return _json(request, {"params": params})
 
 
 class GribOverlayStationObsView(HomeAssistantView):
@@ -409,7 +430,7 @@ class GribOverlayStationObsView(HomeAssistantView):
             "station_obs %s @ %.3f,%.3f -> %s obs from %s",
             param, lat, lon, len(result.get("series") or []), (result.get("station") or {}).get("name"),
         )
-        return web.json_response(result, status=200)
+        return _json(request, result)
 
 
 class GribOverlayStationsView(HomeAssistantView):
@@ -434,7 +455,7 @@ class GribOverlayStationsView(HomeAssistantView):
         except Exception as err:  # noqa: BLE001 - never break the card over this
             _LOGGER.warning("stations lookup failed for %s: %s", param, err)
             stations = []
-        return web.json_response({"stations": stations})
+        return _json(request, {"stations": stations})
 
 
 class GribOverlayWeatherMapsView(HomeAssistantView):
