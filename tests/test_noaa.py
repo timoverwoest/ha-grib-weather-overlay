@@ -13,13 +13,17 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from custom_components.grib_overlay.sources.base import GribSourceError
+from custom_components.grib_overlay.sources.base import (
+    GribRunIncompleteError,
+    GribSourceError,
+)
 from custom_components.grib_overlay.sources.noaa import (
     _GFS_FIELDS,
     _GFS_WAVE_FIELDS,
     _HOURLY_TO,
     _LAST_STEP,
     _MODELS,
+    _ONE_CELL,
     _PROBE_STEP,
     KNOWN_DATASETS,
     NoaaSource,
@@ -64,6 +68,11 @@ class _FakeSession:
 
 def _query(url: str) -> dict[str, list[str]]:
     return parse_qs(urlparse(url).query, keep_blank_values=True)
+
+
+def _downloads(session: _FakeSession) -> list[str]:
+    """The requests that fetch real data, without the one-cell probes."""
+    return [url for url in session.requested if _ONE_CELL not in url]
 
 
 # -- lead times ---------------------------------------------------------------
@@ -138,8 +147,8 @@ async def test_one_member_per_lead_time_holds_every_parameter(tmp_path) -> None:
         GFS, "2026092200", tmp_path, ["wind_10m", "pressure_msl"], horizon_hours=3
     )
     assert [p.name for p in paths] == [f"gfs_{s:03d}.grib2" for s in range(4)]
-    assert len(session.requested) == 4
-    query = _query(session.requested[0])
+    assert len(_downloads(session)) == 4
+    query = _query(_downloads(session)[0])
     assert query["var_UGRD"] == ["on"] and query["var_VGRD"] == ["on"]
     assert query["var_PRMSL"] == ["on"]
     assert "var_CAPE" not in query  # not enabled
@@ -158,14 +167,35 @@ async def test_members_come_back_in_ascending_lead_time(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_run_missing_a_lead_time_is_refused(tmp_path) -> None:
-    """A run can be listed and still be short of a longer horizon; failing keeps
-    it out of the cache with gaps in it, and the next poll retries."""
+async def test_a_run_short_of_the_horizon_costs_one_probe_and_no_downloads(tmp_path) -> None:
+    """A run is listed once it reaches +24 h, hours before it reaches +384, so an
+    entry with a long horizon meets a run that is still publishing at every
+    single run. Finding that out has to be one small request, not a download of
+    everything published so far that is then thrown away."""
     session = _FakeSession({"2026092200": {0, 1}})
-    with pytest.raises(GribSourceError, match="not complete"):
+    with pytest.raises(GribRunIncompleteError, match=r"\+3 h is not published"):
         await NoaaSource(session).async_download_run(
             GFS, "2026092200", tmp_path, ["pressure_msl"], horizon_hours=3
         )
+    assert _downloads(session) == []
+    assert len(session.requested) == 1
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_a_hole_below_the_far_end_is_refused(tmp_path) -> None:
+    """The probe only sees the last lead time. A gap under it (a lead time being
+    re-issued) still has to keep the run out of the cache."""
+    session = _FakeSession({"2026092200": {0, 1, 3}})
+    with pytest.raises(GribRunIncompleteError, match=r"\+2 h is not published"):
+        await NoaaSource(session).async_download_run(
+            GFS, "2026092200", tmp_path, ["pressure_msl"], horizon_hours=3
+        )
+
+
+def test_an_incomplete_run_is_a_source_error_too() -> None:
+    """Callers that do not care about the distinction keep working."""
+    assert issubclass(GribRunIncompleteError, GribSourceError)
 
 
 @pytest.mark.asyncio
@@ -185,7 +215,7 @@ async def test_the_wave_model_asks_for_every_level(tmp_path) -> None:
     await NoaaSource(session).async_download_run(
         GFS_WAVE, "2026092200", tmp_path, ["swell_height"], horizon_hours=0
     )
-    query = _query(session.requested[0])
+    query = _query(_downloads(session)[0])
     assert query["all_lev"] == ["on"]
     assert query["var_SWELL"] == ["on"]
 
@@ -196,7 +226,7 @@ async def test_the_window_is_the_one_the_dataset_advertises(tmp_path) -> None:
     await NoaaSource(session).async_download_run(
         GFS, "2026092200", tmp_path, ["pressure_msl"], horizon_hours=0
     )
-    query = _query(session.requested[0])
+    query = _query(_downloads(session)[0])
     south, west, north, east = GFS.bounds
     assert [float(query[k][0]) for k in ("bottomlat", "leftlon", "toplat", "rightlon")] == [
         south,

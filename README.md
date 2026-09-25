@@ -1505,11 +1505,13 @@ Extra's:
   Het gebied staat vast op **40–65°N, 25°W–15°O**. Per tijdstap gaat er één
   verzoek naar NOMADS (alle ingeschakelde parameters tegelijk), met hoogstens
   twee tegelijk: het is een gratis publieke dienst.
-- **GFS-runs** verschijnen tijdstap voor tijdstap, vanaf ongeveer 3 uur 20 na de
-  runtijd. De integratie pakt een run op zodra +24 uur online staat. Heb je een
-  langere horizon ingesteld en is die nog niet compleet, dan mislukt die ene
-  poging en probeert de volgende poll het opnieuw — je houdt ondertussen de
-  vorige run.
+- **GFS-runs** verschijnen tijdstap voor tijdstap, vanaf ongeveer 3 uur 20 na
+  de runtijd; +384 uur staat er pas uren later. Voordat er iets gedownload
+  wordt, kijkt de integratie met één verzoek van één gridcel of de láátste
+  tijdstap die jouw horizon nodig heeft al online staat. Zo niet, dan wacht ze
+  tot de volgende poll en houd je ondertussen de vorige run. Hoe langer je
+  horizon, hoe later een nieuwe run dus binnenkomt — dat is geen fout en staat
+  alleen in het debug-log.
 - **DCSM-ZUNO** is hetzelfde Rijkswaterstaat-model als `rws_dcsm`, maar het
   nest voor de Zuidelijke Noordzee: kleiner gebied, twee keer zo fijn gevraagd
   (0,025° in plaats van 0,05°). Ongeveer 0,8 MB per uur, dus ~20 MB voor een run
@@ -3097,9 +3099,12 @@ Also:
   request per lead time goes to NOMADS (all enabled parameters at once), at most
   two at a time: it is a free public service.
 - **GFS runs** appear lead time by lead time, starting about 3 h 20 min after
-  the run time. The integration picks a run up once +24 hours is online. With a
-  longer horizon configured that is not complete yet, that one attempt fails and
-  the next poll tries again — you keep the previous run in the meantime.
+  the run time; +384 hours is hours behind that. Before anything is downloaded
+  the integration asks, with a single request for a single grid cell, whether
+  the *last* lead time your horizon needs is online. If it is not, it waits for
+  the next poll and you keep the previous run in the meantime. So the longer
+  your horizon, the later a new run arrives — that is not a fault, and it is
+  only noted in the debug log.
 - **DCSM-ZUNO** is the same Rijkswaterstaat model as `rws_dcsm`, but the nest
   for the southern North Sea: a smaller area, asked for twice as finely (0.025°
   instead of 0.05°). About 0.8 MB per hour, so ~20 MB for a 24-hour run. Running

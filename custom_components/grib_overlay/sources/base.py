@@ -95,6 +95,17 @@ class GribSourceError(Exception):
     """Generic, retryable source error (network, 5xx, ...)."""
 
 
+class GribRunIncompleteError(GribSourceError):
+    """A run exists but the provider has not published all of it yet.
+
+    Distinct from a plain source error because it is the normal state of a run
+    for the first hours of its life, not a fault: every centre publishes a run
+    lead time by lead time. The coordinator answers it by staying on the run it
+    already has and looking again at the next poll, without the red log line an
+    UpdateFailed would write at every single run.
+    """
+
+
 class GribSourceAuthError(GribSourceError):
     """Raised on 401/403 so config_flow can surface 'invalid API key'.
 

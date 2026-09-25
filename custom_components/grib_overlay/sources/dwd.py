@@ -28,6 +28,7 @@ from .base import (
     GribDatasetInfo,
     GribFileInfo,
     GribParameter,
+    GribRunIncompleteError,
     GribSource,
     GribSourceError,
 )
@@ -393,7 +394,7 @@ def _require_steps(run: str, dwd_dir: str, steps: dict, wanted: list[int]) -> No
     """
     missing = [s for s in wanted if s not in steps]
     if missing:
-        raise GribSourceError(
+        raise GribRunIncompleteError(
             f"{run} is not complete yet: {dwd_dir} lacks {len(missing)} of "
             f"{len(wanted)} lead times"
         )

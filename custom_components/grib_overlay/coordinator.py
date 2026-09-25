@@ -57,6 +57,7 @@ from .const import (
 from .sources.base import (
     GribDatasetInfo,
     GribParameter,
+    GribRunIncompleteError,
     GribSource,
     GribSourceAuthError,
     GribSourceError,
@@ -458,10 +459,22 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                     await self._async_migrate_legacy_storage()
                     try:
                         await self._process_new_run(dataset, latest.filename)
+                    except GribRunIncompleteError as err:
+                        # Normal for the first hours of a run's life: the centre
+                        # publishes lead time by lead time. Stay on the run we
+                        # have and look again at the next poll, rather than
+                        # writing an error the user can do nothing about at
+                        # every single run. With no run yet there is nothing to
+                        # stay on, and the entry would sit empty without saying
+                        # why -- so that one case is still reported.
+                        if self._current_run_filename is None:
+                            raise UpdateFailed(str(err)) from err
+                        _LOGGER.debug("%s", err)
                     except GribSourceError as err:
                         raise UpdateFailed(str(err)) from err
-                    self._current_run_filename = latest.filename
-                    await self.hass.async_add_executor_job(self._cleanup_old_runs)
+                    else:
+                        self._current_run_filename = latest.filename
+                        await self.hass.async_add_executor_job(self._cleanup_old_runs)
         elif latest.filename != self._current_run_filename:
             _LOGGER.debug(
                 "Backup in progress; deferring new run %s until it finishes",

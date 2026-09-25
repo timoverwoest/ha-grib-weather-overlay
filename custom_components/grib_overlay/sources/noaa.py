@@ -34,6 +34,7 @@ from .base import (
     GribDatasetInfo,
     GribFileInfo,
     GribParameter,
+    GribRunIncompleteError,
     GribSource,
     GribSourceError,
 )
@@ -58,11 +59,17 @@ _LAST_STEP = 384
 _RUN_INTERVAL_HOURS = 6
 _RUN_LOOKBACK_HOURS = 24
 
-# Which lead time async_list_files probes to call a run usable. A run is
-# announced once it holds the default forecast horizon; async_download_run is
-# strict about whatever horizon is actually configured, so a longer horizon on a
-# run that is still publishing simply fails and is retried at the next poll.
+# Which lead time async_list_files probes to call a run usable. The listing
+# knows nothing about the horizon a particular entry asked for, so this is only
+# the floor: async_download_run probes the last lead time it actually needs
+# before it downloads anything, and waits for the next poll when that one is
+# still to come. NCEP publishes a run strictly in ascending lead time, which is
+# what makes a single probe at the far end a sound completeness test.
 _PROBE_STEP = 24
+
+# A window of one grid cell: a couple of hundred bytes, cheap enough to ask
+# NOMADS for at every poll just to see whether a file is there.
+_ONE_CELL = "subregion=&leftlon=4&rightlon=4.25&toplat=53&bottomlat=52.75"
 
 # Parallel downloads per run. NOMADS is a free public service with rate limits,
 # so this stays well below what the DWD mirror gets.
@@ -547,19 +554,21 @@ class NoaaSource(GribSource):
         cheap enough to ask NOMADS at every poll.
         """
         model = _MODELS[dataset.key]
-        field = model.fields[0]
-        one_cell = "subregion=&leftlon=4&rightlon=4.25&toplat=53&bottomlat=52.75"
         now = datetime.now(timezone.utc)
         for back in range(0, _RUN_LOOKBACK_HOURS + 1, _RUN_INTERVAL_HOURS):
             run = _floor_run(now - timedelta(hours=back))
-            url = self._url(model, run, _PROBE_STEP, [field], window=one_cell)
-            if await self._get(url) is not None:
+            if await self._has_step(model, run, _PROBE_STEP):
                 return [
                     GribFileInfo(
                         filename=f"{run:%Y%m%d%H}", size=0, last_modified=run.isoformat()
                     )
                 ]
         return []
+
+    async def _has_step(self, model: _Model, run: datetime, step: int) -> bool:
+        """Whether ``step`` of ``run`` is published, asked for one grid cell."""
+        url = self._url(model, run, step, [model.fields[0]], window=_ONE_CELL)
+        return await self._get(url) is not None
 
     async def async_download_file(
         self, dataset: GribDatasetInfo, filename: str, destination: Path
@@ -585,6 +594,16 @@ class NoaaSource(GribSource):
         if not fields:
             raise GribSourceError(f"No GFS parameters enabled for {dataset.key}")
         run = datetime.strptime(run_id, "%Y%m%d%H").replace(tzinfo=timezone.utc)
+        steps = steps_within(horizon_hours)
+        # Ask for the far end first, for one grid cell. A run is listed as soon
+        # as it reaches _PROBE_STEP, hours before it reaches +384, so without
+        # this an entry with a long horizon would download every lead time it
+        # can, throw the lot away at the first hole, and do it again at the next
+        # poll -- several hundred wasted hits on a free public service per run.
+        if steps and not await self._has_step(model, run, steps[-1]):
+            raise GribRunIncompleteError(
+                f"GFS run {run_id} is not complete yet: +{steps[-1]} h is not published"
+            )
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
             None, functools.partial(run_dir.mkdir, parents=True, exist_ok=True)
@@ -596,10 +615,10 @@ class NoaaSource(GribSource):
             async with semaphore:
                 body = await self._get(self._url(model, run, step, fields))
             if body is None:
-                # The run was complete enough when it was listed but is not for
-                # this horizon. Failing here keeps the run out of the cache with
-                # gaps in it; the next poll picks it up once it is finished.
-                raise GribSourceError(
+                # A hole below the far end that the probe above cannot see (a
+                # lead time NCEP is re-issuing, say). Failing here keeps the run
+                # out of the cache with gaps in it; the next poll starts over.
+                raise GribRunIncompleteError(
                     f"GFS run {run_id} is not complete yet: +{step} h is not published"
                 )
             dest = run_dir / f"{dataset.key}_{step:03d}.grib2"
@@ -607,7 +626,7 @@ class NoaaSource(GribSource):
             return dest
 
         results = await asyncio.gather(
-            *(fetch(step) for step in steps_within(horizon_hours)), return_exceptions=True
+            *(fetch(step) for step in steps), return_exceptions=True
         )
         for result in results:
             if isinstance(result, BaseException):

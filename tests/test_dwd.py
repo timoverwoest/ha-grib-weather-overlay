@@ -11,7 +11,7 @@ import bz2
 
 import pytest
 
-from custom_components.grib_overlay.sources.base import GribSourceError
+from custom_components.grib_overlay.sources.base import GribRunIncompleteError
 from custom_components.grib_overlay.sources.dwd import (
     _EWAM_BASE,
     _GWAM_BASE,
@@ -108,7 +108,7 @@ async def test_ewam_refuses_a_run_with_a_parameter_still_missing(monkeypatch, tm
         fetched.append(dest)
 
     monkeypatch.setattr(src, "_download_bunzip", _fake_dl)
-    with pytest.raises(GribSourceError, match="not complete"):
+    with pytest.raises(GribRunIncompleteError, match="not complete"):
         await src.async_download_run(
             EWAM, run, tmp_path, ["wave_height", "wave_direction"], horizon_hours=60
         )
@@ -240,7 +240,7 @@ async def test_icon_d2_refuses_a_run_that_is_still_publishing(monkeypatch, tmp_p
         fetched.append(dest)
 
     monkeypatch.setattr(src, "_download_bunzip", _fake_dl)
-    with pytest.raises(GribSourceError, match="not complete"):
+    with pytest.raises(GribRunIncompleteError, match="not complete"):
         await src.async_download_run(
             ICON_D2, run, tmp_path, ["temperature_2m", "humidity_2m"], horizon_hours=24
         )
