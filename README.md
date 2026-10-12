@@ -1377,6 +1377,15 @@ logger:
     custom_components.grib_overlay: debug
 ```
 
+### Diagnosegegevens downloaden
+
+Instellingen → Apparaten & diensten → GRIB Weather Overlay → het menu bij de
+bron → **Diagnosegegevens downloaden**. Daar staat in één bestand welke run in
+gebruik is, hoeveel frames er per parameter zijn (en welke parameter er géén
+heeft — de stille storing), hoe groot de cache per run is, en of de laatste poll
+slaagde. **Alle drie de sleutels zijn eruit gehaald**, dus je kunt het bestand
+zonder nadenken in een issue plakken.
+
 ## Taal
 
 De cards en de integratie spreken **de taal die de Home Assistant-gebruiker zelf
@@ -2985,6 +2994,15 @@ logger:
   logs:
     custom_components.grib_overlay: debug
 ```
+
+### Downloading diagnostics
+
+Settings → Devices & services → GRIB Weather Overlay → the menu next to the
+source → **Download diagnostics**. One file says which run is in use, how many
+frames there are per parameter (and which parameter has *none* — the silent
+failure), how large the cache is per run, and whether the last poll succeeded.
+**All three keys are redacted**, so the file is safe to paste into an issue
+without reading it first.
 
 ## Language
 

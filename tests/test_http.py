@@ -21,6 +21,7 @@ from custom_components.grib_overlay.const import (
 )
 from custom_components.grib_overlay.coordinator import GribOverlayCoordinator
 from custom_components.grib_overlay.http import VIEWS
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.setup import async_setup_component
 
 SAMPLE_ENV_VAR = "GRIB_OVERLAY_SAMPLE_GRIB"
@@ -57,11 +58,16 @@ async def test_entries_frames_and_image_endpoints(
     dataset = KNOWN_DATASETS[0]
     parameters = [p for p in dataset.parameters if p.key == "wind_10m"]
     run_dir = coordinator.storage_dir / tar_path.stem
-    coordinator.frames = coordinator._extract_decode_and_render(
-        tar_path, run_dir, parameters, horizon_hours=24
+    raw_dir = coordinator._scratch_root / tar_path.stem
+    member_paths = coordinator._extract_archive(tar_path, raw_dir)
+    coordinator.frames = coordinator._decode_members(
+        member_paths, run_dir, tar_path.name, parameters, horizon_hours=24
     )
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    # The views look the coordinator up through its entry, so the entry has to
+    # look set up -- exactly as it is after async_setup_entry.
+    entry.runtime_data = coordinator
+    entry.mock_state(hass, ConfigEntryState.LOADED)
 
     assert await async_setup_component(hass, "http", {})
     for view in VIEWS:

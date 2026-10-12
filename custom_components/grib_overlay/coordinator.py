@@ -968,6 +968,11 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         for stale_dir in run_dirs[retain:]:
             shutil.rmtree(stale_dir, ignore_errors=True)
 
+    @property
+    def current_run(self) -> str | None:
+        """The run whose frames are being served, as the source named it."""
+        return self._current_run_filename
+
     def get_frame(self, parameter_key: str, frame_id: str) -> Frame | None:
         for frame in self.frames.get(parameter_key, []):
             if frame.png_path.stem == frame_id:
