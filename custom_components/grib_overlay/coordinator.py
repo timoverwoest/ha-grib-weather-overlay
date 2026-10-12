@@ -184,17 +184,18 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         update_minutes = entry.options.get(
             CONF_UPDATE_INTERVAL_MINUTES, DEFAULT_UPDATE_INTERVAL_MINUTES
         )
-        super().__init__(
-            hass,
-            _LOGGER,
-            name=f"{DOMAIN}_{entry.entry_id}",
-            update_interval=timedelta(minutes=update_minutes),
-        )
+        # update_interval stays None on purpose: polling is driven by the offset
+        # timer below, and DataUpdateCoordinator arms a second timer of its own
+        # the moment an entity subscribes (see async_add_listener). With the
+        # sensors added that would mean two schedules per entry.
+        super().__init__(hass, _LOGGER, name=f"{DOMAIN}_{entry.entry_id}")
         self.entry = entry
+        self.poll_interval = timedelta(minutes=update_minutes)
         # Spread over the first half of the interval, at most ten minutes in.
-        span = min(int(timedelta(minutes=update_minutes).total_seconds()) // 2, 600)
+        span = min(int(self.poll_interval.total_seconds()) // 2, 600)
         self._poll_offset = zlib.crc32(entry.entry_id.encode()) % span if span else 0
         self._unsub_offset: Callable[[], None] | None = None
+        self._unsub_poll: Callable[[], None] | None = None
         source_cls = get_source_class(entry.data[CONF_SOURCE])
         session = async_get_clientsession(hass)
         # A separate notification/MQTT key (options override entry data) is used
@@ -382,7 +383,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         await self._async_migrate_legacy_storage()
         await self._async_drop_stale_scratch()
         run_filename, frames = await self.hass.async_add_executor_job(
-            self._load_cached_frames
+            self._restore_from_disk
         )
         if run_filename:
             self._current_run_filename = run_filename
@@ -395,9 +396,8 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
         await self._async_start_notifications()
 
-        # This coordinator has no entities/listeners, so it never self-schedules
-        # periodic refreshes -- drive polling ourselves as a fallback for when
-        # push notifications are unavailable.
+        # Polling is driven here rather than by DataUpdateCoordinator's own
+        # scheduler, because the offset below is the point:
         # Home Assistant starts every configured source within the same second,
         # so their timers would line up: a dozen sources going out to a dozen
         # providers, and starting a dozen decodes, on the same second of every
@@ -414,14 +414,16 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
     @callback
     def _start_polling(self, _now=None) -> None:
+        """Start the repeating poll, once this entry's offset has passed."""
         self._unsub_offset = None
         self._unsub_poll = async_track_time_interval(
-            self.hass, self._scheduled_poll, self.update_interval
+            self.hass, self._scheduled_poll, self.poll_interval
         )
         self.entry.async_on_unload(self._unsub_poll)
 
     @callback
     def _cancel_offset(self) -> None:
+        """Drop the pending offset timer if the entry unloads before it fires."""
         if self._unsub_offset is not None:
             self._unsub_offset()
             self._unsub_offset = None
@@ -869,6 +871,12 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         }
         (run_dir / self.MANIFEST_NAME).write_text(json.dumps(manifest))
 
+    def _restore_from_disk(self) -> tuple[str | None, dict[str, list[Frame]]]:
+        """Blocking: restore the newest usable run and note what the cache costs."""
+        restored = self._load_cached_frames()
+        self.cache_bytes = self._measure_cache()
+        return restored
+
     def _load_cached_frames(self) -> tuple[str | None, dict[str, list[Frame]]]:
         """Blocking: rebuild frames for the newest run that has a valid manifest + PNGs."""
         if not self.storage_dir.exists():
@@ -962,6 +970,22 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                 return manifest.get("run_filename"), frames
         return None, {}
 
+    def _measure_cache(self) -> int | None:
+        """Blocking: the total size of this entry's run directories, in bytes."""
+        if not self.storage_dir.exists():
+            return None
+        try:
+            return sum(
+                f.stat().st_size for f in self.storage_dir.rglob("*") if f.is_file()
+            )
+        except OSError as err:
+            # A file removed between the listing and the stat; the next run
+            # measures again.
+            _LOGGER.debug(
+                "Could not measure the cache in %s: %s", self.storage_dir, err
+            )
+            return None
+
     def _cleanup_old_runs(self) -> None:
         retain = self.entry.options.get(CONF_RETAIN_RUNS, DEFAULT_RETAIN_RUNS)
         # The default cache is in no backup folder, but a storage_path may point
@@ -976,6 +1000,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         )
         for stale_dir in run_dirs[retain:]:
             shutil.rmtree(stale_dir, ignore_errors=True)
+        self.cache_bytes = self._measure_cache()
 
     @property
     def current_run(self) -> str | None:

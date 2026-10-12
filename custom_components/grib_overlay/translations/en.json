@@ -64,5 +64,21 @@
     "error": {
       "no_parameters_selected": "Select at least one parameter."
     }
+  },
+  "entity": {
+    "sensor": {
+      "run_time": {
+        "name": "Run time"
+      },
+      "forecast_until": {
+        "name": "Forecast until"
+      },
+      "frames": {
+        "name": "Frames"
+      },
+      "cache_size": {
+        "name": "Cache size"
+      }
+    }
   }
 }

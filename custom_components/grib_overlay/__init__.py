@@ -8,6 +8,7 @@ from pathlib import Path
 
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import IntegrationNotFound, async_get_integration
@@ -23,6 +24,11 @@ STATIC_URL_PREFIX = "/grib_overlay_static"
 FRONTEND_URL_PATH = f"{STATIC_URL_PREFIX}/{FRONTEND_JS_FILENAME}"
 COMPRESSIBLE_SUFFIXES = (".js", ".css")
 FRONTEND_READY = f"{DOMAIN}_frontend"
+
+# The cards are the point of this integration; the sensors exist so an entry's
+# freshness and disk use can be seen -- and automated on -- from Home Assistant
+# itself rather than only from the map.
+PLATFORMS = [Platform.SENSOR]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -53,6 +59,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: GribOverlayConfigEntry) 
     # Idempotent, so it costs nothing on the entries after the first.
     await _async_register_frontend(hass)
 
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
     entry.async_create_background_task(
         hass, coordinator.async_refresh(), f"{DOMAIN}-initial-refresh"
     )
@@ -65,7 +73,7 @@ async def async_unload_entry(
 ) -> bool:
     """Unload one grib_overlay config entry."""
     await entry.runtime_data.source.async_stop_notifications()
-    return True
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
 async def _async_reload_entry(

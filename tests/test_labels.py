@@ -9,6 +9,7 @@ than disappear.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import re
 from types import SimpleNamespace
@@ -123,3 +124,35 @@ def test_card_ships_every_string_in_both_languages() -> None:
     assert not missing_en, f"missing English strings: {sorted(missing_en)}"
     assert not missing_nl, f"missing Dutch strings: {sorted(missing_nl)}"
     assert len(keys(nl_block)) > 50  # the tables are actually populated
+
+
+def _flat_keys(node: object, prefix: str = "") -> set[str]:
+    """Every leaf path in a translation file, as dotted keys."""
+    if isinstance(node, dict):
+        return {
+            k
+            for key, value in node.items()
+            for k in _flat_keys(value, f"{prefix}.{key}")
+        }
+    return {prefix}
+
+
+def test_the_translation_files_cover_exactly_the_same_keys() -> None:
+    """strings.json is the source of truth; a language file that drifts from it
+    shows the raw key in the UI. hassfest checks this in CI -- so does this.
+    """
+    base = Path("custom_components/grib_overlay")
+    reference = _flat_keys(
+        json.loads((base / "strings.json").read_text(encoding="utf-8"))
+    )
+    assert ".entity.sensor.run_time.name" in reference  # the file is the real one
+    for name in ("en", "nl"):
+        keys = _flat_keys(
+            json.loads(
+                (base / "translations" / f"{name}.json").read_text(encoding="utf-8")
+            )
+        )
+        assert keys == reference, (
+            f"{name}.json differs: missing {sorted(reference - keys)}, "
+            f"extra {sorted(keys - reference)}"
+        )

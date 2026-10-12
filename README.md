@@ -1377,6 +1377,34 @@ logger:
     custom_components.grib_overlay: debug
 ```
 
+### Sensoren
+
+Elke bron krijgt een eigen apparaat met vier sensoren, zodat je vanuit Home
+Assistant zelf kunt zien — en erop kunt automatiseren — of een bron nog data
+krijgt:
+
+| Sensor | Wat het zegt |
+| --- | --- |
+| **Runtijd** | het tijdstip van de run die nu getoond wordt (een tijdstempel) |
+| **Verwachting tot** | hoe ver die run werkelijk reikt; dat kan korter zijn dan de ingestelde horizon, want een model stopt waar het stopt |
+| **Frames** | hoeveel gerenderde beelden er in totaal zijn — nul betekent dat er iets mis is |
+| **Cachegrootte** | wat deze bron op schijf kost |
+
+De laatste twee staan onder *Diagnose*. Een automatisering als "waarschuw me
+als de run ouder is dan zes uur" gaat zo:
+
+```yaml
+trigger:
+  - trigger: template
+    value_template: >-
+      {{ now() - states('sensor.harmonie_arome_runtijd') | as_datetime
+         > timedelta(hours=6) }}
+```
+
+Bij een storing bij de bron blijven de sensoren **beschikbaar**: de cards
+tonen dan nog de vorige run, dus juist dan wil je kunnen zien hoe oud die is.
+Ze worden alleen onbeschikbaar als er helemaal niets in de cache zit.
+
 ### Diagnosegegevens downloaden
 
 Instellingen → Apparaten & diensten → GRIB Weather Overlay → het menu bij de
@@ -2994,6 +3022,33 @@ logger:
   logs:
     custom_components.grib_overlay: debug
 ```
+
+### Sensors
+
+Every source gets a device of its own with four sensors, so whether an entry is
+still getting data can be seen — and automated on — from Home Assistant itself:
+
+| Sensor | What it says |
+| --- | --- |
+| **Run time** | the time of the run currently being shown (a timestamp) |
+| **Forecast until** | how far that run actually reaches, which can be less than the configured horizon: a model stops where it stops |
+| **Frames** | how many rendered images there are in total — zero means something is wrong |
+| **Cache size** | what this source costs on disk |
+
+The last two are *diagnostic*. An automation like "tell me when the run is more
+than six hours old" looks like this:
+
+```yaml
+trigger:
+  - trigger: template
+    value_template: >-
+      {{ now() - states('sensor.harmonie_arome_run_time') | as_datetime
+         > timedelta(hours=6) }}
+```
+
+When a provider is down the sensors stay **available**: the cards still show
+the previous run, which is exactly when you want to know how old it is. They go
+unavailable only when there is nothing cached at all.
 
 ### Downloading diagnostics
 

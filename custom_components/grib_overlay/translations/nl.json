@@ -64,5 +64,21 @@
     "error": {
       "no_parameters_selected": "Kies minstens één parameter."
     }
+  },
+  "entity": {
+    "sensor": {
+      "run_time": {
+        "name": "Runtijd"
+      },
+      "forecast_until": {
+        "name": "Verwachting tot"
+      },
+      "frames": {
+        "name": "Frames"
+      },
+      "cache_size": {
+        "name": "Cachegrootte"
+      }
+    }
   }
 }
