@@ -49,6 +49,13 @@ class Grib1Error(Exception):
 
 @dataclass
 class Grib1Message:
+    """One GRIB1 message's headers, plus the bytes needed to unpack its values.
+
+    The fields keep the raw numeric names of the GRIB1 sections rather than
+    shortNames: KNMI's HARMONIE uses a local parameter table, so a name-based
+    lookup has nothing to resolve against. ``values`` unpacks on access.
+    """
+
     # Product Definition Section (raw numeric keys, matching what sources/*.py filter on)
     table2_version: int
     centre: int

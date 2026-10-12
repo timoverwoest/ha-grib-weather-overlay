@@ -117,6 +117,7 @@ class GribSourceAuthError(GribSourceError):
     """
 
     def __init__(self, message: str, status: int | None = None) -> None:
+        """Record the HTTP status alongside the message, when the caller knows it."""
         super().__init__(message)
         self.status = status
 

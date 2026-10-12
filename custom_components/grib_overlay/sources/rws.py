@@ -317,10 +317,12 @@ class RwsSource(GribSource):
         notification_api_key: str | None = None,
         instance_id: str | None = None,
     ) -> None:
+        """Store the session; the public Matroos instance needs no key."""
         self._session = session
         self._complete: set[str] = set()  # runs already known to be finished
 
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
+        """Return this source's static dataset catalogue (no network)."""
         return list(KNOWN_DATASETS)
 
     async def _get(self, url: str) -> bytes:
@@ -340,6 +342,7 @@ class RwsSource(GribSource):
         order_by: str = "lastModified",
         sorting: str = "desc",
     ) -> list[GribFileInfo]:
+        """The newest Matroos run computed all the way to its last hour."""
         model = _MODELS[dataset.key]
         now = datetime.now(UTC)
         url = (
@@ -397,6 +400,7 @@ class RwsSource(GribSource):
     async def async_download_file(
         self, dataset: GribDatasetInfo, filename: str, destination: Path
     ) -> Path:
+        """Not available: Matroos answers per time window, not per run."""
         raise GribSourceError(
             "Matroos output is fetched per run; use async_download_run"
         )
@@ -409,6 +413,7 @@ class RwsSource(GribSource):
         param_keys: list[str],
         horizon_hours: float,
     ) -> list[Path]:
+        """Download the run as NetCDF windows, stored as gridded members."""
         model = _MODELS[dataset.key]
         run_time = _parse_stamp(run_id)
         loop = asyncio.get_running_loop()

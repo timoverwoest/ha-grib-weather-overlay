@@ -73,13 +73,6 @@ ignore = [
     # than a command, and does so consistently. Rewriting 25 of those to
     # satisfy a mood checker would cost the voice and buy nothing.
     "D401",
-    # Docstrings exist on every module and nearly every function; what is left
-    # is one-line boilerplate on overrides and __init__. Worth closing, but as
-    # its own pass rather than 120 placeholder docstrings in one diff.
-    "D101",
-    "D102",
-    "D103",
-    "D107",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -90,7 +83,10 @@ ignore = [
 # independent, and pytest's composite asserts are the point. Their docstrings
 # are prose about the behaviour under test rather than API documentation, so
 # the summary-line layout rule is not enforced there.
-"tests/*" = ["SLF001", "PT018", "T20", "PLC0415", "D205"]
+# A test's name is its sentence ("test_a_run_missing_a_lead_time_is_refused"),
+# and the hundred docstrings they do have explain *why* the behaviour matters.
+# D103 would ask for 216 more that could only restate the name.
+"tests/*" = ["SLF001", "PT018", "T20", "PLC0415", "D205", "D103"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"

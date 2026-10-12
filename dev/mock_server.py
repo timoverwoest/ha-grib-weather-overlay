@@ -516,6 +516,8 @@ def _frame_list(entry: dict, parameter_key: str) -> list[dict]:
 
 
 class Handler(BaseHTTPRequestHandler):
+    """Serves the card, the dev pages and a stand-in for the integration's API."""
+
     def _json(self, payload: dict, status: int = 200) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
@@ -552,6 +554,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"logged": True})
 
     def do_GET(self) -> None:
+        """Route one GET to whichever mocked endpoint it belongs to."""
         parsed = urlparse(self.path)
         parts = [p for p in parsed.path.split("/") if p]
 
@@ -706,8 +709,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, fmt: str, *args) -> None:  # quieter default logging
-        pass
+    def log_message(self, fmt: str, *args) -> None:
+        """Keep the default per-request logging quiet."""
 
 
 if __name__ == "__main__":

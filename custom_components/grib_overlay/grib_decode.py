@@ -33,6 +33,12 @@ class GribDecodeError(Exception):
 
 @dataclass
 class DecodedField:
+    """One scalar field, decoded and on a regular ascending lat/lon grid.
+
+    The counterpart of DecodedVector below, which carries u/v instead. Both
+    come out of this module south-first, whatever scan order the file used.
+    """
+
     parameter_key: str
     data: np.ndarray  # shape (Nj, Ni), row 0 = south, row Nj-1 = north, NaN = missing
     lats: np.ndarray  # 1D, ascending, length Nj

@@ -278,9 +278,11 @@ class MetnoSource(GribSource):
         notification_api_key: str | None = None,
         instance_id: str | None = None,
     ) -> None:
+        """Store the session; api.met.no needs no key, only an identifying User-Agent."""
         self._session = session
 
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
+        """Return this source's static dataset catalogue (no network)."""
         return list(KNOWN_DATASETS)
 
     async def _get(self, url: str) -> bytes:
@@ -310,6 +312,7 @@ class MetnoSource(GribSource):
         order_by: str = "lastModified",
         sorting: str = "desc",
     ) -> list[GribFileInfo]:
+        """The newest content update for this area, treated as its run."""
         area = _area(dataset)
         updated = []
         for content in (_WEATHER, _WAVES, _CURRENT):
@@ -341,6 +344,7 @@ class MetnoSource(GribSource):
     async def async_download_file(
         self, dataset: GribDatasetInfo, filename: str, destination: Path
     ) -> Path:
+        """Not available: MET Norway splits a run per lead time."""
         raise GribSourceError(
             "MET Norway files are split per lead time; use async_download_run"
         )
@@ -353,6 +357,7 @@ class MetnoSource(GribSource):
         param_keys: list[str],
         horizon_hours: float,
     ) -> list[Path]:
+        """Download the area's per-lead-time files into ``run_dir``."""
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
             None, functools.partial(run_dir.mkdir, parents=True, exist_ok=True)

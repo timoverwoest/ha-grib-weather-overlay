@@ -49,6 +49,7 @@ def headings(lines: list[str], depth: int = 3) -> list[tuple[int, int, str]]:
 
 
 def rebuild(text: str) -> str:
+    """Return the README with both contents lists rebuilt from its headings."""
     lines = text.split("\n")
     found = headings(lines)
 

@@ -40,6 +40,13 @@ class Grib2Error(Exception):
 
 @dataclass
 class Grib2Message:
+    """One GRIB2 message's headers, plus the bytes needed to unpack its values.
+
+    Only what this decoder actually supports is represented: grid definition
+    template 3.0 (regular lat/lon) and data representation template 5.0
+    (simple packing). ``values`` unpacks on access.
+    """
+
     # Identification (Section 0/1)
     discipline: int
     reference_time: datetime

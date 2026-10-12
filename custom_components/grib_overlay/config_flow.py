@@ -42,6 +42,7 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
+        """Start with nothing chosen; each step fills in the next piece."""
         self._source_key: str | None = None
         self._api_key: str | None = None
         self._notification_api_key: str | None = None
@@ -51,6 +52,7 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Pick a source and enter its keys, checking them against the provider."""
         errors: dict[str, str] = {}
         if user_input is not None:
             source_key = user_input[CONF_SOURCE]
@@ -95,6 +97,7 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_dataset(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Pick one of the datasets the chosen source offers."""
         errors: dict[str, str] = {}
         if user_input is not None:
             dataset_key = user_input[CONF_DATASET]
@@ -120,6 +123,7 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_parameters(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Choose which of the dataset's parameters to download and render."""
         assert self._dataset is not None
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -180,6 +184,7 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Show and save everything that can be changed after setup."""
         errors: dict[str, str] = {}
         if (
             user_input is not None

@@ -37,13 +37,15 @@ class NetCDFError(Exception):
 
 @dataclass
 class Variable:
+    """One NetCDF variable: its dimensions, its attributes and its raw array."""
+
     name: str
     dimensions: tuple[str, ...]
     attributes: dict = field(default_factory=dict)
     data: np.ndarray | None = None
 
     def masked(self) -> np.ndarray:
-        """Data as float64 with ``_FillValue`` / ``missing_value`` as NaN, scale applied."""
+        """Return the data as float64, fill values as NaN and the scale applied."""
         values = np.array(self.data, dtype=np.float64)
         for key in ("_FillValue", "missing_value"):
             fill = self.attributes.get(key)
@@ -60,6 +62,8 @@ class Variable:
 
 @dataclass
 class Dataset:
+    """A whole NetCDF-3 file, read into memory."""
+
     dimensions: dict[str, int]
     attributes: dict
     variables: dict[str, Variable]

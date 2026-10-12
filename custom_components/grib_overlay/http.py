@@ -221,6 +221,7 @@ class GribOverlayEntriesView(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request: web.Request) -> web.Response:
+        """List the loaded entries and the parameters each one offers."""
         hass = request.app[KEY_HASS]
         entries = []
         for coordinator in async_loaded_coordinators(hass):
@@ -274,6 +275,7 @@ class GribOverlayFramesView(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request: web.Request, entry_id: str) -> web.Response:
+        """List one entry's frames, optionally for a single parameter."""
         coordinator = _coordinator(request.app[KEY_HASS], entry_id)
         if coordinator is None:
             return web.json_response({"error": "unknown entry_id"}, status=404)
@@ -332,6 +334,7 @@ class GribOverlayFrameImageView(HomeAssistantView):
     async def get(
         self, request: web.Request, entry_id: str, parameter_key: str, frame_id: str
     ) -> web.Response:
+        """Serve one cached frame PNG, unauthenticated (see the class docstring)."""
         hass = request.app[KEY_HASS]
         coordinator = _coordinator(hass, entry_id)
         if coordinator is None:
@@ -357,6 +360,7 @@ class GribOverlayWindView(HomeAssistantView):
     async def get(
         self, request: web.Request, entry_id: str, parameter_key: str, frame_id: str
     ) -> web.Response:
+        """Serve one wind frame's u/v grid."""
         hass = request.app[KEY_HASS]
         coordinator = _coordinator(hass, entry_id)
         if coordinator is None:
@@ -377,6 +381,7 @@ class GribOverlayFieldView(HomeAssistantView):
     async def get(
         self, request: web.Request, entry_id: str, parameter_key: str, frame_id: str
     ) -> web.Response:
+        """Serve one frame's scalar grid."""
         hass = request.app[KEY_HASS]
         coordinator = _coordinator(hass, entry_id)
         if coordinator is None:
@@ -397,6 +402,7 @@ class GribOverlayPointView(HomeAssistantView):
     async def get(
         self, request: web.Request, entry_id: str, parameter_key: str
     ) -> web.Response:
+        """Sample one parameter's time series at one point."""
         hass = request.app[KEY_HASS]
         coordinator = _coordinator(hass, entry_id)
         if coordinator is None:
@@ -426,6 +432,7 @@ class GribOverlayPointAllView(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request: web.Request, entry_id: str) -> web.Response:
+        """Sample every enabled parameter at one point, in one request."""
         hass = request.app[KEY_HASS]
         coordinator = _coordinator(hass, entry_id)
         if coordinator is None:
@@ -459,6 +466,7 @@ class GribOverlayStationObsView(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request: web.Request) -> web.Response:
+        """Serve one station's recent observations for one parameter."""
         hass = request.app[KEY_HASS]
         try:
             param = request.query["param"]
@@ -506,6 +514,7 @@ class GribOverlayStationsView(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request: web.Request) -> web.Response:
+        """List the stations near a point that have data for one parameter."""
         hass = request.app[KEY_HASS]
         try:
             param = request.query["param"]
@@ -530,6 +539,7 @@ class GribOverlayWeatherMapsView(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request: web.Request) -> web.Response:
+        """List the charts, with an error in the payload rather than a failed request."""
         hass = request.app[KEY_HASS]
         try:
             charts = await weather_maps.get(hass).charts()
@@ -561,6 +571,7 @@ class GribOverlayWeatherMapImageView(HomeAssistantView):
     requires_auth = False
 
     async def get(self, request: web.Request, name: str) -> web.Response:
+        """Serve one cached chart image."""
         hass = request.app[KEY_HASS]
         path = await weather_maps.get(hass).image(name)
         if path is None:
@@ -588,6 +599,7 @@ class GribOverlayClientErrorView(HomeAssistantView):
     requires_auth = True
 
     async def post(self, request: web.Request) -> web.Response:
+        """Record a failure the card hit in the browser."""
         hass = request.app[KEY_HASS]
         try:
             report = await request.json()

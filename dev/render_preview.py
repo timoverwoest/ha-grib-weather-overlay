@@ -23,6 +23,7 @@ from grib_overlay.sources.knmi import KNOWN_DATASETS  # noqa: E402
 
 
 def main(grib_path: Path, out_dir: Path) -> None:
+    """Decode one GRIB lead-time file and render every parameter to PNG."""
     out_dir.mkdir(parents=True, exist_ok=True)
     dataset = KNOWN_DATASETS[0]
 

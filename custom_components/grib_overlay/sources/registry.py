@@ -28,6 +28,7 @@ SOURCE_REGISTRY: dict[str, type[GribSource]] = {
 
 
 def get_source_class(source_key: str) -> type[GribSource]:
+    """Return the GribSource subclass registered under ``source_key``."""
     try:
         return SOURCE_REGISTRY[source_key]
     except KeyError as err:

@@ -274,12 +274,14 @@ class DmiSource(GribSource):
         notification_api_key: str | None = None,
         instance_id: str | None = None,
     ) -> None:
+        """Store the session and the key, and start with no run known complete."""
         self._session = session
         # A complete run stays complete: remember those, so a poll only has to
         # look at the newer runs that may still be publishing.
         self._complete: dict[str, dict[str, dict[int, str]]] = {}
 
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
+        """Return this source's static dataset catalogue (no network)."""
         return list(KNOWN_DATASETS)
 
     async def _get_json(self, url: str) -> dict:
@@ -342,6 +344,7 @@ class DmiSource(GribSource):
         order_by: str = "lastModified",
         sorting: str = "desc",
     ) -> list[GribFileInfo]:
+        """The newest run DMI's collection lists, newest first."""
         run_id = await self._latest_complete_run(dataset)
         if run_id is None:
             return []
@@ -354,6 +357,7 @@ class DmiSource(GribSource):
     async def async_download_file(
         self, dataset: GribDatasetInfo, filename: str, destination: Path
     ) -> Path:
+        """Not available: DMI publishes one file per lead time."""
         raise GribSourceError(
             "DMI delivers one file per lead time; use async_download_run"
         )
@@ -366,6 +370,7 @@ class DmiSource(GribSource):
         param_keys: list[str],
         horizon_hours: float,
     ) -> list[Path]:
+        """Download one file per lead time within the horizon into ``run_dir``."""
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
             None, functools.partial(run_dir.mkdir, parents=True, exist_ok=True)

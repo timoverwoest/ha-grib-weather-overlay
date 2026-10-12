@@ -30,6 +30,7 @@ ANONYMOUS_DEMO_KEY = (
 
 
 async def main(api_key: str) -> None:
+    """Probe the KNMI source against the real Open Data API."""
     async with aiohttp.ClientSession() as session:
         source = KnmiSource(session, api_key)
 

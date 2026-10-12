@@ -49,12 +49,15 @@ class WeatherMapError(Exception):
 
 @dataclass(frozen=True)
 class Chart:
+    """One KNMI surface chart, as the listing describes it."""
+
     name: str
     kind: str  # "analysis" | "forecast"
     valid_time: datetime
     issued: str  # KNMI's lastModified
 
     def as_dict(self) -> dict:
+        """Return this chart as the JSON the weathermap card consumes."""
         return {
             "name": self.name,
             "kind": self.kind,
@@ -113,6 +116,7 @@ class WeatherMaps:
     INDEX = "index.json"
 
     def __init__(self, hass: HomeAssistant) -> None:
+        """Set up an empty chart cache; nothing is fetched until it is asked for."""
         self._hass = hass
         self._dir: Path | None = None
         self._charts: list[Chart] = []
@@ -250,6 +254,11 @@ class WeatherMaps:
 
 
 def get(hass: HomeAssistant) -> WeatherMaps:
+    """Return the one chart cache for this instance, creating it on first use.
+
+    The charts are not entry-specific -- every KNMI entry would list and fetch
+    the same images -- so there is one cache for the whole instance.
+    """
     if DATA_KEY not in hass.data:
         hass.data[DATA_KEY] = WeatherMaps(hass)
     return hass.data[DATA_KEY]

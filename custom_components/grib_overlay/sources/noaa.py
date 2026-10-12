@@ -396,6 +396,7 @@ class _Model:
     fields: tuple[_Field, ...]
 
     def field(self, key: str) -> _Field | None:
+        """Return the field for a parameter key, or None if this model lacks it."""
         return next((f for f in self.fields if f.parameter.key == key), None)
 
 
@@ -489,9 +490,11 @@ class NoaaSource(GribSource):
         notification_api_key: str | None = None,
         instance_id: str | None = None,
     ) -> None:
+        """Store the session; the NOMADS filter service needs no key."""
         self._session = session  # api_key/instance_id unused: NOMADS needs no key
 
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
+        """Return this source's static dataset catalogue (no network)."""
         return list(KNOWN_DATASETS)
 
     # -- URLs -------------------------------------------------------------------
@@ -580,6 +583,7 @@ class NoaaSource(GribSource):
     async def async_download_file(
         self, dataset: GribDatasetInfo, filename: str, destination: Path
     ) -> Path:
+        """Not available: NOMADS answers per lead time, not per run."""
         raise GribSourceError("NOMADS delivers per lead time; use async_download_run")
 
     async def async_download_run(

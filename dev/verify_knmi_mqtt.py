@@ -33,6 +33,7 @@ LISTEN_SECONDS = 90
 
 
 def main(api_key: str, dataset_key: str, dataset_version: str) -> None:
+    """Subscribe to the KNMI Notification Service and print what arrives."""
     topic = f"dataplatform/file/v1/{dataset_key}/{dataset_version}/created"
     connected = {"ok": False}
 

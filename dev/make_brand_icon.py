@@ -81,6 +81,7 @@ def _wind_path(size, x0, x1, y, sway, curl_r, curl_sweep_deg=300, n=220, m=140):
 
 
 def build(size):
+    """Draw the brand icon at ``size`` pixels square."""
     radius = int(size * 0.225)
     mask = _rounded_mask(size, radius)
     badge = _vertical_gradient(size, (60, 150, 202), (9, 38, 71)).convert("RGBA")
@@ -129,6 +130,7 @@ def build(size):
 
 
 def main() -> None:
+    """Write the brand icons into BRAND_DIR."""
     BRAND_DIR.mkdir(parents=True, exist_ok=True)
     hi = build(SS)
     for name, target in [("icon.png", 256), ("icon@2x.png", 512)]:

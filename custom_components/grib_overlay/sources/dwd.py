@@ -158,6 +158,7 @@ class _WaveModel:
     step_hours: int
 
     def steps_within(self, horizon_hours: float) -> list[int]:
+        """Return the lead times this model publishes up to ``horizon_hours``."""
         return [
             s
             for s in range(0, self.last_step + 1, self.step_hours)
@@ -421,11 +422,13 @@ class DwdSource(GribSource):
         notification_api_key: str | None = None,
         instance_id: str | None = None,
     ) -> None:
+        """Store the session; DWD's Open Data mirror needs no key and has no push."""
         self._session = (
             session  # api_key/instance_id unused: DWD Open Data needs no key or push
         )
 
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
+        """Return this source's static dataset catalogue (no network)."""
         return list(KNOWN_DATASETS)
 
     async def _list_dir(self, url: str) -> str:
@@ -582,6 +585,7 @@ class DwdSource(GribSource):
         order_by: str = "lastModified",
         sorting: str = "desc",
     ) -> list[GribFileInfo]:
+        """The newest run whose last lead time is on the mirror."""
         if dataset.key == "icon_d2":
             latest = await self._icon_d2_latest_complete_run()
         else:
@@ -604,6 +608,7 @@ class DwdSource(GribSource):
     async def async_download_file(
         self, dataset: GribDatasetInfo, filename: str, destination: Path
     ) -> Path:
+        """Not available: DWD publishes a file per parameter per lead time."""
         raise GribSourceError("DWD delivers individual files; use async_download_run")
 
     async def async_download_run(
@@ -614,6 +619,7 @@ class DwdSource(GribSource):
         param_keys: list[str],
         horizon_hours: float,
     ) -> list[Path]:
+        """Download and decompress the run's .bz2 files into ``run_dir``."""
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
             None, functools.partial(run_dir.mkdir, parents=True, exist_ok=True)

@@ -137,9 +137,13 @@ class BshSource(GribSource):
         notification_api_key: str | None = None,
         instance_id: str | None = None,
     ) -> None:
-        pass  # anonymous FTP: no session, key or push
+        """Take the standard source arguments and ignore them all.
+
+        BSH is anonymous FTP: no session, no key, and no push channel.
+        """
 
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
+        """Return this source's static dataset catalogue (no network)."""
         return list(KNOWN_DATASETS)
 
     def _list_runs(self) -> set[str]:
@@ -159,6 +163,7 @@ class BshSource(GribSource):
         order_by: str = "lastModified",
         sorting: str = "desc",
     ) -> list[GribFileInfo]:
+        """The newest complete run on the FTP server, newest first."""
         runs = await asyncio.get_running_loop().run_in_executor(None, self._list_runs)
         if not runs:
             return []
@@ -167,6 +172,7 @@ class BshSource(GribSource):
         return [GribFileInfo(filename=latest, size=0, last_modified=run_dt.isoformat())]
 
     async def async_download_file(self, dataset, filename, destination) -> Path:
+        """Not available: BSH publishes per time step, not one archive per run."""
         raise GribSourceError("BSH delivers per-time files; use async_download_run")
 
     def _download_split(
@@ -219,6 +225,7 @@ class BshSource(GribSource):
         param_keys,
         horizon_hours,
     ) -> list[Path]:
+        """Download the run's per-time-step files into ``run_dir``."""
         return await asyncio.get_running_loop().run_in_executor(
             None, self._download_split, run_id, run_dir, horizon_hours
         )

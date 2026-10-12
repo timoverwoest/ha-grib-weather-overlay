@@ -114,6 +114,13 @@ def _optional_artifact(run_dir: Path, frame: dict, name: str) -> Path | None:
 
 @dataclass
 class Frame:
+    """One parameter at one lead time, as the card gets to see it.
+
+    The rendered PNG plus everything the card needs to place and read it: the
+    bounds to stretch it over, the legend to label it, and the two optional
+    grids that make it interactive.
+    """
+
     parameter_key: str
     valid_time: datetime
     run_time: datetime
@@ -148,6 +155,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
     @classmethod
     def set_backup_active(cls, active: bool) -> None:
+        """Pause or resume run processing for every entry at once."""
         cls._backup_active = active
         cls._backup_since = time.monotonic() if active else 0.0
 
@@ -172,6 +180,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             return
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        """Build the source, work out where its files go, set the poll interval."""
         update_minutes = entry.options.get(
             CONF_UPDATE_INTERVAL_MINUTES, DEFAULT_UPDATE_INTERVAL_MINUTES
         )
@@ -974,6 +983,11 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         return self._current_run_filename
 
     def get_frame(self, parameter_key: str, frame_id: str) -> Frame | None:
+        """Return the frame a card asked for by id, or None if it is not cached.
+
+        Looking it up by id rather than by path is what keeps the image view
+        free of path traversal: an id that matches no frame in memory is a 404.
+        """
         for frame in self.frames.get(parameter_key, []):
             if frame.png_path.stem == frame_id:
                 return frame

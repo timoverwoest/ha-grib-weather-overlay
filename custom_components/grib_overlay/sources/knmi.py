@@ -269,6 +269,7 @@ class KnmiSource(GribSource):
         notification_api_key: str | None = None,
         instance_id: str | None = None,
     ) -> None:
+        """Store the session and the Open Data key, plus the separate MQTT key."""
         self._session = session
         self._api_key = api_key
         # The KNMI Notification Service authorises SEPARATELY from Open Data: it
@@ -290,6 +291,7 @@ class KnmiSource(GribSource):
         self._notify_connected_logged = False
 
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
+        """Return this source's static dataset catalogue (no network)."""
         return list(KNOWN_DATASETS)
 
     async def _request(
@@ -318,6 +320,7 @@ class KnmiSource(GribSource):
         order_by: str = "lastModified",
         sorting: str = "desc",
     ) -> list[GribFileInfo]:
+        """The run archives the Open Data API lists, newest first."""
         url = f"{API_BASE_URL}/datasets/{dataset.key}/versions/{dataset.version}/files"
         data = await self._request(
             url,
@@ -335,6 +338,7 @@ class KnmiSource(GribSource):
     async def async_get_download_url(
         self, dataset: GribDatasetInfo, filename: str
     ) -> str:
+        """The one-off signed URL the Open Data API hands out for a file."""
         url = (
             f"{API_BASE_URL}/datasets/{dataset.key}/versions/{dataset.version}"
             f"/files/{filename}/url"
@@ -345,6 +349,7 @@ class KnmiSource(GribSource):
     async def async_download_file(
         self, dataset: GribDatasetInfo, filename: str, destination: Path
     ) -> Path:
+        """Download one run archive (a ~850 MB .tar) to ``destination``."""
         download_url = await self.async_get_download_url(dataset, filename)
         loop = asyncio.get_running_loop()
         # A HARMONIE run is ~850MB; the streaming download is async, but the
@@ -373,6 +378,7 @@ class KnmiSource(GribSource):
     async def async_start_notifications(
         self, dataset: GribDatasetInfo, on_new_file: Callable[[str], None]
     ) -> None:
+        """Subscribe to KNMI's Notification Service for this dataset."""
         if self._mqtt_client is not None:
             return  # already listening
 
@@ -475,6 +481,7 @@ class KnmiSource(GribSource):
         self._mqtt_client = client
 
     async def async_stop_notifications(self) -> None:
+        """Disconnect the MQTT client, if one is running."""
         client = self._mqtt_client
         self._mqtt_client = None
         if client is None:

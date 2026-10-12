@@ -18,6 +18,8 @@ from .grib_decode import DecodedField
 
 @dataclass(frozen=True)
 class ColorStop:
+    """One anchor of a colour scale: a position and the colour at it."""
+
     offset: float  # 0..1 position along the scale
     color: tuple[int, int, int]
 
@@ -128,6 +130,8 @@ COLORMAPS: dict[str, tuple[ColorStop, ...]] = {
 
 @dataclass(frozen=True)
 class RenderedFrame:
+    """A field rendered to PNG, with the geography needed to place it."""
+
     png_bytes: bytes
     bounds: tuple[float, float, float, float]  # (south, west, north, east)
     width: int
@@ -136,6 +140,12 @@ class RenderedFrame:
 
 @dataclass(frozen=True)
 class Legend:
+    """The scale a rendered frame was coloured with, for the card's legend.
+
+    Sent alongside the PNG so the card can label the colours without knowing
+    anything about the colormaps in this module.
+    """
+
     unit: str
     min_value: float
     max_value: float

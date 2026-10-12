@@ -84,6 +84,8 @@ def write_member(
 
 
 def iter_messages(buf: bytes) -> list[FieldMessage]:
+    """Read back a member written by ``write``, one message per field in it."""
+    """Read back a member written by ``write``, one message per field in it."""
     try:
         with np.load(io.BytesIO(buf), allow_pickle=False) as npz:
             lats, lons, times = npz["lats"], npz["lons"], npz["times"]
@@ -108,8 +110,20 @@ def iter_messages(buf: bytes) -> list[FieldMessage]:
 
 
 def to_grid(message: FieldMessage) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return (values, lats, lons) for a message, shaped as the decoder expects.
+
+    The counterpart of grib1.to_grid / grib2.to_grid, so grib_decode can treat
+    a gridded member exactly like a GRIB one.
+    """
+    """Return (values, lats, lons) for a message, shaped as the decoder expects.
+
+    The counterpart of grib1.to_grid / grib2.to_grid, so grib_decode can treat
+    a gridded member exactly like a GRIB one.
+    """
     return message.values.reshape(message.nj, message.ni), message.lats, message.lons
 
 
 def message_times(message: FieldMessage) -> tuple[datetime, datetime]:
+    """Return (valid_time, run_time) without unpacking the values."""
+    """Return (valid_time, run_time) without unpacking the values."""
     return message.valid_time, message.run_time
