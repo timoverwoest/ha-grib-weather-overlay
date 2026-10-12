@@ -1,5 +1,6 @@
 """Tests for render.py, in particular the Web-Mercator row warp that keeps a
-wide-latitude overlay aligned with Leaflet's imageOverlay placement."""
+wide-latitude overlay aligned with Leaflet's imageOverlay placement.
+"""
 
 from __future__ import annotations
 
@@ -37,7 +38,7 @@ def test_render_field_shape_and_bounds() -> None:
         parameter_key="wave_height", data=data, lats=lats, lons=lons,
         valid_time=None, run_time=None, unit="m",
     )
-    frame, legend = render.render_field(field, colormap="wave", value_range=(0, 8))
+    frame, _legend = render.render_field(field, colormap="wave", value_range=(0, 8))
     assert frame.width == lons.size and frame.height == lats.size
     assert frame.bounds == (30.0, -10.5, 66.0, 42.0)
     assert len(frame.png_bytes) > 0

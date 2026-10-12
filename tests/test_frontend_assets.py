@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import gzip
 import os
-import re
 from pathlib import Path
+import re
 
 import pytest
 
@@ -89,7 +89,8 @@ def test_a_read_only_install_still_serves_the_plain_files(tmp_path: Path) -> Non
 def test_a_throwing_hass_setter_cannot_blank_the_card() -> None:
     """Home Assistant replaces a card whose `hass` setter throws with a bare
     "configuration error" -- no message, nothing to go on. Every setter guards
-    its body, so a hiccup costs a frame and not the card."""
+    its body, so a hiccup costs a frame and not the card.
+    """
     assert JS.count("set hass(hass) {") == JS.count('gribGuard("hass update", () => {') == 3
     for block in JS.split("set hass(hass) {")[1:]:
         body = block.split("\n  }\n", 1)[0]
@@ -101,7 +102,8 @@ def test_a_throwing_hass_setter_cannot_blank_the_card() -> None:
 
 def test_the_card_announces_itself_with_its_version() -> None:
     """The banner is the answer to "is the card loaded, and which version?" --
-    it runs last, so a console without it means the file never finished."""
+    it runs last, so a console without it means the file never finished.
+    """
     assert "GRIB-OVERLAY-CARD %c ${GRIB_ASSET_VERSION" in JS
     banner = JS.index("GRIB-OVERLAY-CARD %c ${GRIB_ASSET_VERSION")
     assert banner > JS.index('gribDefineCard("grib-overlay-weathermap-card"')
@@ -110,7 +112,8 @@ def test_the_card_announces_itself_with_its_version() -> None:
 
 def test_a_re_attached_card_fetches_its_frames_again() -> None:
     """Home Assistant keeps a view's cards in memory, so browsing back re-attaches
-    the same element. It must not need a page reload to show a map again."""
+    the same element. It must not need a page reload to show a map again.
+    """
     connected = JS.split("  connectedCallback() {", 1)[1].split("\n  }\n", 1)[0]
     assert "this._refreshAfterReattach();" in connected
     body = JS.split("  async _refreshAfterReattach() {", 1)[1].split("\n  }\n", 1)[0]
@@ -122,7 +125,8 @@ def test_a_re_attached_card_fetches_its_frames_again() -> None:
 def test_the_card_is_served_before_any_entry_is_set_up() -> None:
     """A dashboard opened while the entries are still restoring their caches
     must not get a 404 for the card: that breaks every card of this integration
-    at once, until the page is reloaded."""
+    at once, until the page is reloaded.
+    """
     assert "async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:" in INIT
     setup = INIT.split("async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:", 1)[1]
     setup = setup.split("\nasync def ", 1)[0]
@@ -143,7 +147,8 @@ def test_a_gzip_copy_that_cannot_be_read_back_is_not_written(tmp_path: Path) -> 
 
 def test_a_blank_map_is_measured_again_and_rebuilt_if_needed() -> None:
     """Switching dashboards can hand the card back with nothing painted: the
-    controls and data are there, the map area is empty."""
+    controls and data are there, the map area is empty.
+    """
     body = JS.split("  async _ensureTilesOnce(allowRebuild) {", 1)[1].split("\n  }\n", 1)[0]
     assert "for (const wait of [250, 750, 1500, 3000])" in body
     assert "layer.redraw()" in body  # tiles that were dropped have to be drawn again
@@ -169,7 +174,8 @@ def test_a_blank_map_is_measured_again_and_rebuilt_if_needed() -> None:
 def test_the_card_finds_its_own_url_when_loaded_as_a_module() -> None:
     """Home Assistant imports the card, it does not add a <script src> tag, so
     there is nothing to query: without the stack-trace fallback the banner says
-    "dev" and the vendored files lose their cache-busting version."""
+    "dev" and the vendored files lose their cache-busting version.
+    """
     block = JS.split("const GRIB_ASSET_URL = (() => {", 1)[1].split("})();", 1)[0]
     assert "document.currentScript?.src" in block
     assert "new Error().stack" in block
@@ -179,7 +185,8 @@ def test_the_card_finds_its_own_url_when_loaded_as_a_module() -> None:
 def test_the_dataset_fit_waits_until_the_card_has_a_size() -> None:
     """A card built while its dashboard page is still hidden has a zero-size map.
     Fitting the dataset into that lands on zoom 0 -- a world map with a speck of
-    overlay, which is what an "empty" card on another page turns out to be."""
+    overlay, which is what an "empty" card on another page turns out to be.
+    """
     fit = JS.split("  _fitBounds(bounds) {", 1)[1].split("\n  }\n", 1)[0]
     assert "if (!this._els.mapDiv.offsetWidth || !this._els.mapDiv.offsetHeight) {" in fit
     assert "this._pendingFit = bounds;" in fit
@@ -195,7 +202,8 @@ def test_the_dataset_fit_waits_until_the_card_has_a_size() -> None:
 
 def test_the_banner_says_how_the_card_was_loaded() -> None:
     """When the "configuration error" placeholder does turn up, the next question
-    is whether the file was slow, cached, or never fetched at all."""
+    is whether the file was slow, cached, or never fetched at all.
+    """
     body = JS.split("function gribLoadTiming() {", 1)[1].split("\n}\n", 1)[0]
     assert "performance.getEntriesByName(GRIB_ASSET_URL)[0]" in body
     assert '"from cache"' in body
@@ -207,7 +215,8 @@ def test_a_second_copy_of_the_card_does_not_take_the_file_down() -> None:
     """Defining a tag twice throws, and that throw would leave the cards defined
     further down the file unregistered -- every one of them a "configuration
     error". A duplicate copy (a cached older version, a Lovelace resource on top
-    of the integration) has to be survivable."""
+    of the integration) has to be survivable.
+    """
     assert JS.count("customElements.define(") == 1  # only inside the guard
     body = JS.split("function gribDefineCard(tag, cls) {", 1)[1].split("\n}\n", 1)[0]
     assert "const existing = customElements.get(tag);" in body
@@ -220,7 +229,8 @@ def test_a_blank_configuration_error_is_reported_back_to_home_assistant() -> Non
     """The only account of a message-less "configuration error" is the line the
     frontend writes to the browser console just before it -- the card type and
     the error. On a phone there is no console to read it in, so the card takes a
-    copy and posts it to the integration, which logs it and shows it."""
+    copy and posts it to the integration, which logs it and shows it.
+    """
     body = JS.split("function gribWatchForCardErrors() {", 1)[1].split("\n}\n", 1)[0]
     # Home Assistant's own line, and nothing else: matching our own warnings
     # would put the hook in a loop with itself.
@@ -239,7 +249,8 @@ def test_a_blank_configuration_error_is_reported_back_to_home_assistant() -> Non
 def test_a_report_says_what_state_the_card_was_in() -> None:
     """A `hass` assignment throws for three reasons, and each one shows up in
     the element: a getter without a setter, a frozen element, or an element
-    built by an older copy of the file. Look while it is still there."""
+    built by an older copy of the file. Look while it is still there.
+    """
     body = JS.split("function gribElementState(el) {", 1)[1].split("\n}\n", 1)[0]
     assert "getter without a setter" in body
     assert "Object.isFrozen(el)" in body
@@ -251,7 +262,8 @@ def test_a_report_says_what_state_the_card_was_in() -> None:
 def test_a_card_nobody_can_see_stops_animating() -> None:
     """Home Assistant keeps the cards of a view it is not showing. The particle
     layer is a requestAnimationFrame loop, so a few of these would spend the
-    browser's animation budget on cards nobody is looking at."""
+    browser's animation budget on cards nobody is looking at.
+    """
     body = JS.split("  _setWindAnimation(running) {", 1)[1].split("\n  }\n", 1)[0]
     assert "layer._clearWind()" in body
     # Leaflet goes on drawing, and the layer restarts itself 750 ms after every
@@ -270,7 +282,8 @@ def test_a_card_nobody_can_see_stops_animating() -> None:
 
 def test_the_playback_button_keeps_its_place_while_the_card_sleeps() -> None:
     """Coming back to the page should find the animation running, so pausing
-    off-screen must not look like the user pressing stop."""
+    off-screen must not look like the user pressing stop.
+    """
     suspend = JS.split("  _suspendPlayback() {", 1)[1].split("\n  }\n", 1)[0]
     assert "playPauseBtn" not in suspend
     assert "this._playbackSuspended = true;" in suspend
@@ -289,7 +302,8 @@ def test_the_chart_card_does_not_poll_for_a_page_nobody_has_open() -> None:
 def test_a_page_where_every_card_failed_can_still_report_it() -> None:
     """The report travels on a `hass` a card was given -- and being given one is
     exactly what fails. If that was every card on the page, ask Home Assistant's
-    own root element instead of letting the failure go unreported."""
+    own root element instead of letting the failure go unreported.
+    """
     body = JS.split("function gribHassForReport() {", 1)[1].split("\n}\n", 1)[0]
     assert 'document.querySelector("home-assistant")' in body
     assert "gribHassForReport()" in JS.split("function gribScheduleReport() {", 1)[1]
@@ -299,7 +313,8 @@ def test_a_page_where_every_card_failed_can_still_report_it() -> None:
 def test_a_map_is_never_rebuilt_into_a_container_with_no_size() -> None:
     """The cure produced the disease: a Leaflet map built while the dashboard
     page was hidden has no tiles either -- and it spent the rebuild budget
-    doing it, so the card stayed blank for the rest of the session."""
+    doing it, so the card stayed blank for the rest of the session.
+    """
     for method in ("  async _ensureTilesOnce(allowRebuild) {", "  async _ensureTiles() {"):
         body = JS.split(method, 1)[1].split("\n  }\n", 1)[0]
         assert "offsetWidth || !this._els.mapDiv.offsetHeight) return;" in body, method
@@ -307,7 +322,8 @@ def test_a_map_is_never_rebuilt_into_a_container_with_no_size() -> None:
 
 def test_a_recovery_asked_for_mid_run_is_not_dropped() -> None:
     """The run that matters is the one arriving as the card gains a size, and
-    that is exactly when an earlier, useless run is still going."""
+    that is exactly when an earlier, useless run is still going.
+    """
     body = JS.split("  async _ensureTiles({ allowRebuild = false } = {}) {", 1)[1].split("\n  }\n", 1)[0]
     assert "this._ensureAgain = this._ensureAgain || allowRebuild;" in body
     assert "while (this._ensureAgain) {" in body
@@ -317,7 +333,8 @@ def test_a_recovery_asked_for_mid_run_is_not_dropped() -> None:
 
 def test_the_comparison_card_gets_its_map_back_too() -> None:
     """Its mini-map lost its tiles on the way back from another dashboard just
-    the same, and had nothing but invalidateSize to bring them back."""
+    the same, and had nothing but invalidateSize to bring them back.
+    """
     body = JS.split("  async _ensureTiles() {", 1)[1].split("\n  }\n", 1)[0]
     assert "layer.redraw()" in body
     assert "this._buildMap(center, zoom);" in body  # last resort, at the same place
@@ -331,7 +348,8 @@ def test_a_map_counts_as_painted_only_when_a_tile_actually_loaded() -> None:
     """Leaflet hides every tile it creates and reveals it only once the image
     has loaded. A map whose tile images were aborted -- what a browser does to a
     subtree taken out of the page -- is full of tiles and completely blank, so
-    asking whether there are tiles answered the wrong question."""
+    asking whether there are tiles answered the wrong question.
+    """
     assert 'const GRIB_PAINTED_TILE = ".leaflet-tile-loaded";' in JS
     assert '".leaflet-tile"' not in JS.split("const GRIB_PAINTED_TILE", 1)[1].replace(
         'querySelectorAll(".leaflet-tile").length', ""
@@ -341,7 +359,8 @@ def test_a_map_counts_as_painted_only_when_a_tile_actually_loaded() -> None:
 
 def test_the_card_goes_looking_for_its_own_red_block() -> None:
     """A console can be replaced by another card's bundle before we hook it, and
-    then a dropped card goes unexplained. The block itself cannot hide."""
+    then a dropped card goes unexplained. The block itself cannot hide.
+    """
     body = JS.split("function gribScanForErrorCards() {", 1)[1].split("\n}\n", 1)[0]
     assert '"hui-card"' in body and '"hui-error-card"' in body
     assert "node.shadowRoot" in body  # cards live in shadow roots, several deep
@@ -367,7 +386,8 @@ def test_a_registry_that_replaced_the_browsers_own_is_told_about_the_cards() -> 
     reload, it can get there first. The bundle then installs a replacement for
     `window.customElements` that starts out empty, so `customElements.get()` --
     the question asked before a card is built -- answers "no such element" for a
-    card that is perfectly fine, and Home Assistant draws a red block over it."""
+    card that is perfectly fine, and Home Assistant draws a red block over it.
+    """
     body = JS.split("function gribTeachRegistry() {", 1)[1].split("\n}\n", 1)[0]
     assert "registry.get = (tag) => get(tag) || GRIB_DEFINED.get(tag);" in body
     # Home Assistant waits on whenDefined before rebuilding a card it gave up on.
@@ -383,7 +403,8 @@ def test_a_registry_that_replaced_the_browsers_own_is_told_about_the_cards() -> 
 
 def test_a_card_home_assistant_gave_up_on_is_asked_for_again() -> None:
     """The promise it was waiting on came from the registry that never knew us,
-    so it will not resolve by itself."""
+    so it will not resolve by itself.
+    """
     body = JS.split("function gribRebuildErrorCards(found) {", 1)[1].split("\n}\n", 1)[0]
     assert 'new CustomEvent("ll-rebuild", { bubbles: true, composed: true })' in body
     once = JS.split("function gribScanOnce() {", 1)[1].split("\n}\n", 1)[0]
@@ -395,7 +416,8 @@ def test_a_card_home_assistant_gave_up_on_is_asked_for_again() -> None:
 def test_an_error_block_is_read_in_both_the_old_and_the_new_shape() -> None:
     """Older frontends put the text in `_config.error`, newer ones in
     `_config.message` -- reading only one of them turned "Custom element doesn't
-    exist" into a report that said there was no message at all."""
+    exist" into a report that said there was no message at all.
+    """
     body = JS.split("function gribErrorCardRecord(node) {", 1)[1].split("\n}\n", 1)[0]
     assert body.count("_config.message") == 2
     assert body.count("_config.error") == 2
@@ -407,7 +429,8 @@ def test_leaflet_may_not_pin_the_map_to_no_height() -> None:
     is not attached yet, which is the state a card is in while Home Assistant
     assembles a dashboard. That inline style beats our own `position: absolute;
     inset: 0`, so `inset` stops doing anything and the map becomes zero pixels
-    high: the card is there, the controls work, the map area is empty."""
+    high: the card is there, the controls work, the map area is empty.
+    """
     body = JS.split("function gribFixMapPosition(mapDiv) {", 1)[1].split("\n}\n", 1)[0]
     assert 'mapDiv.style.position !== "relative"' in body
     assert 'mapDiv.style.position = "";' in body  # back to the stylesheet, not another value
@@ -431,7 +454,8 @@ def _shot_examples() -> dict[str, str]:
 
 def test_the_readme_shows_the_yaml_the_screenshot_page_renders() -> None:
     """The README's examples are what dev/shots.html puts on screen, so a
-    screenshot taken from that page cannot show a card the YAML would not."""
+    screenshot taken from that page cannot show a card the YAML would not.
+    """
     examples = _shot_examples()
     assert set(examples) == {"overlay", "waves", "compare", "weathermap"}
     for name, yaml in examples.items():

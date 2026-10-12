@@ -8,9 +8,10 @@ opendata.dwd.de's ewam tree, bunzip2'd).
 
 from __future__ import annotations
 
+from datetime import UTC
 import os
-import struct
 from pathlib import Path
+import struct
 
 import numpy as np
 import pytest
@@ -30,15 +31,19 @@ def _make_grib2(*, ni, nj, lat1, lon1, lat2, lon2, cat, num, ref, bits, raw_valu
                 forecast_time=3, end_time=None, npoints=None) -> bytes:
     # Section 1 (identification), 21 octets, reference time 2026-07-22 00:00Z
     s1 = bytearray(21)
-    s1[0:4] = _u4(21); s1[4] = 1
-    s1[12:14] = _u2(2026); s1[14], s1[15], s1[16] = 7, 22, 0
+    s1[0:4] = _u4(21)
+    s1[4] = 1
+    s1[12:14] = _u2(2026)
+    s1[14], s1[15], s1[16] = 7, 22, 0
 
     # Section 3 (grid definition), template 3.0 regular lat/lon, 72 octets
     s3 = bytearray(72)
-    s3[0:4] = _u4(72); s3[4] = 3
+    s3[0:4] = _u4(72)
+    s3[4] = 3
     s3[6:10] = _u4(ni * nj)
     # s3[12:14] template = 0 (already zero)
-    s3[30:34] = _u4(ni); s3[34:38] = _u4(nj)
+    s3[30:34] = _u4(ni)
+    s3[34:38] = _u4(nj)
     s3[46:50] = _u4(int(round(lat1 * 1e6)))
     s3[50:54] = _u4(int(round(lon1 * 1e6)))
     s3[55:59] = _u4(int(round(lat2 * 1e6)))
@@ -48,12 +53,14 @@ def _make_grib2(*, ni, nj, lat1, lon1, lat2, lon2, cat, num, ref, bits, raw_valu
     # Section 4 (product definition): template 4.0 (34 octets), or 4.8 (58
     # octets) when an interval end_time is given
     s4 = bytearray(34 if end_time is None else 58)
-    s4[0:4] = _u4(len(s4)); s4[4] = 4
+    s4[0:4] = _u4(len(s4))
+    s4[4] = 4
     if end_time is not None:
         s4[7:9] = _u2(8)
         s4[34:36] = _u2(end_time.year)
         s4[36:41] = bytes([end_time.month, end_time.day, end_time.hour, end_time.minute, 0])
-    s4[9] = cat; s4[10] = num
+    s4[9] = cat
+    s4[10] = num
     s4[17] = 1  # unit of time range = hour
     s4[18:22] = _u4(forecast_time)
     s4[22] = 101  # type of level
@@ -62,7 +69,8 @@ def _make_grib2(*, ni, nj, lat1, lon1, lat2, lon2, cat, num, ref, bits, raw_valu
 
     # Section 5 (data representation), template 5.0 simple packing, 21 octets
     s5 = bytearray(21)
-    s5[0:4] = _u4(21); s5[4] = 5
+    s5[0:4] = _u4(21)
+    s5[4] = 5
     s5[5:9] = _u4(len(raw_values) if npoints is None else npoints)
     # s5[9:11] drt = 0
     s5[11:15] = struct.pack(">f", ref)
@@ -109,22 +117,24 @@ def test_parse_and_decode_simple_packing() -> None:
 
 def test_truncated_data_section_raises_when_read() -> None:
     """A data section too short for its point count must not decode its
-    missing tail as zeros."""
+    missing tail as zeros.
+    """
     raw = _make_grib2(
         ni=5, nj=1, lat1=50.0, lon1=4.0, lat2=50.0, lon2=8.0,
         cat=0, num=3, ref=0.0, bits=12, raw_values=[1, 2, 3, 4], npoints=5,
     )
     (m,) = list(grib2.iter_messages(raw))  # the headers are fine
     with pytest.raises(grib2.Grib2Error):
-        m.values
+        _ = m.values  # the unpack happens on access
 
 
 def test_interval_product_is_valid_at_the_end_of_its_interval() -> None:
     """ICON-D2's precipitation is a total since the run start (forecast time 0,
-    template 4.8); its value belongs to the END of that interval, not the start."""
-    from datetime import datetime, timezone
+    template 4.8); its value belongs to the END of that interval, not the start.
+    """
+    from datetime import datetime
 
-    end = datetime(2026, 7, 22, 3, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 7, 22, 3, 0, tzinfo=UTC)
     raw = _make_grib2(
         ni=2, nj=1, lat1=50.0, lon1=4.0, lat2=50.0, lon2=5.0,
         cat=1, num=52, ref=0.0, bits=4, raw_values=[1, 2], forecast_time=0, end_time=end,
@@ -137,8 +147,9 @@ def test_interval_product_is_valid_at_the_end_of_its_interval() -> None:
 
 def test_zero_length_interval_is_not_offered_as_a_frame(tmp_path) -> None:
     """At +0h ICON's gust maximum and precipitation total cover no time at all:
-    their zeros would show as a calm, dry first hour."""
-    from datetime import datetime, timezone
+    their zeros would show as a calm, dry first hour.
+    """
+    from datetime import datetime
 
     from custom_components.grib_overlay import grib_decode
     from custom_components.grib_overlay.sources.base import GribParameter
@@ -147,7 +158,7 @@ def test_zero_length_interval_is_not_offered_as_a_frame(tmp_path) -> None:
         key="wind_gust_10m", name="gust", unit="m/s",
         grib_filter={"discipline": 10, "parameterCategory": 2, "parameterNumber": 22},
     )
-    run = datetime(2026, 7, 22, 0, tzinfo=timezone.utc)
+    run = datetime(2026, 7, 22, 0, tzinfo=UTC)
     for end, expect_frame in ((run, False), (run.replace(hour=1), True)):
         path = tmp_path / f"gust_{end:%H}.grib2"
         path.write_bytes(_make_grib2(

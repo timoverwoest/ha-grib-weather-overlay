@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import pytest
-from homeassistant.components.persistent_notification import _async_get_or_create_notifications
-from homeassistant.setup import async_setup_component
 
 from custom_components.grib_overlay import client_errors
 from custom_components.grib_overlay.http import VIEWS, GribOverlayClientErrorView
+from homeassistant.components.persistent_notification import (
+    _async_get_or_create_notifications,
+)
+from homeassistant.setup import async_setup_component
 
 REPORT = {
     "version": "0.38.0",
@@ -133,7 +135,8 @@ def test_the_endpoint_is_registered_and_needs_a_login() -> None:
 
 def test_a_map_that_stayed_blank_reads_as_itself() -> None:
     """Not a thrown error: no element state, no stack -- just what the card
-    could see of itself, which is the whole point of reporting it."""
+    could see of itself, which is the whole point of reporting it.
+    """
     report = {
         "navigation": "navigate",
         "page": "/zeilen/kaart",

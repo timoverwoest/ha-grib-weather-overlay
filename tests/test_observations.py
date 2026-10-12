@@ -185,7 +185,7 @@ def test_parse_rws_waarnemingen_unsuccessful() -> None:
     assert parse_rws_waarnemingen({}) == []
 
 
-def test_utm31n_central_meridian_is_3E() -> None:
+def test_utm31n_central_meridian_is_3E() -> None:  # noqa: N802 - 3E is a longitude
     lat, lon = utm31n_to_wgs84(500000.0, 5764000.0)
     assert abs(lon - 3.0) < 1e-6  # false easting 500000 sits on 3°E
     assert 51.0 < lat < 53.0  # plausible for the southern North Sea

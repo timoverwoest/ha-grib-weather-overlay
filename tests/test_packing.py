@@ -17,7 +17,8 @@ def _pack(values, bits: int) -> bytes:
 @pytest.mark.parametrize("bits", [1, 3, 7, 8, 9, 10, 12, 13, 16, 17, 24, 25, 31, 32, MAX_BITS])
 def test_bit_unpacking_round_trips(bits) -> None:
     """Values packed end to end come back exactly, for whole-byte widths (fast
-    path) and odd widths alike -- including values that straddle bytes."""
+    path) and odd widths alike -- including values that straddle bytes.
+    """
     rng = np.random.default_rng(bits)
     values = rng.integers(0, 2**bits, size=37, dtype=np.uint64)
     values[:2] = [0, 2**bits - 1]
@@ -35,11 +36,11 @@ def test_bit_unpacking_round_trips(bits) -> None:
     (0, 1, 1),
 ])
 def test_bit_unpacking_refuses_a_short_data_section(size, count, bits) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="fewer than"):
         unpack_bits(b"\xff" * size, count, bits)
 
 
 @pytest.mark.parametrize("bits", [0, MAX_BITS + 1, 64])
 def test_bit_unpacking_refuses_unsupported_widths(bits) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="unsupported bits per value"):
         unpack_bits(bytes(16), 1, bits)

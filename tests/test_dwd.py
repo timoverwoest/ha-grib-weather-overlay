@@ -16,11 +16,11 @@ from custom_components.grib_overlay.sources.dwd import (
     _EWAM_BASE,
     _GWAM_BASE,
     _GWAM_WINDOW,
-    _WAVE_DIR,
-    _WAVE_MODELS,
     _ICON_D2_BASE,
     _ICON_D2_DIRS,
     _ICON_D2_RUN_HOURS,
+    _WAVE_DIR,
+    _WAVE_MODELS,
     KNOWN_DATASETS,
     DwdSource,
 )
@@ -64,8 +64,8 @@ def _listing(run: str, steps: range) -> str:
 @pytest.mark.asyncio
 async def test_lists_latest_run() -> None:
     pages = {
-        f"{_EWAM_BASE}/00/swh/": _listing("2026072300", range(0, 79)),
-        f"{_EWAM_BASE}/12/swh/": _listing("2026072312", range(0, 79)),
+        f"{_EWAM_BASE}/00/swh/": _listing("2026072300", range(79)),
+        f"{_EWAM_BASE}/12/swh/": _listing("2026072312", range(79)),
     }
     src = DwdSource(_FakeSession(pages))
     files = await src.async_list_files(EWAM)
@@ -79,10 +79,11 @@ async def test_lists_latest_run() -> None:
 async def test_a_run_still_being_published_is_not_listed() -> None:
     """DWD publishes an EWAM run over ~35 minutes. A poll that lands at the
     start used to take the run with a single file -- and, since a run is
-    processed once, keep that one frame for 12 hours."""
+    processed once, keep that one frame for 12 hours.
+    """
     pages = {
-        f"{_EWAM_BASE}/00/swh/": _listing("2026091600", range(0, 1)),  # just started
-        f"{_EWAM_BASE}/12/swh/": _listing("2026091512", range(0, 79)),  # yesterday, complete
+        f"{_EWAM_BASE}/00/swh/": _listing("2026091600", range(1)),  # just started
+        f"{_EWAM_BASE}/12/swh/": _listing("2026091512", range(79)),  # yesterday, complete
     }
     src = DwdSource(_FakeSession(pages))
     files = await src.async_list_files(EWAM)
@@ -93,11 +94,11 @@ async def test_a_run_still_being_published_is_not_listed() -> None:
 async def test_ewam_refuses_a_run_with_a_parameter_still_missing(monkeypatch, tmp_path) -> None:
     run = "2026091600"
     pages = {
-        f"{_EWAM_BASE}/00/swh/": _listing(run, range(0, 79)),
+        f"{_EWAM_BASE}/00/swh/": _listing(run, range(79)),
         f"{_EWAM_BASE}/12/swh/": "",
         # mwd trails swh by a few seconds per lead time.
         f"{_EWAM_BASE}/00/mwd/": "".join(
-            f'<a href="EWAM_MWD_{run}_{s:03d}.grib2.bz2">x</a>' for s in range(0, 40)
+            f'<a href="EWAM_MWD_{run}_{s:03d}.grib2.bz2">x</a>' for s in range(40)
         ),
         f"{_EWAM_BASE}/12/mwd/": "",
     }
@@ -119,7 +120,7 @@ async def test_ewam_refuses_a_run_with_a_parameter_still_missing(monkeypatch, tm
 async def test_horizon_limits_downloaded_steps(monkeypatch, tmp_path) -> None:
     run = "2026072312"
     pages = {
-        f"{_EWAM_BASE}/12/swh/": _listing(run, range(0, 6)),
+        f"{_EWAM_BASE}/12/swh/": _listing(run, range(6)),
         f"{_EWAM_BASE}/00/swh/": "",
     }
     src = DwdSource(_FakeSession(pages))
@@ -172,7 +173,8 @@ def _d2_name(run: str, step: int, dwd_dir: str) -> str:
 
 def _d2_listing(dwd_dir: str, *runs: tuple[str, range]) -> str:
     """An Apache index as DWD serves it: the link text is truncated, and the
-    icosahedral twin of every file sits next to the regular-lat-lon one."""
+    icosahedral twin of every file sits next to the regular-lat-lon one.
+    """
     rows = []
     for run, steps in runs:
         for s in steps:
@@ -187,12 +189,13 @@ def _d2_listing(dwd_dir: str, *runs: tuple[str, range]) -> str:
 async def test_icon_d2_picks_the_newest_complete_run() -> None:
     """A run still being published shares its directory with yesterday's run of
     the same hour; neither the half-published run nor the old one may win over
-    the newest complete run."""
-    full = range(0, 49)
+    the newest complete run.
+    """
+    full = range(49)
     pages = {f"{_ICON_D2_BASE}/{hh}/t_2m/": _d2_listing("t_2m", (f"20260916{hh}", full))
              for hh in _ICON_D2_RUN_HOURS}
     pages[f"{_ICON_D2_BASE}/18/t_2m/"] = _d2_listing(
-        "t_2m", ("2026091518", range(3, 49)), ("2026091618", range(0, 3))
+        "t_2m", ("2026091518", range(3, 49)), ("2026091618", range(3))
     )
     pages[f"{_ICON_D2_BASE}/21/t_2m/"] = _d2_listing("t_2m", ("2026091521", full))
     src = DwdSource(_FakeSession(pages))
@@ -206,8 +209,8 @@ async def test_icon_d2_joins_u_and_v_and_keeps_lead_time_order(tmp_path) -> None
     run = "2026091612"
     pages: dict = {}
     for dwd_dir, tag in (("u_10m", b"U"), ("v_10m", b"V"), ("tot_prec", b"P")):
-        pages[f"{_ICON_D2_BASE}/12/{dwd_dir}/"] = _d2_listing(dwd_dir, (run, range(0, 49)))
-        for s in range(0, 49):
+        pages[f"{_ICON_D2_BASE}/12/{dwd_dir}/"] = _d2_listing(dwd_dir, (run, range(49)))
+        for s in range(49):
             pages[f"{_ICON_D2_BASE}/12/{dwd_dir}/{_d2_name(run, s, dwd_dir)}"] = bz2.compress(
                 tag + str(s).encode()
             )
@@ -229,9 +232,9 @@ async def test_icon_d2_joins_u_and_v_and_keeps_lead_time_order(tmp_path) -> None
 async def test_icon_d2_refuses_a_run_that_is_still_publishing(monkeypatch, tmp_path) -> None:
     run = "2026091618"
     pages = {
-        f"{_ICON_D2_BASE}/18/t_2m/": _d2_listing("t_2m", (run, range(0, 49))),
+        f"{_ICON_D2_BASE}/18/t_2m/": _d2_listing("t_2m", (run, range(49))),
         # t_2m is done, but relhum_2m is still at +5h.
-        f"{_ICON_D2_BASE}/18/relhum_2m/": _d2_listing("relhum_2m", (run, range(0, 6))),
+        f"{_ICON_D2_BASE}/18/relhum_2m/": _d2_listing("relhum_2m", (run, range(6))),
     }
     src = DwdSource(_FakeSession(pages))
     fetched: list = []
@@ -262,7 +265,8 @@ def test_gwam_steps_are_three_hourly_up_to_its_own_horizon() -> None:
 
 def test_gwam_is_cropped_and_ewam_is_not() -> None:
     """GWAM comes off the server global; without a window every frame would be
-    a world map, thinned down to a handful of points over the North Sea."""
+    a world map, thinned down to a handful of points over the North Sea.
+    """
     assert GWAM.crop == _GWAM_WINDOW
     assert GWAM.bounds == _GWAM_WINDOW
     assert EWAM.crop is None

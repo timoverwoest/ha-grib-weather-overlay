@@ -8,11 +8,12 @@ taken as complete.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import json
-from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.grib_overlay import grib_decode
 from custom_components.grib_overlay.const import (
@@ -28,9 +29,8 @@ from custom_components.grib_overlay.coordinator import (
     GribOverlayCoordinator,
     enabled_parameter_keys,
 )
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-RUN = datetime(2026, 9, 16, 0, tzinfo=timezone.utc)
+RUN = datetime(2026, 9, 16, 0, tzinfo=UTC)
 
 
 def _total(hours: int, values: list[float]) -> grib_decode.DecodedField:

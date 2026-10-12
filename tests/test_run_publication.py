@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.helpers.update_coordinator import UpdateFailed
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.grib_overlay.const import (
     CONF_API_KEY,
@@ -28,7 +28,7 @@ from custom_components.grib_overlay.sources.base import (
     GribRunIncompleteError,
     GribSourceError,
 )
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 
 def _coordinator(hass, *, raises: Exception | None = None) -> GribOverlayCoordinator:

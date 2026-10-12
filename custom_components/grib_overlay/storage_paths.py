@@ -30,8 +30,8 @@ Up to 0.25 the cache lived in ``/config/grib_overlay`` and from 0.26 to 0.34 in
 from __future__ import annotations
 
 import os
-import tempfile
 from pathlib import Path
+import tempfile
 
 from .const import DOMAIN
 

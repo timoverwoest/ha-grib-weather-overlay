@@ -18,7 +18,7 @@ coordinator) are responsible for running them in an executor.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -57,7 +57,7 @@ class DecodedVector:
 def _grib_datetime(date_int: int, time_int: int) -> datetime:
     year, month, day = date_int // 10000, (date_int // 100) % 100, date_int % 100
     hour, minute = time_int // 100, time_int % 100
-    return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
+    return datetime(year, month, day, hour, minute, tzinfo=UTC)
 
 
 # GRIB1 unitOfTimeRange codes -> hours, for the units KNMI HARMONIE emits.
@@ -65,8 +65,10 @@ _TIME_UNIT_HOURS = {0: 1 / 60, 1: 1, 2: 24, 10: 3, 11: 6, 12: 12, 13: 0.25}
 
 
 def _iter_messages(buf: bytes):
-    """Yield messages from a GRIB1 or GRIB2 buffer, dispatching on the edition,
-    or from a gridded member (see gridded.py)."""
+    """Yield the messages of a GRIB1, GRIB2 or gridded buffer.
+
+    Dispatches on the edition; a gridded member is one of our own (gridded.py).
+    """
     if buf[:4] == gridded.MAGIC:
         try:
             return iter(gridded.iter_messages(buf))
@@ -128,8 +130,11 @@ def peek_valid_time(path: Path) -> tuple[datetime, datetime]:
 
 
 def _empty_interval(message) -> bool:
-    """A statistic over an interval of zero length (ICON's +0h gust maximum and
-    precipitation total): all zeros that would read as "calm" and "dry"."""
+    """Return whether this is a statistic over an interval of zero length.
+
+    ICON's +0 h gust maximum and precipitation total are such a statistic: all
+    zeros, which would read as "calm" and "dry".
+    """
     end_time = getattr(message, "end_time", None)
     return end_time is not None and end_time == message.reference_time
 

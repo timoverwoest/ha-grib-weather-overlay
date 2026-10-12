@@ -23,9 +23,9 @@ NOMADS keeps roughly the last ten days; no key, no account.
 from __future__ import annotations
 
 import asyncio
-import functools
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+import functools
 from pathlib import Path
 
 import aiohttp
@@ -453,7 +453,7 @@ KNOWN_DATASETS: tuple[GribDatasetInfo, ...] = (
 
 def steps_within(horizon_hours: float) -> list[int]:
     """The lead times GFS publishes up to ``horizon_hours``, ascending."""
-    hourly = range(0, min(int(horizon_hours), _HOURLY_TO) + 1)
+    hourly = range(min(int(horizon_hours), _HOURLY_TO) + 1)
     three_hourly = range(_HOURLY_TO + 3, _LAST_STEP + 1, 3)
     return [*hourly, *(s for s in three_hourly if s <= horizon_hours)]
 
@@ -468,7 +468,7 @@ def _floor_run(moment: datetime) -> datetime:
     )
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _window_query() -> str:
     south, west, north, east = WINDOW
     return (
@@ -531,7 +531,7 @@ class NoaaSource(GribSource):
                 if resp.status >= 400:
                     raise GribSourceError(f"NOMADS {url} returned HTTP {resp.status}")
                 body = await resp.read()
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        except (TimeoutError, aiohttp.ClientError) as err:
             raise GribSourceError(f"NOMADS request failed: {err}") from err
         if not body.startswith(b"GRIB"):
             # The filter answers an unusable selection with an HTML error page.
@@ -554,7 +554,7 @@ class NoaaSource(GribSource):
         cheap enough to ask NOMADS at every poll.
         """
         model = _MODELS[dataset.key]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for back in range(0, _RUN_LOOKBACK_HOURS + 1, _RUN_INTERVAL_HOURS):
             run = _floor_run(now - timedelta(hours=back))
             if await self._has_step(model, run, _PROBE_STEP):
@@ -593,7 +593,7 @@ class NoaaSource(GribSource):
         fields = [f for key in param_keys if (f := model.field(key))]
         if not fields:
             raise GribSourceError(f"No GFS parameters enabled for {dataset.key}")
-        run = datetime.strptime(run_id, "%Y%m%d%H").replace(tzinfo=timezone.utc)
+        run = datetime.strptime(run_id, "%Y%m%d%H").replace(tzinfo=UTC)
         steps = steps_within(horizon_hours)
         # Ask for the far end first, for one grid cell. A run is listed as soon
         # as it reaches _PROBE_STEP, hours before it reaches +384, so without

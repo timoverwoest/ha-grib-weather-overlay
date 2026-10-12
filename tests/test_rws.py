@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 import numpy as np
@@ -15,7 +15,7 @@ from custom_components.grib_overlay.sources.rws import KNOWN_DATASETS, RwsSource
 from tests import nc3_writer
 
 DCSM = next(d for d in KNOWN_DATASETS if d.key == "rws_dcsm")
-RUN = datetime(2026, 9, 16, 12, tzinfo=timezone.utc)
+RUN = datetime(2026, 9, 16, 12, tzinfo=UTC)
 
 
 def test_member_round_trip_through_grib_decode(tmp_path) -> None:
@@ -66,7 +66,7 @@ def test_despike_masks_isolated_impossible_levels_only() -> None:
 
 def _matroos_nc(start: datetime, hours: list[int], fields=("sep", "velu", "velv")) -> bytes:
     y, x = np.array([51.0, 51.05, 51.1]), np.array([3.0, 3.05, 3.1])
-    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    epoch = datetime(1970, 1, 1, tzinfo=UTC)
     minutes = np.array([((start + timedelta(hours=h)) - epoch).total_seconds() / 60 for h in hours])
     variables = [
         ("x", ["x"], x.astype(">f8"), {}),
@@ -122,9 +122,9 @@ class _Session:
         q = {k: v[0] for k, v in parse_qs(urlparse(url).query).items()}
         if "get_anal_times" in url:
             return _Resp(("\n".join(self.runs) + "\n").encode())
-        start = datetime.strptime(q["from"], "%Y%m%d%H%M").replace(tzinfo=timezone.utc)
-        end = datetime.strptime(q["to"], "%Y%m%d%H%M").replace(tzinfo=timezone.utc)
-        run = datetime.strptime(q["anal"], "%Y%m%d%H%M").replace(tzinfo=timezone.utc)
+        start = datetime.strptime(q["from"], "%Y%m%d%H%M").replace(tzinfo=UTC)
+        end = datetime.strptime(q["to"], "%Y%m%d%H%M").replace(tzinfo=UTC)
+        run = datetime.strptime(q["anal"], "%Y%m%d%H%M").replace(tzinfo=UTC)
         self.windows.append((int((start - run).total_seconds() // 3600), int((end - run).total_seconds() // 3600), q))
         hours = [
             int((start - run).total_seconds() // 3600) + i
@@ -228,7 +228,8 @@ ZUNO = next(d for d in KNOWN_DATASETS if d.key == "rws_dcsm_zuno")
 
 def test_the_zuno_nest_is_the_same_model_on_a_finer_grid() -> None:
     """Matroos interpolates every request itself, so the nest is worth having
-    only if it is asked for more finely than the full domain."""
+    only if it is asked for more finely than the full domain.
+    """
     full = rws._MODELS["rws_dcsm"]
     nest = rws._MODELS["rws_dcsm_zuno"]
     assert nest.source.startswith(full.source)

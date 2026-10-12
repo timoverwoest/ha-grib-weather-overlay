@@ -7,15 +7,21 @@ renders through the exact code path __init__.py wires up.
 
 from __future__ import annotations
 
-import os
-import tarfile
 from io import BytesIO
+import os
 from pathlib import Path
+import tarfile
 
 import pytest
-
-from custom_components.grib_overlay.const import CONF_API_KEY, CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.grib_overlay.const import (
+    CONF_API_KEY,
+    CONF_DATASET,
+    CONF_PARAMETERS,
+    CONF_SOURCE,
+    DOMAIN,
+)
 
 SAMPLE_ENV_VAR = "GRIB_OVERLAY_SAMPLE_GRIB"
 

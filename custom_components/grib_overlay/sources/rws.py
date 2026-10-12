@@ -18,11 +18,11 @@ is split into one member file per lead time (gridded.py) for the coordinator.
 from __future__ import annotations
 
 import asyncio
-import functools
-import warnings
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+import functools
 from pathlib import Path
+import warnings
 
 import aiohttp
 import numpy as np
@@ -202,7 +202,7 @@ def _stamp(dt: datetime) -> str:
 
 
 def _parse_stamp(text: str) -> datetime:
-    return datetime.strptime(text, "%Y%m%d%H%M").replace(tzinfo=timezone.utc)
+    return datetime.strptime(text, "%Y%m%d%H%M").replace(tzinfo=UTC)
 
 
 def despike(grid: np.ndarray, limit: float) -> np.ndarray:
@@ -242,7 +242,7 @@ def split_run(
         minutes = data.variables["time"].data.astype(np.float64)
     except KeyError as err:
         raise GribSourceError(f"Matroos NetCDF lacks {err}") from err
-    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    epoch = datetime(1970, 1, 1, tzinfo=UTC)
     grids: dict[str, np.ndarray] = {}
     for name in model.fields:
         var = data.variables.get(name)
@@ -301,7 +301,7 @@ class RwsSource(GribSource):
                 if resp.status >= 400:
                     raise GribSourceError(f"Matroos {url} returned HTTP {resp.status}")
                 return await resp.read()
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        except (TimeoutError, aiohttp.ClientError) as err:
             raise GribSourceError(f"Matroos request failed: {err}") from err
 
     async def async_list_files(
@@ -313,7 +313,7 @@ class RwsSource(GribSource):
         sorting: str = "desc",
     ) -> list[GribFileInfo]:
         model = _MODELS[dataset.key]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         url = (
             f"{API_BASE_URL}/get_anal_times.php?database=maps2d&source={model.source}"
             f"&tstart={_stamp(now - timedelta(hours=36))}&tstop={_stamp(now)}"
@@ -340,10 +340,10 @@ class RwsSource(GribSource):
         return []
 
     async def _async_is_complete(self, model: _Model, run: datetime) -> bool:
-        """Has ``run`` been computed all the way to its last lead time?
+        """Return whether ``run`` has been computed to its last lead time.
 
         One small request for that hour alone answers it: Matroos returns
-        NetCDF when the hour exists and a one-line error when it doesn't.
+        NetCDF when the hour exists and a one-line error when it does not.
         """
         key = f"{model.source}:{_stamp(run)}"
         if key in self._complete:

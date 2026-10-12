@@ -6,9 +6,9 @@ coordinator, same as grib_decode.py.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from io import BytesIO
+import math
 
 import numpy as np
 from PIL import Image
@@ -153,9 +153,15 @@ def _colormap_lut(name: str, size: int = 256) -> np.ndarray:
     return lut
 
 
+def _hex(rgb: tuple[int, int, int]) -> str:
+    """Return an (r, g, b) triple as the CSS hex colour the card's legend wants."""
+    red, green, blue = rgb
+    return f"#{red:02x}{green:02x}{blue:02x}"
+
+
 def _legend_stops(colormap: str) -> tuple[dict, ...]:
     return tuple(
-        {"offset": s.offset, "color": "#%02x%02x%02x" % s.color}
+        {"offset": s.offset, "color": _hex(s.color)}
         for s in COLORMAPS.get(colormap, COLORMAPS["turbo"])
     )
 
@@ -172,8 +178,8 @@ def parse_color_scale(text: str) -> ColorScale | None:
     if not text:
         return None
     stops: ColorScale = []
-    for part in text.replace(";", ",").split(","):
-        part = part.strip()
+    for raw_part in text.replace(";", ",").split(","):
+        part = raw_part.strip()
         if ":" not in part:
             continue
         value_str, color_str = part.rsplit(":", 1)
@@ -196,8 +202,8 @@ def parse_color_scales(text: str) -> dict[str, ColorScale]:
     One parameter per line: ``<param_key>: <value>:<#hex>, <value>:<#hex>, ...``.
     """
     out: dict[str, ColorScale] = {}
-    for line in (text or "").splitlines():
-        line = line.strip()
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip()
         if not line or line.startswith("#") or ":" not in line:
             continue
         key, rest = line.split(":", 1)
@@ -222,14 +228,15 @@ def _custom_lut(stops: ColorScale, size: int = 256) -> np.ndarray:
 def _custom_legend_stops(stops: ColorScale, vmin: float, vmax: float) -> tuple[dict, ...]:
     span = (vmax - vmin) or 1.0
     return tuple(
-        {"offset": (v - vmin) / span, "color": "#%02x%02x%02x" % c} for v, c in stops
+        {"offset": (v - vmin) / span, "color": _hex(c)} for v, c in stops
     )
 
 
 def _mercator_north_first_rows(south: float, north: float, nrows: int) -> np.ndarray:
-    """Source-row indices remapping a south-first, latitude-linear grid to an
-    image whose rows run north (top) -> south (bottom) *uniformly in Web
-    Mercator y*.
+    """Map a south-first, latitude-linear grid onto north-first image rows.
+
+    The returned source-row indices make the rows of the image uniform in Web
+    Mercator y, running north (top) -> south (bottom).
 
     Leaflet's imageOverlay stretches the PNG linearly in Web-Mercator pixel
     space between the bounds, but our grid rows are linear in latitude. Over a
@@ -238,8 +245,11 @@ def _mercator_north_first_rows(south: float, north: float, nrows: int) -> np.nda
     """
     if nrows < 2 or north <= south:
         return np.arange(nrows - 1, -1, -1)  # just flip to north-first
-    clamp = lambda d: max(min(d, 85.0), -85.0)
-    merc = lambda d: math.log(math.tan(math.pi / 4 + math.radians(clamp(d)) / 2))
+    def merc(degrees: float) -> float:
+        """Web-Mercator y of a latitude, clamped to where the projection is finite."""
+        clamped = max(min(degrees, 85.0), -85.0)
+        return math.log(math.tan(math.pi / 4 + math.radians(clamped) / 2))
+
     ys = np.linspace(merc(north), merc(south), nrows)  # top=north -> bottom=south
     lats = np.degrees(2.0 * np.arctan(np.exp(ys)) - math.pi / 2)
     src = np.rint((lats - south) / (north - south) * (nrows - 1)).astype(int)

@@ -14,12 +14,12 @@ Then open dev/dev.html served from this same server (printed on start).
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import math
-import sys
-from datetime import datetime, timedelta, timezone
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import sys
 from urllib.parse import parse_qs, urlparse
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -32,7 +32,7 @@ FRAME_COUNT = 6
 FRAME_STEP_HOURS = 1
 # Anchor the mock run around "now" so the meteogram's now-column marker shows.
 BASE_RUN_TIME = (
-    datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0) - timedelta(hours=2)
+    datetime.now(UTC).replace(minute=0, second=0, microsecond=0) - timedelta(hours=2)
 )
 
 # Mirrors the real colormap stops from render.py so the legend looks right.
@@ -176,8 +176,11 @@ ENTRIES = {
 
 
 def _synth_pressure_field() -> dict:
-    """A smooth MSL-pressure grid (hPa) with a low over the NW and a high over the
-    SE, north-first, in the field_grid dict shape the card contours into isobars."""
+    """Build a smooth MSL-pressure grid (hPa) for the isobar code to contour.
+
+    A low over the north-west and a high over the south-east, north-first, in
+    the field_grid dict shape the card expects.
+    """
     south, west, north, east = BOUNDS
     nx, ny = 48, 32
     dx = (east - west) / (nx - 1)
@@ -285,12 +288,13 @@ def _station_obs(param: str, lat: float, lon: float) -> dict:
 
     Mirrors the real station_obs endpoint: values in the parameter's SOURCE unit,
     deliberately a bit off the forecast so the delta/correction is visible. Only
-    past+present instants (observations can't be in the future)."""
+    past+present instants (observations can't be in the future).
+    """
     legend = LEGENDS.get(param, {})
     lo = legend.get("min_value", 0)
     hi = legend.get("max_value", 20)
     has_dir = param in ("wind_10m", "wind_gust_10m", "wave_height", "current")
-    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
     series = []
     t = BASE_RUN_TIME
     i = 0
@@ -364,7 +368,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def do_POST(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
+    def do_POST(self) -> None:
         """The card reporting a failure of its own, as it does to Home Assistant."""
         if urlparse(self.path).path != "/api/grib_overlay/client_error":
             self._json({"error": "not found"}, status=404)
@@ -379,7 +383,7 @@ class Handler(BaseHTTPRequestHandler):
         print("card error report:", json.dumps(report)[:400])
         self._json({"logged": True})
 
-    def do_GET(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
+    def do_GET(self) -> None:
         parsed = urlparse(self.path)
         parts = [p for p in parsed.path.split("/") if p]
 

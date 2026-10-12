@@ -176,11 +176,12 @@ def test_decode_unpacks_only_the_messages_it_needs(tmp_path, unpack_calls) -> No
 
 def test_truncated_data_section_raises_when_read() -> None:
     """A data section too short for its point count must not decode its
-    missing tail as zeros."""
+    missing tail as zeros.
+    """
     raw = _make_grib1(param=11, level=2, bits=12, raw_values=[1, 2, 3, 4], ni=5, nj=1)
     (m,) = list(grib1.iter_messages(raw))  # the headers are fine
     with pytest.raises(grib1.Grib1Error):
-        m.values
+        _ = m.values  # the unpack happens on access
 
 
 def test_values_wider_than_the_unpacker_are_rejected_up_front() -> None:
@@ -255,7 +256,7 @@ def test_matches_eccodes_bit_for_bit() -> None:
             eccodes.codes_release(gid)
 
     assert len(mine) == len(ecc_values)
-    for message, ecc in zip(mine, ecc_values):
+    for message, ecc in zip(mine, ecc_values, strict=True):
         assert np.array_equal(np.isnan(message.values), np.isnan(ecc))
         finite = ~np.isnan(message.values)
         if finite.any():
@@ -281,7 +282,7 @@ def test_other_scan_modes_still_refuse() -> None:
 
 
 def test_two_octet_lead_time(tmp_path) -> None:
-    """timeRangeIndicator 10: P1 spans octets 19-20 (DMI, leads past 255 h)."""
+    """TimeRangeIndicator 10: P1 spans octets 19-20 (DMI, leads past 255 h)."""
     raw = _make_grib1(param=229, level=0, bits=4, raw_values=range(6), tri=10, p1=1, p2=8)
     path = tmp_path / "wam.grib"
     path.write_bytes(raw)

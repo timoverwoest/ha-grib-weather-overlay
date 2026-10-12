@@ -11,8 +11,8 @@ Blocking by design; callers run it in an executor.
 
 from __future__ import annotations
 
-import struct
 from dataclasses import dataclass, field
+import struct
 
 import numpy as np
 
@@ -144,7 +144,7 @@ def read(buf: bytes) -> Dataset:
         recsize = sum(h[4] for h in record_vars)
 
     variables = {}
-    for var_name, dim_ids, var_attributes, nc_type, vsize, begin in headers:
+    for var_name, dim_ids, var_attributes, nc_type, _vsize, begin in headers:
         dtype, size = _TYPES[nc_type]
         shape = [dims[i][1] for i in dim_ids]
         if is_record(dim_ids):

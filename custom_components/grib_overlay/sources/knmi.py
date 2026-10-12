@@ -39,13 +39,13 @@ log it once.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import functools
 import json
 import logging
-import uuid
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+import uuid
 
 import aiohttp
 import paho.mqtt.client as mqtt

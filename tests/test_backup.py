@@ -17,9 +17,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.grib_overlay import backup as backup_platform
-from custom_components.grib_overlay import storage_paths
+from custom_components.grib_overlay import backup as backup_platform, storage_paths
 from custom_components.grib_overlay.backup import async_post_backup, async_pre_backup
 from custom_components.grib_overlay.const import (
     CONF_API_KEY,
@@ -30,7 +30,6 @@ from custom_components.grib_overlay.const import (
     DOMAIN,
 )
 from custom_components.grib_overlay.coordinator import GribOverlayCoordinator
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
 @pytest.fixture(autouse=True)
@@ -139,10 +138,10 @@ async def test_working_files_stay_out_of_the_config_folder(hass) -> None:
 
     config_dir = hass.config.path()
     assert not str(coordinator.storage_dir).startswith(config_dir)
-    assert not str(coordinator._raw_dir).startswith(config_dir)
+    assert not str(coordinator._scratch_root).startswith(config_dir)
     # Scratch space must also sit beside -- not inside -- the entry directory,
     # or the run-retention cleanup could delete an in-flight download.
-    assert coordinator.storage_dir not in coordinator._raw_dir.parents
+    assert coordinator.storage_dir not in coordinator._scratch_root.parents
 
 
 async def test_run_archive_is_downloaded_into_the_scratch_dir(hass, tmp_path) -> None:
@@ -169,11 +168,11 @@ async def test_run_archive_is_downloaded_into_the_scratch_dir(hass, tmp_path) ->
     await coordinator._process_new_run(dataset, "HARM43_V1_P1_2026090219.tar")
 
     (tar_path,) = destinations
-    assert coordinator._raw_dir in tar_path.parents
+    assert coordinator._scratch_root in tar_path.parents
     assert not str(tar_path).startswith(hass.config.path())
     # And the members are extracted into scratch, not into the run directory.
     _, extract_target = coordinator._extract_archive.call_args[0]
-    assert coordinator._raw_dir in extract_target.parents
+    assert coordinator._scratch_root in extract_target.parents
 
 
 async def test_scratch_dir_is_cleaned_up_even_when_decoding_fails(hass, tmp_path) -> None:
@@ -182,7 +181,7 @@ async def test_scratch_dir_is_cleaned_up_even_when_decoding_fails(hass, tmp_path
     hass.config_entries.async_update_entry(entry, options={CONF_STORAGE_PATH: str(tmp_path)})
     coordinator = GribOverlayCoordinator(hass, entry)
 
-    raw_dir = coordinator._raw_dir / "run-A"
+    raw_dir = coordinator._scratch_root / "run-A"
 
     async def _download(dataset, filename, destination):
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -198,7 +197,7 @@ async def test_scratch_dir_is_cleaned_up_even_when_decoding_fails(hass, tmp_path
         parameters=[SimpleNamespace(key="wind_10m")],
         crop=None,
     )
-    with pytest.raises(OSError):
+    with pytest.raises(OSError, match="corrupt member"):
         await coordinator._process_new_run(dataset, "run-A.tar")
 
     assert not raw_dir.exists()
@@ -215,7 +214,7 @@ async def test_stale_scratch_is_dropped_on_setup(hass, tmp_path) -> None:
     hass.config_entries.async_update_entry(entry, options={CONF_STORAGE_PATH: str(tmp_path)})
     coordinator = GribOverlayCoordinator(hass, entry)
 
-    stranded = coordinator._raw_dir / "HARM43_V1_P1_2026090500"
+    stranded = coordinator._scratch_root / "HARM43_V1_P1_2026090500"
     stranded.mkdir(parents=True)
     (stranded / "HARM43_V1_P1_2026090500.tar").write_bytes(b"a stranded 850MB archive")
     # A processed run must survive -- it is the fast-restart cache.
@@ -225,7 +224,7 @@ async def test_stale_scratch_is_dropped_on_setup(hass, tmp_path) -> None:
 
     await coordinator._async_drop_stale_scratch()
 
-    assert not coordinator._raw_dir.exists()
+    assert not coordinator._scratch_root.exists()
     assert (keep / "frames.json").exists()
 
 

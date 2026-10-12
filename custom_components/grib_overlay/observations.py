@@ -24,10 +24,10 @@ fixtures; if a provider names a field differently, adjust the ``KNMI_EDR`` /
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import json
 import logging
 import math
-from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -38,6 +38,11 @@ from .const import CONF_API_KEY, CONF_OBSERVATIONS_API_KEY, CONF_SOURCE, DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 _TIMEOUT = 20  # seconds; a slow provider must not hang the card
+
+# Session caches on hass.data. Named here rather than built from DOMAIN at each
+# use, so a typo cannot quietly create a second, never-read cache.
+DATA_KNMI_LOCATIONS = f"{DOMAIN}_knmi_locations"
+DATA_RWS_CATALOGUE = f"{DOMAIN}_rws_catalogue"
 
 # --- KNMI EDR (weather) ----------------------------------------------------
 # param_key -> (EDR variable code, unit scale to the forecast source unit).
@@ -93,16 +98,15 @@ def provider_for(param_key: str) -> str | None:
 
 
 def _knmi_api_key(hass: HomeAssistant) -> str | None:
-    """The key to use for the EDR observations API.
+    """Return the key to use for the EDR observations API.
 
     Prefers a dedicated `observations_api_key` (options or data) on any KNMI entry
     -- the HARMONIE key is often not authorised for the observations dataset (403)
     -- and falls back to the regular HARMONIE Open Data key.
     """
     fallback = None
-    for coordinator in hass.data.get(DOMAIN, {}).values():
-        entry = getattr(coordinator, "entry", None)
-        if entry is None or entry.data.get(CONF_SOURCE) != "knmi":
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.data.get(CONF_SOURCE) != "knmi":
             continue
         obs = entry.options.get(CONF_OBSERVATIONS_API_KEY) or entry.data.get(CONF_OBSERVATIONS_API_KEY)
         if obs:
@@ -156,7 +160,7 @@ async def _knmi_nearby(
     if not key:
         return []
     code, _ = KNMI_EDR[param_key]
-    end = datetime.now(timezone.utc).replace(microsecond=0)
+    end = datetime.now(UTC).replace(microsecond=0)
     start = end - timedelta(hours=3)
     params = {
         "parameter-name": code,
@@ -245,12 +249,12 @@ async def _rws_nearby(
 # KNMI EDR
 # ---------------------------------------------------------------------------
 async def _knmi_locations(hass: HomeAssistant, key: str) -> dict | None:
-    """The EDR /locations metadata (all stations), cached on hass.data.
+    """Return the EDR /locations metadata (all stations), cached on hass.data.
 
     EDR here supports /locations/{id} and /area, NOT /position, so we resolve the
     nearest station id ourselves from this GeoJSON FeatureCollection.
     """
-    cache = hass.data.setdefault(DOMAIN + "_knmi_locs", {})
+    cache = hass.data.setdefault(DATA_KNMI_LOCATIONS, {})
     if "data" in cache:
         return cache["data"]
     session = async_get_clientsession(hass)
@@ -296,7 +300,7 @@ async def _fetch_knmi(
         return {"error": "geen KNMI Open Data-sleutel geconfigureerd"}
     locs = await _knmi_locations(hass, key)
     if not locs:
-        reason = hass.data.get(DOMAIN + "_knmi_locs", {}).get("error")
+        reason = hass.data.get(DATA_KNMI_LOCATIONS, {}).get("error")
         return {"error": reason or "KNMI EDR /locations niet beschikbaar (sleutel/netwerk)"}
     station = nearest_knmi_location(locs, lat, lon)
     if not station:
@@ -416,8 +420,8 @@ def parse_knmi_coveragejson(
 # RWS Waterinfo
 # ---------------------------------------------------------------------------
 async def _rws_catalogus(hass: HomeAssistant) -> dict | None:
-    """The RWS station/parameter catalogue, cached on hass.data for the session."""
-    cache = hass.data.setdefault(DOMAIN + "_rws_cat", {})
+    """Return the RWS station/parameter catalogue, cached for the session."""
+    cache = hass.data.setdefault(DATA_RWS_CATALOGUE, {})
     if "data" in cache:
         return cache["data"]
     session = async_get_clientsession(hass)

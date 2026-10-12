@@ -9,8 +9,8 @@ than disappear.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
+import re
 from types import SimpleNamespace
 
 from custom_components.grib_overlay import labels
@@ -96,12 +96,15 @@ def test_cards_and_config_flow_agree_on_the_english_names() -> None:
 
 def test_card_ships_every_string_in_both_languages() -> None:
     """A key present in one language and not the other renders as English (or
-    as the raw key). Cheap to prevent, hard to spot by eye."""
+    as the raw key). Cheap to prevent, hard to spot by eye.
+    """
     js = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(encoding="utf-8")
     body = js.split("const GRIB_TEXT = {", 1)[1]
     nl_block = body.split("  nl: {", 1)[1].split("\n  },", 1)[0]
     en_block = body.split("  en: {", 1)[1].split("\n  },", 1)[0]
-    keys = lambda block: set(re.findall(r"^    (\w+):", block, re.M))
+    def keys(block: str) -> set[str]:
+        return set(re.findall(r"^    (\w+):", block, re.M))
+
     missing_en = keys(nl_block) - keys(en_block)
     missing_nl = keys(en_block) - keys(nl_block)
     assert not missing_en, f"missing English strings: {sorted(missing_en)}"

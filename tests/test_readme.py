@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-import re
 from pathlib import Path
+import re
 
 from custom_components.grib_overlay.sources.registry import SOURCE_REGISTRY
 
@@ -31,7 +31,8 @@ def _datasets():
 
 def test_every_dataset_is_described_in_both_languages() -> None:
     """Each one gets its own entry under "Bronnen en datasets" / "Sources and
-    datasets" -- twice, because the README is bilingual."""
+    datasets" -- twice, because the README is bilingual.
+    """
     for source_key, dataset in _datasets():
         assert README.count(f"**`{dataset.key}`**") == 2, f"{source_key}/{dataset.key}"
 

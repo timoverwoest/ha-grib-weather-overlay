@@ -8,11 +8,11 @@ projection, ...).
 
 from __future__ import annotations
 
-import re
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+import re
 
 
 @dataclass(frozen=True)

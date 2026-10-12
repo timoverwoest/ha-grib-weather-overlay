@@ -16,13 +16,13 @@ served, so an image request never makes us call KNMI.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
+from datetime import UTC, datetime
 import json
 import logging
+from pathlib import Path
 import re
 import time
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from pathlib import Path
 
 import aiohttp
 
@@ -74,7 +74,7 @@ def select_charts(files: list[dict]) -> list[Chart]:
         match = NAME_RE.match(f.get("filename", ""))
         if not match:
             continue
-        valid = datetime.strptime(match.group(2), "%Y%m%d%H%M").replace(tzinfo=timezone.utc)
+        valid = datetime.strptime(match.group(2), "%Y%m%d%H%M").replace(tzinfo=UTC)
         chart = Chart(
             name=f["filename"],
             kind="analysis" if match.group(1) == "AL" else "forecast",
@@ -94,10 +94,9 @@ def select_charts(files: list[dict]) -> list[Chart]:
 
 
 def knmi_api_key(hass: HomeAssistant) -> str | None:
-    """The Open Data key of any configured KNMI entry."""
-    for coordinator in hass.data.get(DOMAIN, {}).values():
-        entry = getattr(coordinator, "entry", None)
-        if entry is not None and entry.data.get(CONF_SOURCE) == "knmi" and entry.data.get(CONF_API_KEY):
+    """Return the Open Data key of any configured KNMI entry."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.data.get(CONF_SOURCE) == "knmi" and entry.data.get(CONF_API_KEY):
             return entry.data[CONF_API_KEY]
     return None
 
@@ -130,7 +129,7 @@ class WeatherMaps:
         headers = {"Authorization": key} if key else None
         try:
             resp = await session.get(url, headers=headers, timeout=_TIMEOUT)
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        except (TimeoutError, aiohttp.ClientError) as err:
             raise WeatherMapError(f"KNMI request failed: {err}") from err
         if resp.status in (401, 403):
             resp.release()

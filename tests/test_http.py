@@ -6,16 +6,22 @@ Reuses the same opt-in real-GRIB-sample setup as test_coordinator.py.
 from __future__ import annotations
 
 import os
-import tarfile
 from pathlib import Path
+import tarfile
 
 import pytest
-from homeassistant.setup import async_setup_component
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.grib_overlay.const import CONF_API_KEY, CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN
+from custom_components.grib_overlay.const import (
+    CONF_API_KEY,
+    CONF_DATASET,
+    CONF_PARAMETERS,
+    CONF_SOURCE,
+    DOMAIN,
+)
 from custom_components.grib_overlay.coordinator import GribOverlayCoordinator
 from custom_components.grib_overlay.http import VIEWS
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.setup import async_setup_component
 
 SAMPLE_ENV_VAR = "GRIB_OVERLAY_SAMPLE_GRIB"
 
@@ -93,5 +99,5 @@ async def test_entries_frames_and_image_endpoints(
     resp = await noauth_client.get(f"/api/grib_overlay/frames/{entry.entry_id}")
     assert resp.status == 401  # metadata still requires auth
 
-    resp = await client.get(f"/api/grib_overlay/frames/unknown-entry")
+    resp = await client.get("/api/grib_overlay/frames/unknown-entry")
     assert resp.status == 404

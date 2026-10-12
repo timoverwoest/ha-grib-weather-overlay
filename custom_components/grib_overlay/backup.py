@@ -26,8 +26,7 @@ import logging
 
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
-from .coordinator import GribOverlayCoordinator
+from .coordinator import GribOverlayCoordinator, async_loaded_coordinators
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,11 +38,10 @@ _DRAIN_TIMEOUT = 60
 async def async_pre_backup(hass: HomeAssistant) -> None:
     """Pause run processing (and thus file deletion) before a backup starts."""
     GribOverlayCoordinator.set_backup_active(True)
-    for coordinator in list(hass.data.get(DOMAIN, {}).values()):
+    for coordinator in async_loaded_coordinators(hass):
         try:
-            await asyncio.wait_for(
-                _drain(coordinator._process_lock), timeout=_DRAIN_TIMEOUT
-            )
+            async with asyncio.timeout(_DRAIN_TIMEOUT):
+                await coordinator.async_wait_until_idle()
         except Exception as err:  # noqa: BLE001 - must never abort the backup
             _LOGGER.debug("Pre-backup drain skipped for a coordinator: %s", err)
 
@@ -51,9 +49,3 @@ async def async_pre_backup(hass: HomeAssistant) -> None:
 async def async_post_backup(hass: HomeAssistant) -> None:
     """Resume normal processing once the backup has finished."""
     GribOverlayCoordinator.set_backup_active(False)
-
-
-async def _drain(lock: asyncio.Lock) -> None:
-    """Return once no run is currently being processed under ``lock``."""
-    async with lock:
-        return

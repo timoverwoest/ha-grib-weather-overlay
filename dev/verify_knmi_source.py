@@ -13,8 +13,8 @@ users enter their own free key in the config flow).
 from __future__ import annotations
 
 import asyncio
-import sys
 from pathlib import Path
+import sys
 
 import aiohttp
 

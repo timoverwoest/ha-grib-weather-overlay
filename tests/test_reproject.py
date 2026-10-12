@@ -13,7 +13,6 @@ import pytest
 from custom_components.grib_overlay import grib1, grib_decode, reproject
 from custom_components.grib_overlay.sources.base import GribParameter
 
-
 # --------------------------------------------------------------------------
 # rotation transforms
 # --------------------------------------------------------------------------
@@ -164,7 +163,7 @@ def test_parse_rotated_gds() -> None:
     assert angle == pytest.approx(0.0)
     assert msg.lat1 == pytest.approx(-5.0)
     assert msg.lon2 == pytest.approx(10.0)
-    grid, lats, lons = grib1.to_grid(msg)
+    grid, _lats, _lons = grib1.to_grid(msg)
     assert grid.shape == (2, 3)  # rotated-space coords, still regular
 
 

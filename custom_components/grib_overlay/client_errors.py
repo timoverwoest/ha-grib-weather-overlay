@@ -76,9 +76,11 @@ def _event_lines(event: dict) -> list[str]:
         return lines
     elements = event.get("elements")
     if isinstance(elements, list):
-        for element in elements[:_ELEMENTS_MAX]:
-            if isinstance(element, dict):
-                lines.append("  element " + _describe_element(element))
+        lines.extend(
+            "  element " + _describe_element(element)
+            for element in elements[:_ELEMENTS_MAX]
+            if isinstance(element, dict)
+        )
     lines.extend("  " + line for line in _stack(event.get("stack")))
     return lines
 
@@ -146,8 +148,10 @@ def notification(report: dict, lang: str) -> str:
     """The same, shortened for a notification card."""
     lines = [INTRO.get(lang, INTRO["en"]), ""]
     for event in events(report):
-        for line in _event_lines(event):
-            lines.append("`" + line.strip() + "`" if line.startswith("  ") else "**" + line + "**")
+        lines.extend(
+            "`" + line.strip() + "`" if line.startswith("  ") else "**" + line + "**"
+            for line in _event_lines(event)
+        )
     lines.extend(["", *(line.strip() for line in _context_lines(report)), "", OUTRO.get(lang, OUTRO["en"])])
     return "\n".join(lines)
 

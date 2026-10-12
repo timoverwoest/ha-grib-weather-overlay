@@ -7,8 +7,8 @@ found to every scalar -- which would give swell the total-wave direction.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
-from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import numpy as np
@@ -18,7 +18,7 @@ from custom_components.grib_overlay.coordinator import Frame
 from custom_components.grib_overlay.http import _point_payload
 from custom_components.grib_overlay.sources.base import direction_key_for
 
-T = datetime(2026, 9, 16, 6, tzinfo=timezone.utc)
+T = datetime(2026, 9, 16, 6, tzinfo=UTC)
 
 
 def test_direction_key_follows_the_family_prefix() -> None:

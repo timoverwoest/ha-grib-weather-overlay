@@ -3,25 +3,25 @@
 from __future__ import annotations
 
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 import voluptuous as vol
-from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
 
 from custom_components.grib_overlay.const import (
     CONF_ALIAS,
     CONF_API_KEY,
     CONF_COLOR_SCALES,
     CONF_DATASET,
-    CONF_OBSERVATIONS_API_KEY,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_NOTIFICATION_API_KEY,
+    CONF_OBSERVATIONS_API_KEY,
     CONF_PARAMETERS,
     CONF_RETAIN_RUNS,
     CONF_SOURCE,
     CONF_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
 )
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant import config_entries
+from homeassistant.core import HomeAssistant
 
 FILES_URL = (
     "https://api.dataplatform.knmi.nl/open-data/v1/datasets/"
@@ -300,7 +300,8 @@ def test_source_uses_notification_key_for_mqtt() -> None:
 
 def test_mqtt_client_id_is_stable_per_instance() -> None:
     """A given instance_id (config entry id) yields a stable client id across
-    reloads, so the broker reuses one session instead of piling up new ones."""
+    reloads, so the broker reuses one session instead of piling up new ones.
+    """
     from custom_components.grib_overlay.sources.knmi import KnmiSource
 
     a = KnmiSource(object(), "k", instance_id="entry-123")
@@ -396,7 +397,8 @@ async def test_dataset_and_parameter_labels_follow_the_instance_language(
     hass: HomeAssistant, aioclient_mock
 ) -> None:
     """These names come from the provider at runtime, so Home Assistant's own
-    translation files can't reach them -- the flow translates them itself."""
+    translation files can't reach them -- the flow translates them itself.
+    """
     hass.config.language = "en"
     result = await _dataset_step(hass, aioclient_mock)
     assert "Netherlands" in _choices(result, CONF_DATASET)["harmonie_arome_cy43_p1"]
@@ -436,7 +438,8 @@ def _ewam_entry(hass: HomeAssistant) -> MockConfigEntry:
 
 async def test_options_flow_can_switch_parameters_on(hass: HomeAssistant) -> None:
     """New parameters (swell, wind waves) must be reachable without deleting and
-    re-adding the entry -- that would also throw away its other options."""
+    re-adding the entry -- that would also throw away its other options.
+    """
     entry = _ewam_entry(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
     choices = _choices(result, CONF_PARAMETERS)
@@ -498,7 +501,8 @@ async def _horizon_range(hass: HomeAssistant, entry: MockConfigEntry):
 
 async def test_the_horizon_may_go_as_far_as_the_dataset_reaches(hass: HomeAssistant) -> None:
     """GFS runs to +384 h. A cap left over from when the longest model was DMI's
-    +132 h stopped anyone from asking for more than a week of it."""
+    +132 h stopped anyone from asking for more than a week of it.
+    """
     entry = _gfs_entry(hass)
     result, validator = await _horizon_range(hass, entry)
     assert validator(384) == 384
@@ -526,7 +530,8 @@ async def test_the_horizon_stops_at_what_a_shorter_dataset_has(hass: HomeAssista
 
 async def test_a_horizon_already_set_is_never_refused(hass: HomeAssistant) -> None:
     """An earlier version allowed up to 168 h on any dataset. The options form
-    must still open -- and save -- on such a value, not reject its own default."""
+    must still open -- and save -- on such a value, not reject its own default.
+    """
     entry = _ewam_entry(hass)
     hass.config_entries.async_update_entry(entry, options={CONF_FORECAST_HORIZON_HOURS: 168})
     result, validator = await _horizon_range(hass, entry)

@@ -11,8 +11,8 @@ JS tests; this guards the lines that matter.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
+import re
 
 JS = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(encoding="utf-8")
 LAYERS = JS.split("// The map layers of both cards:", 1)[1].split("const MAP_CONTROL_CSS", 1)[0]
@@ -67,7 +67,7 @@ def test_layer_ids_match_the_documentation() -> None:
     assert 'const MAP_BASES = ["osm", "emodnet"];' in LAYERS
     assert 'const MAP_LAYERS_DEFAULT = ["seamarks"];' in LAYERS
     readme = Path("README.md").read_text(encoding="utf-8")
-    for key in overlays + ["emodnet"]:
+    for key in [*overlays, "emodnet"]:
         assert f"`{key}`" in readme, key
 
 

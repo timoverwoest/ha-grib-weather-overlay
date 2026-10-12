@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
-from datetime import datetime, timezone
 
 import pytest
 
@@ -34,7 +34,7 @@ def test_split_rewrites_the_run_and_lead(tmp_path) -> None:
     buf = _file([(16, 22), (16, 23), (17, 0), (16, 21)])  # out of order on purpose
     paths = metno.split_by_lead(buf, "weather", tmp_path, horizon_hours=48)
     assert [p.name for p in paths] == [f"weather_{h:03d}.grib" for h in range(4)]
-    run = datetime(2026, 9, 16, 21, tzinfo=timezone.utc)
+    run = datetime(2026, 9, 16, 21, tzinfo=UTC)
     for lead, path in enumerate(paths):
         valid, member_run = grib_decode.peek_valid_time(path)
         assert member_run == run
@@ -56,7 +56,7 @@ def test_split_respects_the_horizon(tmp_path) -> None:
 
 def test_long_leads_use_two_octets() -> None:
     base = _make_grib1(param=49, level=0, bits=4, raw_values=range(6))
-    run = datetime(2026, 9, 16, 0, tzinfo=timezone.utc)
+    run = datetime(2026, 9, 16, 0, tzinfo=UTC)
     patched = metno._with_run_time(base, run, 300)
     assert patched[8 + 20] == 10 and patched[8 + 18] * 256 + patched[8 + 19] == 300
 

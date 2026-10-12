@@ -17,21 +17,22 @@ storage_paths for where the working files go instead.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+import contextlib
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 import json
 import logging
+from pathlib import Path
 import shutil
 import tarfile
 import threading
 import time
 import zlib
-from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from pathlib import Path
 
 import numpy as np
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
@@ -66,12 +67,41 @@ from .sources.registry import get_source_class
 
 _LOGGER = logging.getLogger(__name__)
 
+# The entry carries its coordinator in `runtime_data`, so anything that needs
+# one looks it up through the config-entry registry rather than a parallel
+# dict in hass.data that has to be kept in step with setup and unload.
+type GribOverlayConfigEntry = ConfigEntry[GribOverlayCoordinator]
+
+
+@callback
+def async_loaded_coordinators(hass: HomeAssistant) -> list[GribOverlayCoordinator]:
+    """Return the coordinator of every entry that is currently set up."""
+    return [entry.runtime_data for entry in hass.config_entries.async_loaded_entries(DOMAIN)]
+
+
+@callback
+def async_coordinator_for(hass: HomeAssistant, entry_id: str) -> GribOverlayCoordinator | None:
+    """Return the coordinator of one loaded entry, or None if there is no such entry."""
+    entry = hass.config_entries.async_get_entry(entry_id)
+    if entry is None or entry.domain != DOMAIN or entry.state is not ConfigEntryState.LOADED:
+        return None
+    return entry.runtime_data
+
 
 def enabled_parameter_keys(entry: ConfigEntry) -> list[str]:
-    """The parameters this entry renders: the options' choice, else the setup's."""
+    """Return the parameters this entry renders: the options' choice, else the setup's."""
     if CONF_PARAMETERS in entry.options:
         return list(entry.options[CONF_PARAMETERS])
     return list(entry.data.get(CONF_PARAMETERS, []))
+
+
+def _optional_artifact(run_dir: Path, frame: dict, name: str) -> Path | None:
+    """Return the path of an optional cached artifact, if the manifest has one on disk."""
+    value = frame.get(name)
+    if not value:
+        return None
+    path = run_dir / value
+    return path if path.exists() else None
 
 
 @dataclass
@@ -115,12 +145,23 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
     @classmethod
     def backup_in_progress(cls) -> bool:
+        """Return whether a backup is running (and the pause has not expired)."""
         if not cls._backup_active:
             return False
         if time.monotonic() - cls._backup_since > cls._BACKUP_MAX_SECONDS:
             cls._backup_active = False
             return False
         return True
+
+    async def async_wait_until_idle(self) -> None:
+        """Return once this entry is not processing a run.
+
+        Taking the lock *is* the wait; it is released again immediately. The
+        backup platform calls this so the archive only walks our folders once
+        the file churn of an in-flight run has finished (see backup.py).
+        """
+        async with self._process_lock:
+            return
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         update_minutes = entry.options.get(
@@ -187,11 +228,6 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         # frames[parameter_key] = list[Frame] sorted by valid_time
         self.frames: dict[str, list[Frame]] = {}
 
-    @property
-    def _raw_dir(self) -> Path:
-        """Scratch space for in-flight downloads (run archive, raw members)."""
-        return self._scratch_root
-
     def _migrate_legacy_storage(self, in_use: list[Path]) -> None:
         """Blocking: get the caches of earlier versions out of the backup folders, once.
 
@@ -224,10 +260,8 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                 self.storage_dir,
             )
             # Drops /config/grib_overlay once the last entry has left it.
-            try:
+            with contextlib.suppress(OSError):
                 legacy.parent.rmdir()
-            except OSError:
-                pass
         self._remove_legacy_share_root(in_use)
         self._legacy_migrated = True
 
@@ -272,10 +306,11 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         if not self._auth_warned:
             self._auth_warned = True
             if err.status == 403:
+                dataset = self.entry.data[CONF_DATASET]
                 advice = (
-                    "the key is recognised but is NOT authorised for dataset '%s'. "
-                    "Request access to that dataset, or use a key that has it."
-                    % self.entry.data[CONF_DATASET]
+                    f"the key is recognised but is NOT authorised for dataset "
+                    f"'{dataset}'. Request access to that dataset, or use a key "
+                    f"that has it."
                 )
             elif err.status == 401:
                 advice = (
@@ -308,7 +343,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         tree can go.
         """
         await self.hass.async_add_executor_job(
-            shutil.rmtree, self._raw_dir, True
+            shutil.rmtree, self._scratch_root, True
         )
 
     async def async_setup(self) -> None:
@@ -498,7 +533,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         # it -- is created and deleted inside this scratch dir, kept apart from
         # the run directories (and well away from /config) so no backup can ever
         # trip over a file we are in the middle of removing.
-        raw_dir = self._raw_dir / Path(filename).stem
+        raw_dir = self._scratch_root / Path(filename).stem
 
         if getattr(self.source, "provides_archive", True):
             # KNMI: one .tar archive (~850 MB) holds every lead-time member.
@@ -731,9 +766,12 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
     MANIFEST_VERSION = 3
 
     def _color_scales_signature(self) -> str:
-        """Stable fingerprint of the active custom colour scales. A cached run
-        rendered with a different fingerprint is re-processed so the PNGs match.
-        Empty when no custom scales are set, so upgrades don't force a re-render."""
+        """Return a stable fingerprint of the active custom colour scales.
+
+        A cached run rendered with a different fingerprint is re-processed so
+        the PNGs match. Empty when no custom scales are set, so an upgrade does
+        not force a re-render.
+        """
         return json.dumps(self._color_scales, sort_keys=True) if self._color_scales else ""
 
     def _write_frames_manifest(
@@ -847,11 +885,6 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                         max_value=fd["legend"]["max_value"],
                         stops=tuple(fd["legend"]["stops"]),
                     )
-                    def _opt(name: str) -> Path | None:
-                        val = fd.get(name)
-                        path = run_dir / val if val else None
-                        return path if path and path.exists() else None
-
                     frames[key].append(
                         Frame(
                             parameter_key=key,
@@ -860,8 +893,8 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                             png_path=png_path,
                             bounds=tuple(fd["bounds"]),
                             legend=legend,
-                            wind_path=_opt("wind"),
-                            field_path=_opt("field"),
+                            wind_path=_optional_artifact(run_dir, fd, "wind"),
+                            field_path=_optional_artifact(run_dir, fd, "field"),
                         )
                     )
                 if not valid:

@@ -2,16 +2,37 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.grib_overlay import weather_maps
+from custom_components.grib_overlay.const import (
+    CONF_API_KEY,
+    CONF_DATASET,
+    CONF_PARAMETERS,
+    CONF_SOURCE,
+    DOMAIN,
+)
 from custom_components.grib_overlay.weather_maps import WeatherMaps, select_charts
 
 
 def _f(name: str, modified: str = "2026-09-16T19:40:00+00:00") -> dict:
     return {"filename": name, "lastModified": modified, "size": 50000}
+
+
+def _entry(hass, source: str, api_key: str) -> MockConfigEntry:
+    """Add a configured entry of one source, as the key lookup sees it."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_SOURCE: source,
+            CONF_API_KEY: api_key,
+            CONF_DATASET: "whatever",
+            CONF_PARAMETERS: ["wind_10m"],
+        },
+    )
+    entry.add_to_hass(hass)
+    return entry
 
 
 def test_offers_recent_analyses_then_the_forecasts_after_them() -> None:
@@ -41,17 +62,15 @@ def test_a_reissued_forecast_keeps_its_newest_version() -> None:
 
 
 def test_key_comes_from_a_knmi_entry_only(hass) -> None:
-    def coord(source: str, key: str):
-        return SimpleNamespace(entry=SimpleNamespace(data={"source": source, "api_key": key}))
-
-    hass.data["grib_overlay"] = {"a": coord("dwd", ""), "b": coord("knmi", "k-123")}
-    assert weather_maps.knmi_api_key(hass) == "k-123"
-    hass.data["grib_overlay"] = {"a": coord("dwd", "")}
+    """The charts are a KNMI product, so only a KNMI entry's key can fetch them."""
+    dwd = _entry(hass, "dwd", "")
     assert weather_maps.knmi_api_key(hass) is None
+    _entry(hass, "knmi", "k-123")
+    assert weather_maps.knmi_api_key(hass) == "k-123"
+    assert dwd.data[CONF_SOURCE] == "dwd"  # the DWD entry was not what answered
 
 
 async def test_without_a_knmi_entry_the_list_explains_why(hass) -> None:
-    hass.data["grib_overlay"] = {}
     with pytest.raises(weather_maps.WeatherMapError, match="no KNMI entry"):
         await WeatherMaps(hass).charts()
 

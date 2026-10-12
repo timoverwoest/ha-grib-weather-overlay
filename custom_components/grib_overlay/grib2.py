@@ -24,7 +24,7 @@ rather than silently mis-decode it. Blocking/CPU-bound; run via an executor.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import cached_property
 
 import numpy as np
@@ -76,9 +76,11 @@ class Grib2Message:
         return _unpack(self.ni * self.nj, **self._packed)
 
     def matches(self, filt: dict) -> bool:
-        """True if every (key, value) in ``filt`` matches. Keys are GRIB2 fields:
-        discipline / parameterCategory / parameterNumber / indicatorOfTypeOfLevel
-        / level / productDefinitionTemplateNumber."""
+        """Return whether every (key, value) in ``filt`` matches.
+
+        Keys are GRIB2 fields: discipline / parameterCategory / parameterNumber
+        / indicatorOfTypeOfLevel / level / productDefinitionTemplateNumber.
+        """
         mapping = {
             "discipline": self.discipline,
             "parameterCategory": self.parameter_category,
@@ -91,10 +93,7 @@ class Grib2Message:
             # the one that was asked for, rather than to whichever comes first.
             "productDefinitionTemplateNumber": 8 if self.end_time else 0,
         }
-        for key, expected in filt.items():
-            if mapping.get(key) != expected:
-                return False
-        return True
+        return all(mapping.get(key) == expected for key, expected in filt.items())
 
 
 def _u(b: bytes) -> int:
@@ -154,7 +153,7 @@ def _parse_message(msg: bytes) -> Grib2Message:
 
         if secnum == 1:
             rec["reference_time"] = datetime(
-                _u(s[12:14]), s[14], s[15], s[16], s[17], s[18], tzinfo=timezone.utc
+                _u(s[12:14]), s[14], s[15], s[16], s[17], s[18], tzinfo=UTC
             )
         elif secnum == 3:
             gdt = _u(s[12:14])
@@ -185,7 +184,7 @@ def _parse_message(msg: bytes) -> Grib2Message:
                 # Octets 35-41: end of the overall time interval. forecast_time is
                 # its *start* (0 for a total since the run began).
                 rec["end_time"] = datetime(
-                    _u(s[34:36]), s[36], s[37], s[38], s[39], s[40], tzinfo=timezone.utc
+                    _u(s[34:36]), s[36], s[37], s[38], s[39], s[40], tzinfo=UTC
                 )
         elif secnum == 5:
             drt = _u(s[9:11])

@@ -15,6 +15,7 @@ Dutch needs no table: it is what the sources already carry.
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 DEFAULT_LANGUAGE = "en"
@@ -78,12 +79,11 @@ SOURCE_NAMES_EN: dict[str, str] = {
 
 
 def language(hass: Any) -> str:
-    """The instance language, normalised to one we ship ("nl" or "en")."""
+    """Return the instance language, normalised to one we ship ("nl" or "en")."""
     raw = ""
-    try:
+    # AttributeError: a stub or a hass that is still starting has no config yet.
+    with contextlib.suppress(AttributeError):
         raw = str(hass.config.language or "")
-    except AttributeError:
-        pass
     return "nl" if raw.lower().startswith("nl") else DEFAULT_LANGUAGE
 
 

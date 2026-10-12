@@ -6,7 +6,7 @@ development; here a fake session stands in for both.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -91,7 +91,7 @@ def _items_url(dataset, run: datetime) -> str:
 
 
 def _now_run() -> datetime:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return now.replace(hour=now.hour - now.hour % 6, minute=0, second=0, microsecond=0)
 
 
@@ -100,8 +100,8 @@ async def test_picks_the_newest_run_that_is_complete() -> None:
     newest = _now_run()
     previous = newest - timedelta(hours=6)
     session = _Session({
-        _items_url(WAM, newest): _items(newest, range(0, 40)),  # still publishing
-        _items_url(WAM, previous): _items(previous, range(0, 133)),
+        _items_url(WAM, newest): _items(newest, range(40)),  # still publishing
+        _items_url(WAM, previous): _items(previous, range(133)),
     })
     src = DmiSource(session)
     files = await src.async_list_files(WAM)
@@ -122,9 +122,9 @@ async def test_no_complete_run_lists_nothing() -> None:
 @pytest.mark.asyncio
 async def test_downloads_the_leads_within_the_horizon_in_order(tmp_path) -> None:
     run = _now_run() - timedelta(hours=6)
-    pages = {_items_url(WAM, run): _items(run, range(0, 133))}
+    pages = {_items_url(WAM, run): _items(run, range(133))}
     wave = _grib1(229, 102, 0)
-    for h in range(0, 133):
+    for h in range(133):
         pages[f"https://files/{run:%Y%m%d%H}_{h:03d}.grib"] = _grib1(245, 102, 0) + wave
     src = DmiSource(_Session(pages))
     paths = await src.async_download_run(

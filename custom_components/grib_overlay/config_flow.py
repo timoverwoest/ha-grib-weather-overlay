@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
+from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv, selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -20,9 +18,9 @@ from .const import (
     CONF_API_KEY,
     CONF_COLOR_SCALES,
     CONF_DATASET,
-    CONF_OBSERVATIONS_API_KEY,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_NOTIFICATION_API_KEY,
+    CONF_OBSERVATIONS_API_KEY,
     CONF_PARAMETERS,
     CONF_RETAIN_RUNS,
     CONF_SOURCE,
@@ -37,8 +35,6 @@ from .const import (
 from .sources.base import GribDatasetInfo, GribSourceAuthError, GribSourceError
 from .sources.registry import SOURCE_REGISTRY, get_source_class
 
-_LOGGER = logging.getLogger(__name__)
-
 
 class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handles: pick source + API key -> pick dataset -> pick parameters."""
@@ -52,7 +48,7 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._datasets: list[GribDatasetInfo] = []
         self._dataset: GribDatasetInfo | None = None
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             source_key = user_input[CONF_SOURCE]
@@ -94,7 +90,7 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
-    async def async_step_dataset(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_dataset(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             dataset_key = user_input[CONF_DATASET]
@@ -115,7 +111,7 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(step_id="dataset", data_schema=schema, errors=errors)
 
-    async def async_step_parameters(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_parameters(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         assert self._dataset is not None
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -150,19 +146,17 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry: ConfigEntry) -> "GribOverlayOptionsFlow":
-        return GribOverlayOptionsFlow(config_entry)
+    def async_get_options_flow(config_entry: ConfigEntry) -> GribOverlayOptionsFlow:
+        """Return the options flow for an existing entry."""
+        return GribOverlayOptionsFlow()
 
 
 class GribOverlayOptionsFlow(config_entries.OptionsFlow):
     """Lets the user change the parameters, retention, horizon, polling and more later."""
 
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        self._config_entry = config_entry
-
     async def _dataset(self) -> GribDatasetInfo | None:
-        """The entry's dataset, for its parameter list (a static catalogue: no network)."""
-        data = self._config_entry.data
+        """Return the entry's dataset, for its parameter list (no network: a static catalogue)."""
+        data = self.config_entry.data
         try:
             source_cls = get_source_class(data[CONF_SOURCE])
         except (KeyError, ValueError):
@@ -171,7 +165,7 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
         datasets = await source.async_list_datasets()
         return next((d for d in datasets if d.key == data.get(CONF_DATASET)), None)
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None and CONF_PARAMETERS in user_input and not user_input[CONF_PARAMETERS]:
             errors["base"] = "no_parameters_selected"
@@ -210,8 +204,8 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 options.pop(CONF_STORAGE_PATH, None)
             return self.async_create_entry(title="", data=options)
 
-        options = self._config_entry.options
-        data = self._config_entry.data
+        options = self.config_entry.options
+        data = self.config_entry.data
         current_notification_key = options.get(
             CONF_NOTIFICATION_API_KEY, data.get(CONF_NOTIFICATION_API_KEY, "")
         )

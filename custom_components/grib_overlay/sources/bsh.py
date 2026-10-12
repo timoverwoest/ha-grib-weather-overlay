@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import asyncio
 import bz2
+from datetime import UTC, datetime, timedelta
 import ftplib
-import re
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import re
 
 from .. import grib1
 from .base import (
@@ -73,11 +73,11 @@ _FILE_RE = re.compile(rf"Current_{_AREA}_(\d{{10}})_(\d+)\.grb\.bz2")
 
 def _valid_dt(data_date: int, data_time: int) -> datetime:
     y, m, d = data_date // 10000, (data_date // 100) % 100, data_date % 100
-    return datetime(y, m, d, data_time // 100, data_time % 100, tzinfo=timezone.utc)
+    return datetime(y, m, d, data_time // 100, data_time % 100, tzinfo=UTC)
 
 
 def _run_dt(run_id: str) -> datetime:
-    return datetime.strptime(run_id, "%Y%m%d%H").replace(tzinfo=timezone.utc)
+    return datetime.strptime(run_id, "%Y%m%d%H").replace(tzinfo=UTC)
 
 
 def _run_day(run_id: str) -> datetime:
@@ -99,7 +99,7 @@ def _plan_blocks(
     """
     target = _run_dt(run_id)
     window_end = target + timedelta(hours=horizon_hours)
-    candidates = [run_id] + sorted((r for r in available if r != run_id), reverse=True)
+    candidates = [run_id, *sorted((r for r in available if r != run_id), reverse=True)]
     plan: list[tuple[str, int]] = []
     day = _run_day(run_id)
     while day < window_end:
@@ -146,7 +146,7 @@ class BshSource(GribSource):
         if not runs:
             return []
         latest = max(runs)
-        run_dt = datetime.strptime(latest, "%Y%m%d%H").replace(tzinfo=timezone.utc)
+        run_dt = datetime.strptime(latest, "%Y%m%d%H").replace(tzinfo=UTC)
         return [GribFileInfo(filename=latest, size=0, last_modified=run_dt.isoformat())]
 
     async def async_download_file(self, dataset, filename, destination) -> Path:

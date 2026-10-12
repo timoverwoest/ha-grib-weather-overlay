@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from custom_components.grib_overlay.const import (
     CONF_API_KEY,
     CONF_DATASET,
@@ -19,12 +21,12 @@ from custom_components.grib_overlay.const import (
     DOMAIN,
 )
 from custom_components.grib_overlay.coordinator import GribOverlayCoordinator
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
 def _make_entry(hass, notification_key: str | None = "notify-key") -> MockConfigEntry:
     """An entry with a Notification Service key, since without one KNMI's push
-    channel is (correctly) never attempted."""
+    channel is (correctly) never attempted.
+    """
     data = {
         CONF_SOURCE: "knmi",
         CONF_API_KEY: "test-key",
@@ -92,10 +94,11 @@ async def test_notification_for_already_processed_run_is_ignored(hass) -> None:
 
 
 async def test_unload_stops_notifications(hass) -> None:
+    """An MQTT client left running would keep a socket open per reload."""
     entry = _make_entry(hass)
     coordinator = GribOverlayCoordinator(hass, entry)
     coordinator.source.async_stop_notifications = AsyncMock()
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    entry.runtime_data = coordinator
 
     from custom_components.grib_overlay import async_unload_entry
 
@@ -106,11 +109,14 @@ async def test_unload_stops_notifications(hass) -> None:
 
 async def test_rejected_api_key_warns_once_and_re_arms(hass, caplog) -> None:
     """A bad key fails every poll; without this the log says only "Error
-    fetching ... data" and never which of KNMI's three keys is wrong."""
+    fetching ... data" and never which of KNMI's three keys is wrong.
+    """
+    from types import SimpleNamespace
+
+    import pytest
+
     from custom_components.grib_overlay.sources.base import GribSourceAuthError
     from homeassistant.helpers.update_coordinator import UpdateFailed
-    from types import SimpleNamespace
-    import pytest
 
     entry = _make_entry(hass)
     coordinator = GribOverlayCoordinator(hass, entry)
@@ -141,9 +147,10 @@ async def test_rejected_api_key_warns_once_and_re_arms(hass, caplog) -> None:
 
 
 async def test_unrecognised_key_gets_different_advice_than_unauthorised(hass, caplog) -> None:
+    import pytest
+
     from custom_components.grib_overlay.sources.base import GribSourceAuthError
     from homeassistant.helpers.update_coordinator import UpdateFailed
-    import pytest
 
     entry = _make_entry(hass)
     coordinator = GribOverlayCoordinator(hass, entry)

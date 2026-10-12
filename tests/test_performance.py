@@ -9,12 +9,11 @@ the same frame list was fetched three times.
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 import gzip
 import json
-import time
 from pathlib import Path
-
-import pytest
+import time
 
 from custom_components.grib_overlay import weather_maps
 from custom_components.grib_overlay.http import _read_for_transfer
@@ -31,7 +30,8 @@ def _grid(tmp_path: Path) -> Path:
 
 def test_a_grid_goes_over_the_wire_compressed(tmp_path: Path) -> None:
     """Tens of thousands of numbers written out as text: four times smaller
-    compressed, and the biggest thing the card ever downloads."""
+    compressed, and the biggest thing the card ever downloads.
+    """
     path = _grid(tmp_path)
     body, encoding = _read_for_transfer(path, accepts_gzip=True)
     assert encoding == "gzip"
@@ -56,7 +56,7 @@ def test_a_stale_compressed_copy_is_not_served(tmp_path: Path) -> None:
     path = _grid(tmp_path)
     _read_for_transfer(path, accepts_gzip=True)
     path.write_text(json.dumps([{"header": {"nx": 1, "ny": 1}, "data": [42.0]}]))
-    body, encoding = _read_for_transfer(path, accepts_gzip=True)
+    body, _encoding = _read_for_transfer(path, accepts_gzip=True)
     assert json.loads(gzip.decompress(body))[0]["data"] == [42.0]
 
 
@@ -79,7 +79,8 @@ def test_a_read_only_cache_still_gets_a_compressed_response(tmp_path: Path) -> N
 def test_the_card_caches_the_request_not_the_answer() -> None:
     """Filling a cache after the await means two callers that both ask before
     the first is back each fetch the file -- which is how one page load came to
-    download the same frame list three times."""
+    download the same frame list three times.
+    """
     for method in ("async _fetchJson(url, cache) {", "async _fetchWind(url) {", "async _fetchParamFrames(paramKey) {"):
         body = JS.split(method, 1)[1].split("\n  }\n", 1)[0]
         assert "const pending = this._hass" in body, method
@@ -89,9 +90,14 @@ def test_the_card_caches_the_request_not_the_answer() -> None:
 
 async def test_the_charts_a_card_already_has_are_served_at_once(hass) -> None:
     """Listing and fetching them takes seconds against KNMI, and charts change
-    every few hours: a list ten minutes old is still the right answer."""
+    every few hours: a list ten minutes old is still the right answer.
+    """
     maps = weather_maps.WeatherMaps(hass)
-    known = [weather_maps.Chart("AL_202609221800.gif", "analysis", weather_maps.datetime.now(weather_maps.timezone.utc), "x")]
+    known = [
+        weather_maps.Chart(
+            "AL_202609221800.gif", "analysis", datetime.now(UTC), "x"
+        )
+    ]
     maps._charts, maps._listed_at = known, time.monotonic() - weather_maps._LIST_TTL_SECONDS - 1
 
     refreshed = asyncio.Event()
@@ -124,7 +130,10 @@ async def test_a_card_with_nothing_to_show_waits_for_the_charts(hass) -> None:
 async def test_every_source_polls_in_its_own_slot(hass) -> None:
     """Home Assistant starts them all within the same second, so their timers
     line up: a dozen providers hit, and a dozen decodes started, on the same
-    second of every half hour."""
+    second of every half hour.
+    """
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
     from custom_components.grib_overlay.const import (
         CONF_API_KEY,
         CONF_DATASET,
@@ -133,7 +142,6 @@ async def test_every_source_polls_in_its_own_slot(hass) -> None:
         DOMAIN,
     )
     from custom_components.grib_overlay.coordinator import GribOverlayCoordinator
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     def coordinator_for(entry_id: str) -> GribOverlayCoordinator:
         entry = MockConfigEntry(
@@ -159,7 +167,8 @@ async def test_every_source_polls_in_its_own_slot(hass) -> None:
 
 def test_the_cards_on_a_page_share_one_list_of_sources() -> None:
     """Each card asking for itself meant the same 13 kB, and a round trip for
-    it, once per card on the page."""
+    it, once per card on the page.
+    """
     body = JS.split("function gribFetchEntries(hass) {", 1)[1].split("\n}\n", 1)[0]
     assert "gribEntriesRequest = hass.callApi" in body
     assert "GRIB_ENTRIES_TTL_MS" in body
@@ -171,7 +180,8 @@ def test_the_cards_on_a_page_share_one_list_of_sources() -> None:
 
 def test_the_lists_are_compressed_too() -> None:
     """A frame list for one entry is 49 kB of timestamps and urls, built in
-    memory so there is no file to keep a compressed copy beside."""
+    memory so there is no file to keep a compressed copy beside.
+    """
     from custom_components.grib_overlay.http import _COMPRESS_FROM_BYTES, _json
 
     class _Request:
@@ -193,7 +203,8 @@ def test_the_lists_are_compressed_too() -> None:
 
 def test_the_next_frame_is_only_fetched_when_it_will_be_wanted() -> None:
     """These images are well over a hundred kilobytes. Prefetching the next one
-    on a page that is only being looked at doubled what the card downloaded."""
+    on a page that is only being looked at doubled what the card downloaded.
+    """
     body = JS.split("  _showFrame(index) {", 1)[1].split("\n  }\n", 1)[0]
     assert "if (this._playTimer || this._steppedThroughTime) {" in body
     assert JS.count("this._steppedThroughTime = true;") == 2  # both sliders

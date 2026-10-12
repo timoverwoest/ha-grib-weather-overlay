@@ -12,9 +12,9 @@ so a new chapter cannot quietly go unlisted.
 
 from __future__ import annotations
 
+from pathlib import Path
 import re
 import sys
-from pathlib import Path
 
 TOC_TITLES = {"nl": "Inhoud", "en": "Contents"}
 # Chapters whose sub-headings are worth listing as well.
@@ -66,7 +66,7 @@ def rebuild(text: str) -> str:
     halves = [(0, tops[1]), (tops[1], len(lines))] if len(tops) > 1 else [(0, len(lines))]
 
     edits = []
-    for lang, (start, end) in zip(TOC_TITLES, halves):
+    for lang, (start, end) in zip(TOC_TITLES, halves, strict=False):
         entries: list[str] = []
         detail = False
         for i, level, heading in found:

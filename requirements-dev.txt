@@ -4,6 +4,9 @@ Pillow>=10.0.0
 aiohttp
 homeassistant
 pytest-homeassistant-custom-component
+# Lint + format, the same tool Home Assistant core uses. Configured in
+# pyproject.toml; CI runs `ruff check` and `ruff format --check`.
+ruff
 
 # Optional: only needed to run the eccodes cross-validation test
 # (tests/test_grib1.py) that checks the pure-Python decoder against ecCodes.

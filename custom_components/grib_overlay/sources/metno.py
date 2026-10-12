@@ -22,10 +22,10 @@ the small availability lists, and files only when one was updated.
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
+from datetime import UTC, datetime
 import functools
 import json
-from collections import defaultdict
-from datetime import datetime, timezone
 from pathlib import Path
 
 import aiohttp
@@ -139,20 +139,19 @@ KNOWN_DATASETS: tuple[GribDatasetInfo, ...] = (
     _dataset("sorlandet", "Sørlandet", (57.8, 7.0, 58.8, 9.4)),
 )
 
-_version: str | None = None
-
-
+@functools.cache
 def _user_agent() -> str:
-    """Our application and a contact, as api.met.no's terms ask."""
-    return f"ha-grib-weather-overlay/{_version or 'dev'} (+{PROJECT_URL})"
+    """Return our application and a contact, as api.met.no's terms ask.
 
-
-def _read_version() -> str:
+    Blocking on the first call (it reads manifest.json) and cached after, so
+    callers hand it to an executor rather than reading the file per request.
+    """
     manifest = Path(__file__).resolve().parents[1] / "manifest.json"
     try:
-        return json.loads(manifest.read_text()).get("version", "dev")
+        version = json.loads(manifest.read_text()).get("version", "dev")
     except (OSError, ValueError):
-        return "dev"
+        version = "dev"
+    return f"ha-grib-weather-overlay/{version} (+{PROJECT_URL})"
 
 
 def _area(dataset: GribDatasetInfo) -> str:
@@ -162,7 +161,7 @@ def _area(dataset: GribDatasetInfo) -> str:
 def _message_time(message: bytes) -> datetime:
     pds = message[8:]
     year = (pds[24] - 1) * 100 + pds[12]
-    return datetime(year, pds[13], pds[14], pds[15], pds[16], tzinfo=timezone.utc)
+    return datetime(year, pds[13], pds[14], pds[15], pds[16], tzinfo=UTC)
 
 
 def _key(message: bytes) -> tuple[int, int, int]:
@@ -241,12 +240,10 @@ class MetnoSource(GribSource):
         return list(KNOWN_DATASETS)
 
     async def _get(self, url: str) -> bytes:
-        global _version
-        if _version is None:
-            _version = await asyncio.get_running_loop().run_in_executor(None, _read_version)
+        user_agent = await asyncio.get_running_loop().run_in_executor(None, _user_agent)
         try:
             async with self._session.get(
-                url, headers={"User-Agent": _user_agent()}, timeout=_TIMEOUT
+                url, headers={"User-Agent": user_agent}, timeout=_TIMEOUT
             ) as resp:
                 if resp.status == 403:
                     raise GribSourceError(
@@ -256,7 +253,7 @@ class MetnoSource(GribSource):
                 if resp.status >= 400:
                     raise GribSourceError(f"MET Norway {url} returned HTTP {resp.status}")
                 return await resp.read()
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        except (TimeoutError, aiohttp.ClientError) as err:
             raise GribSourceError(f"MET Norway request failed: {err}") from err
 
     async def async_list_files(
@@ -275,9 +272,11 @@ class MetnoSource(GribSource):
                 items = json.loads(body)
             except ValueError as err:
                 raise GribSourceError(f"MET Norway availability list unreadable: {err}") from err
-            for item in items:
-                if (item.get("params") or {}).get("area") == area and item.get("updated"):
-                    updated.append(item["updated"])
+            updated.extend(
+                item["updated"]
+                for item in items
+                if (item.get("params") or {}).get("area") == area and item.get("updated")
+            )
         if not updated:
             return []
         # Any content updated -> a new "run" for this area.

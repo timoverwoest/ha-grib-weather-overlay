@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import asyncio
 import bz2
-import functools
-import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+import functools
 from pathlib import Path
+import re
 
 import aiohttp
 
@@ -369,7 +369,7 @@ KNOWN_DATASETS: tuple[GribDatasetInfo, ...] = (
     ),
 )
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _wave_file_re(prefix: str) -> re.Pattern:
     # EWAM_SWH_2026072200_003.grib2.bz2 -> (filename, run YYYYMMDDHH, step hours)
     return re.compile(
@@ -450,7 +450,7 @@ class DwdSource(GribSource):
         keys = [k for k in param_keys if k in _WAVE_DIR]
         listings = await asyncio.gather(*(self._runs_for(model, _WAVE_DIR[k]) for k in keys))
         available: dict[str, dict[int, str]] = {}
-        for key, runs in zip(keys, listings):
+        for key, runs in zip(keys, listings, strict=True):
             steps = {
                 step: f"{model.base}/{hh}/{_WAVE_DIR[key]}/{name}"
                 for step, hh, name in runs.get(run_id, [])
@@ -503,7 +503,7 @@ class DwdSource(GribSource):
         # is there, so a run caught mid-publication fails cleanly (and is retried
         # at the next poll) instead of leaving gaps.
         listings = await asyncio.gather(*(self._icon_d2_steps(hh, d) for d in dirs))
-        available = {d: runs.get(run_id, {}) for d, runs in zip(dirs, listings)}
+        available = {d: runs.get(run_id, {}) for d, runs in zip(dirs, listings, strict=True)}
         for dwd_dir, steps in available.items():
             _require_steps(f"ICON-D2 run {run_id}", dwd_dir, steps, wanted_steps)
         return await self._fetch_all(
@@ -567,7 +567,7 @@ class DwdSource(GribSource):
             latest = max(complete) if complete else None
         if latest is None:
             return []
-        run_dt = datetime.strptime(latest, "%Y%m%d%H").replace(tzinfo=timezone.utc)
+        run_dt = datetime.strptime(latest, "%Y%m%d%H").replace(tzinfo=UTC)
         return [GribFileInfo(filename=latest, size=0, last_modified=run_dt.isoformat())]
 
     async def async_download_file(

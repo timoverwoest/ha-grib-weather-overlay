@@ -86,7 +86,7 @@ class Grib1Message:
         return _unpack(self.ni * self.nj, **self._packed)
 
     def matches(self, filt: dict) -> bool:
-        """True if every (key, value) in ``filt`` matches this message's PDS.
+        """Return whether every (key, value) in ``filt`` matches this message's PDS.
 
         Keys are the raw GRIB1 numeric field names used by sources/knmi.py:
         indicatorOfParameter / indicatorOfTypeOfLevel / level.
@@ -98,10 +98,7 @@ class Grib1Message:
             "table2Version": self.table2_version,
             "centre": self.centre,
         }
-        for key, expected in filt.items():
-            if mapping.get(key) != expected:
-                return False
-        return True
+        return all(mapping.get(key) == expected for key, expected in filt.items())
 
 
 def _u(b: bytes) -> int:

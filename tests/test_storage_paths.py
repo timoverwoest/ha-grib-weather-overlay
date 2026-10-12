@@ -8,8 +8,8 @@ the retention cleanup walks.
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
+import tempfile
 
 from custom_components.grib_overlay import storage_paths
 from custom_components.grib_overlay.const import DOMAIN

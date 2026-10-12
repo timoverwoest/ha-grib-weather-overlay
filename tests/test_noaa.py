@@ -8,7 +8,7 @@ filters that pick one field out of a file holding all of them.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -97,7 +97,7 @@ def test_the_horizon_caps_the_steps() -> None:
 
 @pytest.mark.asyncio
 async def test_the_newest_published_run_is_listed(monkeypatch) -> None:
-    _freeze(monkeypatch, datetime(2026, 9, 22, 16, 40, tzinfo=timezone.utc))
+    _freeze(monkeypatch, datetime(2026, 9, 22, 16, 40, tzinfo=UTC))
     session = _FakeSession({"2026092212": {_PROBE_STEP}, "2026092206": {_PROBE_STEP}})
     files = await NoaaSource(session).async_list_files(GFS)
     assert [f.filename for f in files] == ["2026092212"]
@@ -107,8 +107,9 @@ async def test_the_newest_published_run_is_listed(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_a_run_that_has_not_reached_the_probe_step_is_skipped(monkeypatch) -> None:
     """NCEP publishes a run lead time by lead time over a few hours. Taking one
-    before it is usable would leave it in the cache nearly empty."""
-    _freeze(monkeypatch, datetime(2026, 9, 22, 16, 40, tzinfo=timezone.utc))
+    before it is usable would leave it in the cache nearly empty.
+    """
+    _freeze(monkeypatch, datetime(2026, 9, 22, 16, 40, tzinfo=UTC))
     session = _FakeSession({"2026092212": {0, 1, 2}, "2026092206": {_PROBE_STEP}})
     files = await NoaaSource(session).async_list_files(GFS)
     assert [f.filename for f in files] == ["2026092206"]
@@ -116,7 +117,7 @@ async def test_a_run_that_has_not_reached_the_probe_step_is_skipped(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_nothing_is_listed_when_no_run_is_published(monkeypatch) -> None:
-    _freeze(monkeypatch, datetime(2026, 9, 22, 16, 40, tzinfo=timezone.utc))
+    _freeze(monkeypatch, datetime(2026, 9, 22, 16, 40, tzinfo=UTC))
     session = _FakeSession({})
     assert await NoaaSource(session).async_list_files(GFS) == []
 
@@ -124,7 +125,7 @@ async def test_nothing_is_listed_when_no_run_is_published(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_the_run_probe_asks_for_a_single_grid_cell(monkeypatch) -> None:
     """It runs at every poll, so it must not pull a whole field."""
-    _freeze(monkeypatch, datetime(2026, 9, 22, 16, 40, tzinfo=timezone.utc))
+    _freeze(monkeypatch, datetime(2026, 9, 22, 16, 40, tzinfo=UTC))
     session = _FakeSession({"2026092212": {_PROBE_STEP}})
     await NoaaSource(session).async_list_files(GFS)
     query = _query(session.requested[0])
@@ -141,7 +142,8 @@ async def test_the_run_probe_asks_for_a_single_grid_cell(monkeypatch) -> None:
 async def test_one_member_per_lead_time_holds_every_parameter(tmp_path) -> None:
     """One request per lead time rather than one per parameter: the coordinator
     already reads a member that holds several parameters, and NOMADS is a free
-    service that should be asked as little as possible."""
+    service that should be asked as little as possible.
+    """
     session = _FakeSession({"2026092200": set(range(4))})
     paths = await NoaaSource(session).async_download_run(
         GFS, "2026092200", tmp_path, ["wind_10m", "pressure_msl"], horizon_hours=3
@@ -171,7 +173,8 @@ async def test_a_run_short_of_the_horizon_costs_one_probe_and_no_downloads(tmp_p
     """A run is listed once it reaches +24 h, hours before it reaches +384, so an
     entry with a long horizon meets a run that is still publishing at every
     single run. Finding that out has to be one small request, not a download of
-    everything published so far that is then thrown away."""
+    everything published so far that is then thrown away.
+    """
     session = _FakeSession({"2026092200": {0, 1}})
     with pytest.raises(GribRunIncompleteError, match=r"\+3 h is not published"):
         await NoaaSource(session).async_download_run(
@@ -185,7 +188,8 @@ async def test_a_run_short_of_the_horizon_costs_one_probe_and_no_downloads(tmp_p
 @pytest.mark.asyncio
 async def test_a_hole_below_the_far_end_is_refused(tmp_path) -> None:
     """The probe only sees the last lead time. A gap under it (a lead time being
-    re-issued) still has to keep the run out of the cache."""
+    re-issued) still has to keep the run out of the cache.
+    """
     session = _FakeSession({"2026092200": {0, 1, 3}})
     with pytest.raises(GribRunIncompleteError, match=r"\+2 h is not published"):
         await NoaaSource(session).async_download_run(
@@ -210,7 +214,8 @@ async def test_nothing_enabled_is_an_error_not_an_empty_run(tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_the_wave_model_asks_for_every_level(tmp_path) -> None:
     """Swell arrives split into partitions, each at its own level, so the wave
-    request cannot name the levels it wants the way the weather one does."""
+    request cannot name the levels it wants the way the weather one does.
+    """
     session = _FakeSession({"2026092200": {0}})
     await NoaaSource(session).async_download_run(
         GFS_WAVE, "2026092200", tmp_path, ["swell_height"], horizon_hours=0
@@ -251,7 +256,8 @@ def test_every_advertised_parameter_can_actually_be_fetched() -> None:
 def test_weather_filters_pin_a_level_and_an_instantaneous_field() -> None:
     """A NOMADS response holds every parameter for one lead time, so category
     and number alone would match the same quantity at another level -- or the
-    interval mean GFS publishes next to the value itself."""
+    interval mean GFS publishes next to the value itself.
+    """
     for field in _GFS_FIELDS:
         filters = [
             f
@@ -278,7 +284,8 @@ def test_swell_is_pinned_to_its_first_partition() -> None:
 
 def test_the_wave_keys_are_the_shared_ones() -> None:
     """The comparison view lines models up by key, so GFS-Wave has to use the
-    same vocabulary as EWAM and DMI."""
+    same vocabulary as EWAM and DMI.
+    """
     from custom_components.grib_overlay.sources.base import direction_key_for
 
     keys = {p.key for p in GFS_WAVE.parameters}
@@ -295,7 +302,7 @@ def test_the_weather_keys_match_the_high_resolution_models() -> None:
 
 
 def _freeze(monkeypatch, now: datetime) -> None:
-    import custom_components.grib_overlay.sources.noaa as noaa
+    from custom_components.grib_overlay.sources import noaa
 
     class _Now(datetime):
         @classmethod

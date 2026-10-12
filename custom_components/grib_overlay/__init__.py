@@ -8,13 +8,12 @@ from pathlib import Path
 
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
-from homeassistant.loader import async_get_integration
+from homeassistant.loader import IntegrationNotFound, async_get_integration
 
 from .const import DOMAIN
-from .coordinator import GribOverlayCoordinator
+from .coordinator import GribOverlayConfigEntry, GribOverlayCoordinator
 from .http import VIEWS
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,22 +39,19 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: GribOverlayConfigEntry) -> bool:
     """Set up one grib_overlay config entry."""
-    first_entry = DOMAIN not in hass.data
-    hass.data.setdefault(DOMAIN, {})
-
     coordinator = GribOverlayCoordinator(hass, entry)
     # Fast, non-blocking: restore cached frames from disk, start push, schedule
     # polling. The (possibly heavy) download of a newer run happens in the
     # background so entry setup -- and the config flow -- returns immediately.
     await coordinator.async_setup()
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    entry.runtime_data = coordinator
 
-    if first_entry:
-        # Belt and braces: async_setup registers these at startup, but an entry
-        # added later (or a reload after an integration error) must find them.
-        await _async_register_frontend(hass)
+    # Belt and braces: async_setup registers these at startup, but an entry
+    # added later (or a reload after an integration error) must find them.
+    # Idempotent, so it costs nothing on the entries after the first.
+    await _async_register_frontend(hass)
 
     entry.async_create_background_task(
         hass, coordinator.async_refresh(), f"{DOMAIN}-initial-refresh"
@@ -64,17 +60,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: GribOverlayConfigEntry) -> bool:
     """Unload one grib_overlay config entry."""
-    coordinator: GribOverlayCoordinator | None = hass.data[DOMAIN].pop(entry.entry_id, None)
-    if coordinator is not None:
-        await coordinator.source.async_stop_notifications()
-    if not hass.data[DOMAIN]:
-        hass.data.pop(DOMAIN)
+    await entry.runtime_data.source.async_stop_notifications()
     return True
 
 
-async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _async_reload_entry(hass: HomeAssistant, entry: GribOverlayConfigEntry) -> None:
+    """Reload the entry so an options change takes effect."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
@@ -103,9 +96,10 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     # service worker) keep serving the previously cached card after an update.
     try:
         integration = await async_get_integration(hass, DOMAIN)
+    except IntegrationNotFound:
+        version = "0"  # fall back to an unversioned URL
+    else:
         version = integration.version or "0"
-    except Exception:  # noqa: BLE001 - fall back to an unversioned URL if lookup fails
-        version = "0"
     add_extra_js_url(hass, f"{FRONTEND_URL_PATH}?v={version}")
 
 
@@ -120,7 +114,7 @@ def _refresh_precompressed(www_dir: Path) -> None:
     best-effort -- on a read-only install the plain files are served instead.
     """
     try:
-        stale = [p for p in www_dir.rglob("*.gz.tmp")]
+        stale = list(www_dir.rglob("*.gz.tmp"))
         stale += [p for p in www_dir.rglob("*.gz") if not p.with_suffix("").is_file()]
         for path in stale:
             path.unlink(missing_ok=True)

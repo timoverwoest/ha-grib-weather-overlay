@@ -11,14 +11,20 @@ extract/decode/render path. Skipped otherwise.
 from __future__ import annotations
 
 import os
-import tarfile
 from pathlib import Path
+import tarfile
 
 import pytest
-
-from custom_components.grib_overlay.const import CONF_API_KEY, CONF_DATASET, CONF_PARAMETERS, CONF_SOURCE, DOMAIN
-from custom_components.grib_overlay.coordinator import GribOverlayCoordinator
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.grib_overlay.const import (
+    CONF_API_KEY,
+    CONF_DATASET,
+    CONF_PARAMETERS,
+    CONF_SOURCE,
+    DOMAIN,
+)
+from custom_components.grib_overlay.coordinator import GribOverlayCoordinator
 
 SAMPLE_ENV_VAR = "GRIB_OVERLAY_SAMPLE_GRIB"
 
@@ -54,7 +60,7 @@ async def test_extract_decode_and_render_produces_frames(hass, tmp_path: Path) -
     parameters = [p for p in dataset.parameters if p.key in entry.data[CONF_PARAMETERS]]
 
     run_dir = coordinator.storage_dir / tar_path.stem
-    raw_dir = coordinator._raw_dir / tar_path.stem
+    raw_dir = coordinator._scratch_root / tar_path.stem
     member_paths = coordinator._extract_archive(tar_path, raw_dir)
     frames = coordinator._decode_members(
         member_paths, run_dir, tar_path.name, parameters, horizon_hours=24

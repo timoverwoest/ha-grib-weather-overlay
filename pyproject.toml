@@ -1,2 +1,102 @@
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+# Ruff, configured to sit close to Home Assistant core's own setup (format +
+# lint with one tool, 88 columns, pydocstyle PEP 257). Run both before pushing:
+#
+#   ruff format custom_components dev tests
+#   ruff check custom_components dev tests
+[tool.ruff]
+# The oldest Python a supported Home Assistant release runs on.
+target-version = "py312"
+line-length = 88
+# Session worktrees the desktop app leaves behind: copies of this tree, not
+# source of its own.
+extend-exclude = [".claude"]
+
+[tool.ruff.lint]
+select = [
+    "ASYNC", # blocking calls in async code -- the classic integration bug
+    "B",     # flake8-bugbear
+    "BLE",   # no bare `except Exception` without saying why
+    "C4",    # comprehensions
+    "D",     # pydocstyle
+    "E",     # pycodestyle errors
+    "F",     # pyflakes
+    "G",     # no f-strings/concatenation in logging calls
+    "I",     # import sorting
+    "ICN",   # import conventions (numpy as np, ...)
+    "ISC",   # implicit string concatenation
+    "LOG",   # logging misuse
+    "N",     # pep8-naming
+    "PERF",  # obvious performance traps
+    "PGH",   # no blanket `# type: ignore` / `# noqa`
+    "PIE",   # misc. lints
+    "PL",    # pylint
+    "PT",    # flake8-pytest-style
+    "RET",   # return-statement hygiene
+    "RSE",   # raise hygiene
+    "RUF",   # ruff's own rules
+    "SIM",   # simplifiable constructs
+    "SLF",   # no reaching into another object's privates
+    "T20",   # no stray print()
+    "TID",   # tidy imports
+    "TRY",   # exception-handling antipatterns
+    "UP",    # pyupgrade
+    "W",     # pycodestyle warnings
+]
+ignore = [
+    "D203",    # incompatible with D211, which ruff prefers
+    "D213",    # incompatible with D212, which ruff prefers
+    "D406",    # numpy section style; this project uses prose docstrings
+    "D407",    # idem
+    "E501",    # line length is the formatter's job, not a lint error
+    "ISC001",  # the formatter owns implicit concatenation
+    "TRY003",  # messages live at the raise site here, as in HA core
+    "TID252",  # a component package reaches its own parent: the HA house style
+    # Complexity metrics. The decoders and the render path are genuinely wide
+    # (a GRIB section header has many fields); splitting them to satisfy a
+    # counter would not make them easier to read.
+    "PLR0911",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+    "PLR0917",
+    "PLR2004", # magic values: the GRIB spec *is* magic numbers
+    # `int(round(x))` / `int(math.floor(x))` look redundant to ruff, which
+    # assumes a Python float. Half of these see a numpy scalar, whose __round__
+    # has returned a numpy type in some versions -- and the results index
+    # arrays and size np.linspace. The cast is the guarantee, so it stays.
+    "RUF046",
+    # Docstring mood. This codebase deliberately describes what a function
+    # *is* ("The charts worth showing, oldest first.") where that reads better
+    # than a command, and does so consistently. Rewriting 25 of those to
+    # satisfy a mood checker would cost the voice and buy nothing.
+    "D401",
+    # Docstrings exist on every module and nearly every function; what is left
+    # is one-line boilerplate on overrides and __init__. Worth closing, but as
+    # its own pass rather than 120 placeholder docstrings in one diff.
+    "D101",
+    "D102",
+    "D103",
+    "D107",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Development helpers are scripts: printing is their output, and they import
+# lazily so a missing optional dependency only costs the command that needs it.
+"dev/*" = ["T20", "INP001", "PLC0415"]
+# Tests reach into internals on purpose, import per test to keep the modules
+# independent, and pytest's composite asserts are the point. Their docstrings
+# are prose about the behaviour under test rather than API documentation, so
+# the summary-line layout rule is not enforced there.
+"tests/*" = ["SLF001", "PT018", "T20", "PLC0415", "D205"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["custom_components.grib_overlay", "homeassistant", "tests"]
+combine-as-imports = true
+split-on-trailing-comma = false

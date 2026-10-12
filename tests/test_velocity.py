@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 
@@ -15,7 +15,7 @@ def test_build_velocity_data_header_and_ordering() -> None:
     lons = np.array([0.0, 2.0, 4.0, 6.0])
     u = np.arange(16, dtype=float).reshape(4, 4)  # row 0 = south
     v = np.zeros((4, 4))
-    valid = datetime(2026, 7, 21, 15, 0, tzinfo=timezone.utc)
+    valid = datetime(2026, 7, 21, 15, 0, tzinfo=UTC)
 
     records = velocity.build_velocity_data(u, v, lats, lons, valid)
     assert len(records) == 2
@@ -41,7 +41,7 @@ def test_build_velocity_data_downsamples_large_grid() -> None:
     lats = np.linspace(49.0, 56.0, 390)
     lons = np.linspace(0.0, 11.0, 390)
     u = np.ones((390, 390))
-    records = velocity.build_velocity_data(u, u, lats, lons, datetime(2026, 7, 21, tzinfo=timezone.utc))
+    records = velocity.build_velocity_data(u, u, lats, lons, datetime(2026, 7, 21, tzinfo=UTC))
     # 390 -> downsampled to <= 160 points per axis.
     assert records[0]["header"]["nx"] <= 160
     assert records[0]["header"]["ny"] <= 160

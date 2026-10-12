@@ -15,16 +15,33 @@ import math
 from aiohttp import web
 
 from homeassistant.components import persistent_notification
-from homeassistant.components.http import HomeAssistantView
+from homeassistant.components.http import KEY_HASS, HomeAssistantView
 from homeassistant.core import HomeAssistant
 
-from . import client_errors
-from . import field_grid
-from . import labels
-from . import observations
-from . import weather_maps
-from .const import CONF_ALIAS, CONF_DATASET, CONF_SOURCE, DOMAIN, HTTP_CLIENT_ERROR_PATH, HTTP_ENTRIES_PATH, HTTP_FIELD_PATH, HTTP_FRAME_IMAGE_PATH, HTTP_FRAMES_PATH, HTTP_POINT_ALL_PATH, HTTP_POINT_PATH, HTTP_STATION_OBS_PATH, HTTP_STATIONS_PATH, HTTP_WEATHER_MAPS_PATH, HTTP_WIND_PATH
-from .coordinator import GribOverlayCoordinator, enabled_parameter_keys
+from . import client_errors, field_grid, labels, observations, weather_maps
+from .const import (
+    CONF_ALIAS,
+    CONF_DATASET,
+    CONF_SOURCE,
+    DOMAIN,
+    HTTP_CLIENT_ERROR_PATH,
+    HTTP_ENTRIES_PATH,
+    HTTP_FIELD_PATH,
+    HTTP_FRAME_IMAGE_PATH,
+    HTTP_FRAMES_PATH,
+    HTTP_POINT_ALL_PATH,
+    HTTP_POINT_PATH,
+    HTTP_STATION_OBS_PATH,
+    HTTP_STATIONS_PATH,
+    HTTP_WEATHER_MAPS_PATH,
+    HTTP_WIND_PATH,
+)
+from .coordinator import (
+    GribOverlayCoordinator,
+    async_coordinator_for,
+    async_loaded_coordinators,
+    enabled_parameter_keys,
+)
 from .sources.base import direction_key_for
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,7 +51,8 @@ CLIENT_ERRORS_SEEN = f"{DOMAIN}_client_errors_seen"
 
 
 def _coordinator(hass: HomeAssistant, entry_id: str) -> GribOverlayCoordinator | None:
-    return hass.data.get(DOMAIN, {}).get(entry_id)
+    """Return the coordinator the card asked for, or None for an unknown entry."""
+    return async_coordinator_for(hass, entry_id)
 
 
 def _point_payload(coordinator: GribOverlayCoordinator, key: str, lat: float, lon: float) -> dict:
@@ -186,9 +204,9 @@ class GribOverlayEntriesView(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request: web.Request) -> web.Response:
-        hass: HomeAssistant = request.app["hass"]
+        hass = request.app[KEY_HASS]
         entries = []
-        for entry_id, coordinator in hass.data.get(DOMAIN, {}).items():
+        for coordinator in async_loaded_coordinators(hass):
             entry = coordinator.entry
             dataset = next(
                 (d for d in (await coordinator.source.async_list_datasets()) if d.key == entry.data[CONF_DATASET]),
@@ -199,7 +217,7 @@ class GribOverlayEntriesView(HomeAssistantView):
             enabled = set(enabled_parameter_keys(entry))
             entries.append(
                 {
-                    "entry_id": entry_id,
+                    "entry_id": entry.entry_id,
                     "title": entry.title,
                     "alias": (entry.options.get(CONF_ALIAS) or entry.data.get(CONF_ALIAS) or ""),
                     "source": entry.data[CONF_SOURCE],
@@ -231,7 +249,7 @@ class GribOverlayFramesView(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request: web.Request, entry_id: str) -> web.Response:
-        coordinator = _coordinator(request.app["hass"], entry_id)
+        coordinator = _coordinator(request.app[KEY_HASS], entry_id)
         if coordinator is None:
             return web.json_response({"error": "unknown entry_id"}, status=404)
 
@@ -289,7 +307,7 @@ class GribOverlayFrameImageView(HomeAssistantView):
     async def get(
         self, request: web.Request, entry_id: str, parameter_key: str, frame_id: str
     ) -> web.Response:
-        hass: HomeAssistant = request.app["hass"]
+        hass = request.app[KEY_HASS]
         coordinator = _coordinator(hass, entry_id)
         if coordinator is None:
             return web.Response(status=404)
@@ -310,7 +328,7 @@ class GribOverlayWindView(HomeAssistantView):
     async def get(
         self, request: web.Request, entry_id: str, parameter_key: str, frame_id: str
     ) -> web.Response:
-        hass: HomeAssistant = request.app["hass"]
+        hass = request.app[KEY_HASS]
         coordinator = _coordinator(hass, entry_id)
         if coordinator is None:
             return web.Response(status=404)
@@ -330,7 +348,7 @@ class GribOverlayFieldView(HomeAssistantView):
     async def get(
         self, request: web.Request, entry_id: str, parameter_key: str, frame_id: str
     ) -> web.Response:
-        hass: HomeAssistant = request.app["hass"]
+        hass = request.app[KEY_HASS]
         coordinator = _coordinator(hass, entry_id)
         if coordinator is None:
             return web.Response(status=404)
@@ -348,7 +366,7 @@ class GribOverlayPointView(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request: web.Request, entry_id: str, parameter_key: str) -> web.Response:
-        hass: HomeAssistant = request.app["hass"]
+        hass = request.app[KEY_HASS]
         coordinator = _coordinator(hass, entry_id)
         if coordinator is None:
             return web.json_response({"error": "unknown entry_id"}, status=404)
@@ -377,7 +395,7 @@ class GribOverlayPointAllView(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request: web.Request, entry_id: str) -> web.Response:
-        hass: HomeAssistant = request.app["hass"]
+        hass = request.app[KEY_HASS]
         coordinator = _coordinator(hass, entry_id)
         if coordinator is None:
             return web.json_response({"error": "unknown entry_id"}, status=404)
@@ -397,10 +415,12 @@ class GribOverlayPointAllView(HomeAssistantView):
 
 
 class GribOverlayStationObsView(HomeAssistantView):
-    """Downloads recent measurement-station observations for one parameter near a
-    point, so the comparison can plot/store real measured values (KNMI weather
-    stations via EDR, or RWS Waterinfo for water parameters). Values come back in
-    the parameter's SOURCE unit, like the forecast point endpoint.
+    """Serves recent station observations for one parameter near a point.
+
+    This is what lets the comparison plot real measured values next to the
+    forecast: KNMI weather stations through EDR, or RWS Waterinfo for the water
+    parameters. Values come back in the parameter's SOURCE unit, like the
+    forecast point endpoint.
     """
 
     url = HTTP_STATION_OBS_PATH
@@ -408,7 +428,7 @@ class GribOverlayStationObsView(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request: web.Request) -> web.Response:
-        hass: HomeAssistant = request.app["hass"]
+        hass = request.app[KEY_HASS]
         try:
             param = request.query["param"]
             lat = float(request.query["lat"])
@@ -434,15 +454,18 @@ class GribOverlayStationObsView(HomeAssistantView):
 
 
 class GribOverlayStationsView(HomeAssistantView):
-    """Lists measurement stations near a point that actually HAVE data for one
-    parameter, so the card only offers stations that will return something."""
+    """Lists the stations near a point that actually HAVE data for a parameter.
+
+    Filtering here is what keeps the card from offering a station that would
+    then return nothing.
+    """
 
     url = HTTP_STATIONS_PATH
     name = "api:grib_overlay:stations"
     requires_auth = True
 
     async def get(self, request: web.Request) -> web.Response:
-        hass: HomeAssistant = request.app["hass"]
+        hass = request.app[KEY_HASS]
         try:
             param = request.query["param"]
             lat = float(request.query["lat"])
@@ -466,7 +489,7 @@ class GribOverlayWeatherMapsView(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request: web.Request) -> web.Response:
-        hass: HomeAssistant = request.app["hass"]
+        hass = request.app[KEY_HASS]
         try:
             charts = await weather_maps.get(hass).charts()
         except weather_maps.WeatherMapError as err:
@@ -497,7 +520,7 @@ class GribOverlayWeatherMapImageView(HomeAssistantView):
     requires_auth = False
 
     async def get(self, request: web.Request, name: str) -> web.Response:
-        hass: HomeAssistant = request.app["hass"]
+        hass = request.app[KEY_HASS]
         path = await weather_maps.get(hass).image(name)
         if path is None:
             return web.Response(status=404)
@@ -520,7 +543,7 @@ class GribOverlayClientErrorView(HomeAssistantView):
     requires_auth = True
 
     async def post(self, request: web.Request) -> web.Response:
-        hass: HomeAssistant = request.app["hass"]
+        hass = request.app[KEY_HASS]
         try:
             report = await request.json()
         except ValueError:

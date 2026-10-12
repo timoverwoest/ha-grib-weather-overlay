@@ -50,7 +50,7 @@ def test_a_window_outside_the_grid_is_an_error() -> None:
 
 def test_a_wrapped_global_axis_comes_back_sorted_and_contiguous() -> None:
     lats = np.arange(-10.0, 10.1, 5.0)
-    rows, cols, cut_lats, cut_lons = grib_decode._crop_plan(
+    _rows, cols, cut_lats, cut_lons = grib_decode._crop_plan(
         lats, _WRAPPED, (-5.0, -100.0, 5.0, 50.0)
     )
     assert cut_lons.tolist() == [-90.0, -45.0, 0.0, 45.0]
@@ -62,7 +62,7 @@ def test_a_wrapped_global_axis_comes_back_sorted_and_contiguous() -> None:
 
 
 def test_the_same_plan_applies_to_several_grids() -> None:
-    """u and v must be cut identically, or the wind would point somewhere else."""
+    """U and v must be cut identically, or the wind would point somewhere else."""
     lats = np.arange(0.0, 4.1, 1.0)
     plan = grib_decode._crop_plan(lats, _WRAPPED, (1.0, -50.0, 3.0, 50.0))
     u = np.arange(5 * 8, dtype=float).reshape(5, 8)

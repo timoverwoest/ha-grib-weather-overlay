@@ -17,8 +17,8 @@ as it does KNMI's.
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 import functools
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import aiohttp
@@ -171,7 +171,7 @@ def _run_id(run: datetime) -> str:
 
 
 def _parse_run_id(run_id: str) -> datetime:
-    return datetime.strptime(run_id, "%Y%m%d%H").replace(tzinfo=timezone.utc)
+    return datetime.strptime(run_id, "%Y%m%d%H").replace(tzinfo=UTC)
 
 
 def _iso(dt: datetime) -> str:
@@ -241,7 +241,7 @@ class DmiSource(GribSource):
         return all(lead in files for lead in range(last + 1))
 
     async def _latest_complete_run(self, dataset: GribDatasetInfo) -> str | None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         newest = now.replace(
             hour=now.hour - now.hour % _RUN_INTERVAL_HOURS, minute=0, second=0, microsecond=0
         )

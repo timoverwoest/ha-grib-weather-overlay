@@ -10,9 +10,9 @@ messages that behave like GRIB messages (``matches``, ``values``, ``to_grid``).
 
 from __future__ import annotations
 
-import io
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+import io
 from pathlib import Path
 
 import numpy as np
@@ -58,8 +58,8 @@ def write_member(
     if lats.ndim != 1 or lons.ndim != 1 or np.any(np.diff(lats) <= 0) or np.any(np.diff(lons) <= 0):
         raise GriddedError("lats and lons must be ascending 1-D axes")
     arrays = {}
-    for name, grid in fields.items():
-        grid = np.asarray(grid, dtype=np.float32)
+    for name, raw_grid in fields.items():
+        grid = np.asarray(raw_grid, dtype=np.float32)
         if grid.shape != (lats.size, lons.size):
             raise GriddedError(f"field {name} has shape {grid.shape}, expected {(lats.size, lons.size)}")
         arrays[f"field_{name}"] = grid
@@ -78,8 +78,8 @@ def iter_messages(buf: bytes) -> list[FieldMessage]:
     try:
         with np.load(io.BytesIO(buf), allow_pickle=False) as npz:
             lats, lons, times = npz["lats"], npz["lons"], npz["times"]
-            valid_time = datetime.fromtimestamp(float(times[0]), tz=timezone.utc)
-            run_time = datetime.fromtimestamp(float(times[1]), tz=timezone.utc)
+            valid_time = datetime.fromtimestamp(float(times[0]), tz=UTC)
+            run_time = datetime.fromtimestamp(float(times[1]), tz=UTC)
             return [
                 FieldMessage(
                     field=key[len("field_"):],
