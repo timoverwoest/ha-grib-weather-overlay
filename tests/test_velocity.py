@@ -41,7 +41,9 @@ def test_build_velocity_data_downsamples_large_grid() -> None:
     lats = np.linspace(49.0, 56.0, 390)
     lons = np.linspace(0.0, 11.0, 390)
     u = np.ones((390, 390))
-    records = velocity.build_velocity_data(u, u, lats, lons, datetime(2026, 7, 21, tzinfo=UTC))
+    records = velocity.build_velocity_data(
+        u, u, lats, lons, datetime(2026, 7, 21, tzinfo=UTC)
+    )
     # 390 -> downsampled to <= 160 points per axis.
     assert records[0]["header"]["nx"] <= 160
     assert records[0]["header"]["ny"] <= 160

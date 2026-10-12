@@ -31,11 +31,11 @@ TITLE = {
 INTRO = {
     "nl": (
         "Home Assistant heeft deze card vervangen door een lege "
-        "\"configuratiefout\". Dit is wat de browser erover zei:"
+        '"configuratiefout". Dit is wat de browser erover zei:'
     ),
     "en": (
-        "Home Assistant replaced this card with a blank \"configuration "
-        "error\". This is what the browser said about it:"
+        'Home Assistant replaced this card with a blank "configuration '
+        'error". This is what the browser said about it:'
     ),
 }
 OUTRO = {
@@ -43,10 +43,7 @@ OUTRO = {
         "Dezelfde tekst staat in het Home Assistant-logboek "
         "(Instellingen → Systeem → Logboek)."
     ),
-    "en": (
-        "The same text is in the Home Assistant log "
-        "(Settings → System → Logs)."
-    ),
+    "en": ("The same text is in the Home Assistant log (Settings → System → Logs)."),
 }
 
 
@@ -152,7 +149,14 @@ def notification(report: dict, lang: str) -> str:
             "`" + line.strip() + "`" if line.startswith("  ") else "**" + line + "**"
             for line in _event_lines(event)
         )
-    lines.extend(["", *(line.strip() for line in _context_lines(report)), "", OUTRO.get(lang, OUTRO["en"])])
+    lines.extend(
+        [
+            "",
+            *(line.strip() for line in _context_lines(report)),
+            "",
+            OUTRO.get(lang, OUTRO["en"]),
+        ]
+    )
     return "\n".join(lines)
 
 

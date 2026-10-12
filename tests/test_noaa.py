@@ -105,7 +105,9 @@ async def test_the_newest_published_run_is_listed(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_run_that_has_not_reached_the_probe_step_is_skipped(monkeypatch) -> None:
+async def test_a_run_that_has_not_reached_the_probe_step_is_skipped(
+    monkeypatch,
+) -> None:
     """NCEP publishes a run lead time by lead time over a few hours. Taking one
     before it is usable would leave it in the cache nearly empty.
     """
@@ -169,7 +171,9 @@ async def test_members_come_back_in_ascending_lead_time(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_run_short_of_the_horizon_costs_one_probe_and_no_downloads(tmp_path) -> None:
+async def test_a_run_short_of_the_horizon_costs_one_probe_and_no_downloads(
+    tmp_path,
+) -> None:
     """A run is listed once it reaches +24 h, hours before it reaches +384, so an
     entry with a long horizon meets a run that is still publishing at every
     single run. Finding that out has to be one small request, not a download of
@@ -233,7 +237,9 @@ async def test_the_window_is_the_one_the_dataset_advertises(tmp_path) -> None:
     )
     query = _query(_downloads(session)[0])
     south, west, north, east = GFS.bounds
-    assert [float(query[k][0]) for k in ("bottomlat", "leftlon", "toplat", "rightlon")] == [
+    assert [
+        float(query[k][0]) for k in ("bottomlat", "leftlon", "toplat", "rightlon")
+    ] == [
         south,
         west,
         north,
@@ -271,7 +277,9 @@ def test_weather_filters_pin_a_level_and_an_instantaneous_field() -> None:
         for grib_filter in filters:
             assert "indicatorOfTypeOfLevel" in grib_filter, field.parameter.key
             assert "level" in grib_filter, field.parameter.key
-            assert grib_filter["productDefinitionTemplateNumber"] == 0, field.parameter.key
+            assert grib_filter["productDefinitionTemplateNumber"] == 0, (
+                field.parameter.key
+            )
 
 
 def test_swell_is_pinned_to_its_first_partition() -> None:

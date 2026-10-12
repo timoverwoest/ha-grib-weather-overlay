@@ -56,9 +56,7 @@ class _FakeSession:
 
 
 def _listing(run: str, steps: range) -> str:
-    return "".join(
-        f'<a href="EWAM_SWH_{run}_{s:03d}.grib2.bz2">x</a>' for s in steps
-    )
+    return "".join(f'<a href="EWAM_SWH_{run}_{s:03d}.grib2.bz2">x</a>' for s in steps)
 
 
 @pytest.mark.asyncio
@@ -83,7 +81,9 @@ async def test_a_run_still_being_published_is_not_listed() -> None:
     """
     pages = {
         f"{_EWAM_BASE}/00/swh/": _listing("2026091600", range(1)),  # just started
-        f"{_EWAM_BASE}/12/swh/": _listing("2026091512", range(79)),  # yesterday, complete
+        f"{_EWAM_BASE}/12/swh/": _listing(
+            "2026091512", range(79)
+        ),  # yesterday, complete
     }
     src = DwdSource(_FakeSession(pages))
     files = await src.async_list_files(EWAM)
@@ -91,7 +91,9 @@ async def test_a_run_still_being_published_is_not_listed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ewam_refuses_a_run_with_a_parameter_still_missing(monkeypatch, tmp_path) -> None:
+async def test_ewam_refuses_a_run_with_a_parameter_still_missing(
+    monkeypatch, tmp_path
+) -> None:
     run = "2026091600"
     pages = {
         f"{_EWAM_BASE}/00/swh/": _listing(run, range(79)),
@@ -164,7 +166,9 @@ async def test_swell_comes_from_its_own_directory(monkeypatch, tmp_path) -> None
 
     monkeypatch.setattr(src, "_download_bunzip", _fake_dl)
     await src.async_download_run(EWAM, run, tmp_path, ["swell_height"], horizon_hours=2)
-    assert urls == [f"{_EWAM_BASE}/12/shts/EWAM_SHTS_{run}_{s:03d}.grib2.bz2" for s in range(3)]
+    assert urls == [
+        f"{_EWAM_BASE}/12/shts/EWAM_SHTS_{run}_{s:03d}.grib2.bz2" for s in range(3)
+    ]
 
 
 def _d2_name(run: str, step: int, dwd_dir: str) -> str:
@@ -178,7 +182,9 @@ def _d2_listing(dwd_dir: str, *runs: tuple[str, range]) -> str:
     rows = []
     for run, steps in runs:
         for s in steps:
-            rows.append(f'<a href="{_d2_name(run, s, dwd_dir)}">icon-d2_germany_regular-lat-lon_si..&gt;</a>')
+            rows.append(
+                f'<a href="{_d2_name(run, s, dwd_dir)}">icon-d2_germany_regular-lat-lon_si..&gt;</a>'
+            )
             rows.append(
                 f'<a href="icon-d2_germany_icosahedral_single-level_{run}_{s:03d}_2d_{dwd_dir}.grib2.bz2">x</a>'
             )
@@ -192,8 +198,10 @@ async def test_icon_d2_picks_the_newest_complete_run() -> None:
     the newest complete run.
     """
     full = range(49)
-    pages = {f"{_ICON_D2_BASE}/{hh}/t_2m/": _d2_listing("t_2m", (f"20260916{hh}", full))
-             for hh in _ICON_D2_RUN_HOURS}
+    pages = {
+        f"{_ICON_D2_BASE}/{hh}/t_2m/": _d2_listing("t_2m", (f"20260916{hh}", full))
+        for hh in _ICON_D2_RUN_HOURS
+    }
     pages[f"{_ICON_D2_BASE}/18/t_2m/"] = _d2_listing(
         "t_2m", ("2026091518", range(3, 49)), ("2026091618", range(3))
     )
@@ -211,8 +219,8 @@ async def test_icon_d2_joins_u_and_v_and_keeps_lead_time_order(tmp_path) -> None
     for dwd_dir, tag in (("u_10m", b"U"), ("v_10m", b"V"), ("tot_prec", b"P")):
         pages[f"{_ICON_D2_BASE}/12/{dwd_dir}/"] = _d2_listing(dwd_dir, (run, range(49)))
         for s in range(49):
-            pages[f"{_ICON_D2_BASE}/12/{dwd_dir}/{_d2_name(run, s, dwd_dir)}"] = bz2.compress(
-                tag + str(s).encode()
+            pages[f"{_ICON_D2_BASE}/12/{dwd_dir}/{_d2_name(run, s, dwd_dir)}"] = (
+                bz2.compress(tag + str(s).encode())
             )
     src = DwdSource(_FakeSession(pages))
     paths = await src.async_download_run(
@@ -221,15 +229,21 @@ async def test_icon_d2_joins_u_and_v_and_keeps_lead_time_order(tmp_path) -> None
     # Per parameter, ascending lead time: the precipitation de-accumulation
     # depends on it.
     assert [p.name for p in paths] == [
-        "precipitation_000.grib2", "precipitation_001.grib2", "precipitation_002.grib2",
-        "wind_10m_000.grib2", "wind_10m_001.grib2", "wind_10m_002.grib2",
+        "precipitation_000.grib2",
+        "precipitation_001.grib2",
+        "precipitation_002.grib2",
+        "wind_10m_000.grib2",
+        "wind_10m_001.grib2",
+        "wind_10m_002.grib2",
     ]
     assert (tmp_path / "wind_10m_001.grib2").read_bytes() == b"U1V1"
     assert (tmp_path / "precipitation_002.grib2").read_bytes() == b"P2"
 
 
 @pytest.mark.asyncio
-async def test_icon_d2_refuses_a_run_that_is_still_publishing(monkeypatch, tmp_path) -> None:
+async def test_icon_d2_refuses_a_run_that_is_still_publishing(
+    monkeypatch, tmp_path
+) -> None:
     run = "2026091618"
     pages = {
         f"{_ICON_D2_BASE}/18/t_2m/": _d2_listing("t_2m", (run, range(49))),
@@ -251,9 +265,7 @@ async def test_icon_d2_refuses_a_run_that_is_still_publishing(monkeypatch, tmp_p
 
 
 def _gwam_listing(run: str, steps: range) -> str:
-    return "".join(
-        f'<a href="GWAM_SWH_{run}_{s:03d}.grib2.bz2">x</a>' for s in steps
-    )
+    return "".join(f'<a href="GWAM_SWH_{run}_{s:03d}.grib2.bz2">x</a>' for s in steps)
 
 
 def test_gwam_steps_are_three_hourly_up_to_its_own_horizon() -> None:
@@ -282,7 +294,9 @@ async def test_gwam_run_discovery_reads_its_own_file_prefix() -> None:
     """The listing regex is per model: EWAM_ files must not count as GWAM runs."""
     pages = {
         f"{_GWAM_BASE}/00/swh/": _gwam_listing("2026092100", range(0, 175, 3)),
-        f"{_GWAM_BASE}/12/swh/": _listing("2026092112", range(0, 175, 3)),  # EWAM_ names
+        f"{_GWAM_BASE}/12/swh/": _listing(
+            "2026092112", range(0, 175, 3)
+        ),  # EWAM_ names
     }
     src = DwdSource(_FakeSession(pages))
     files = await src.async_list_files(GWAM)
@@ -308,4 +322,7 @@ async def test_gwam_downloads_three_hourly_steps_from_its_own_directory(
     monkeypatch.setattr(src, "_download_bunzip", _fake_dl)
     await src.async_download_run(GWAM, run, tmp_path, ["wave_height"], horizon_hours=9)
     assert sorted(step for step, _ in grabbed) == [0, 3, 6, 9]
-    assert all(url.startswith(f"{_GWAM_BASE}/00/{_WAVE_DIR['wave_height']}/") for _, url in grabbed)
+    assert all(
+        url.startswith(f"{_GWAM_BASE}/00/{_WAVE_DIR['wave_height']}/")
+        for _, url in grabbed
+    )

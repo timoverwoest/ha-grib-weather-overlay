@@ -123,14 +123,30 @@ _WATER_LEVEL = GribParameter(
 # Keys as EWAM/DMI, so the comparison lines them up. th0 is the direction the
 # waves come from, as elsewhere.
 _SWAN_PARAMETERS = (
-    GribParameter(key="wave_height", name="Golfhoogte (significant)", unit="m",
-                  grib_filter={"field": "wave_height_hm0"}, colormap="wave", value_range=(0, 8)),
-    GribParameter(key="wave_period", name="Golfperiode (gemiddeld)", unit="s",
-                  grib_filter={"field": "wave_period_tm10"}, colormap="wave_period",
-                  value_range=(0, 16)),
-    GribParameter(key="wave_direction", name="Golfrichting (gemiddeld)", unit="°",
-                  grib_filter={"field": "wave_dir_th0"}, colormap="direction",
-                  value_range=(0, 360)),
+    GribParameter(
+        key="wave_height",
+        name="Golfhoogte (significant)",
+        unit="m",
+        grib_filter={"field": "wave_height_hm0"},
+        colormap="wave",
+        value_range=(0, 8),
+    ),
+    GribParameter(
+        key="wave_period",
+        name="Golfperiode (gemiddeld)",
+        unit="s",
+        grib_filter={"field": "wave_period_tm10"},
+        colormap="wave_period",
+        value_range=(0, 16),
+    ),
+    GribParameter(
+        key="wave_direction",
+        name="Golfrichting (gemiddeld)",
+        unit="°",
+        grib_filter={"field": "wave_dir_th0"},
+        colormap="direction",
+        value_range=(0, 360),
+    ),
 )
 
 KNOWN_DATASETS: tuple[GribDatasetInfo, ...] = (
@@ -209,12 +225,14 @@ def despike(grid: np.ndarray, limit: float) -> np.ndarray:
     """Mask cells that differ from the median of their neighbours by more than ``limit``."""
     padded = np.pad(grid, 1, constant_values=np.nan)
     rows, cols = grid.shape
-    neighbours = np.stack([
-        padded[1 + dy:1 + dy + rows, 1 + dx:1 + dx + cols]
-        for dy in (-1, 0, 1)
-        for dx in (-1, 0, 1)
-        if (dy, dx) != (0, 0)
-    ])
+    neighbours = np.stack(
+        [
+            padded[1 + dy : 1 + dy + rows, 1 + dx : 1 + dx + cols]
+            for dy in (-1, 0, 1)
+            for dx in (-1, 0, 1)
+            if (dy, dx) != (0, 0)
+        ]
+    )
     count = np.sum(np.isfinite(neighbours), axis=0)
     # An all-NaN neighbourhood gives a NaN median (and a warning); such a cell
     # is kept -- count < 2 already excludes it.
@@ -273,7 +291,12 @@ def split_run(
             fields[name] = frame
         path = run_dir / f"{_stamp(run_time)}_{lead:03d}.npz"
         gridded.write_member(
-            path, fields=fields, lats=lats, lons=lons, valid_time=valid, run_time=run_time
+            path,
+            fields=fields,
+            lats=lats,
+            lons=lons,
+            valid_time=valid,
+            run_time=run_time,
         )
         written[lead] = path
     return written
@@ -287,8 +310,13 @@ class RwsSource(GribSource):
     supports_push_notifications = False
     provides_archive = False
 
-    def __init__(self, session: aiohttp.ClientSession, api_key: str | None = None,
-                 notification_api_key: str | None = None, instance_id: str | None = None) -> None:
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        api_key: str | None = None,
+        notification_api_key: str | None = None,
+        instance_id: str | None = None,
+    ) -> None:
         self._session = session
         self._complete: set[str] = set()  # runs already known to be finished
 
@@ -336,7 +364,11 @@ class RwsSource(GribSource):
         # the run before it is finished and is usually the one we already have.
         for run in sorted(runs, reverse=True)[:_RUN_CANDIDATES]:
             if await self._async_is_complete(model, run):
-                return [GribFileInfo(filename=_stamp(run), size=0, last_modified=run.isoformat())]
+                return [
+                    GribFileInfo(
+                        filename=_stamp(run), size=0, last_modified=run.isoformat()
+                    )
+                ]
         return []
 
     async def _async_is_complete(self, model: _Model, run: datetime) -> bool:
@@ -365,7 +397,9 @@ class RwsSource(GribSource):
     async def async_download_file(
         self, dataset: GribDatasetInfo, filename: str, destination: Path
     ) -> Path:
-        raise GribSourceError("Matroos output is fetched per run; use async_download_run")
+        raise GribSourceError(
+            "Matroos output is fetched per run; use async_download_run"
+        )
 
     async def async_download_run(
         self,

@@ -12,7 +12,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-JS = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(encoding="utf-8")
+JS = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(
+    encoding="utf-8"
+)
 README = Path("README.md").read_text(encoding="utf-8")
 FILTERS = JS.split("// --- which datasets and parameters a card shows", 1)[1].split(
     "// Canonical column resolution", 1
@@ -26,13 +28,19 @@ def _body(name: str) -> str:
 def test_both_cards_take_their_entries_from_the_filter() -> None:
     # Every assignment of an entry list goes through filterCardEntries: the raw
     # response only ever lands in _allEntries (kept for live config edits).
-    assert JS.count("this._entries = filterCardEntries(") == JS.count("this._entries =") == 3
+    assert (
+        JS.count("this._entries = filterCardEntries(")
+        == JS.count("this._entries =")
+        == 3
+    )
     assert JS.count("this._allEntries = data.entries || [];") == 2
 
 
 def test_the_config_keys_are_the_documented_ones() -> None:
     entries = _body("filterCardEntries")
-    assert "cfg.datasets ?? cfg.entries ?? cfg.models" in entries  # `entries`/`models`: compare card
+    assert (
+        "cfg.datasets ?? cfg.entries ?? cfg.models" in entries
+    )  # `entries`/`models`: compare card
     assert "cfg.exclude_datasets ?? cfg.exclude_entries" in entries
     assert "expandParamTokens(filterTokens(cfg.parameters))" in entries
     assert "expandParamTokens(filterTokens(cfg.exclude_parameters))" in entries
@@ -45,9 +53,17 @@ def test_a_group_name_stands_for_its_parameter_keys() -> None:
     assert 'golven: "waves"' in FILTERS
     # Group names must not collide with real parameter keys, or a list naming
     # one parameter would quietly pull in a whole family.
-    keys = {"current", "water_level", "water_temperature", "wave_height", "precipitation"}
+    keys = {
+        "current",
+        "water_level",
+        "water_temperature",
+        "wave_height",
+        "precipitation",
+    }
     groups = FILTERS.split("const GRIB_PARAM_GROUPS = {", 1)[1].split("};", 1)[0]
-    names = {line.split(":", 1)[0].strip() for line in groups.splitlines() if ":" in line}
+    names = {
+        line.split(":", 1)[0].strip() for line in groups.splitlines() if ":" in line
+    }
     assert not (names & keys)
 
 
@@ -72,15 +88,20 @@ def test_a_direction_is_not_offered_as_a_layer_of_its_own() -> None:
 def test_the_comparison_offers_only_what_the_ticked_models_have() -> None:
     # Unticking a model must take its exclusive parameters out of the dropdown,
     # and unticking everything falls back to all models rather than to nothing.
-    active = _body("_activeEntries") if "function _activeEntries(" in FILTERS else JS.split(
-        "_activeEntries() {", 1
-    )[1].split("\n  }\n", 1)[0]
+    active = (
+        _body("_activeEntries")
+        if "function _activeEntries(" in FILTERS
+        else JS.split("_activeEntries() {", 1)[1].split("\n  }\n", 1)[0]
+    )
     assert "excluded.has(e.entry_id)" in active
     assert "return active.length ? active : entries;" in active
     populate = JS.split("  _populateParameters() {", 1)[1].split("\n  }\n", 1)[0]
     assert "for (const e of this._activeEntries())" in populate
     # ... and the parameter being compared survives a tick when it still exists.
-    assert "const wanted = seen.has(current) ? current : this._config.parameter;" in populate
+    assert (
+        "const wanted = seen.has(current) ? current : this._config.parameter;"
+        in populate
+    )
 
 
 def test_an_empty_result_is_explained_on_the_card() -> None:

@@ -78,7 +78,11 @@ def main(api_key: str, dataset_key: str, dataset_version: str) -> None:
     connect_properties = Properties(PacketTypes.CONNECT)
     connect_properties.SessionExpiryInterval = 3600
     client.connect(
-        MQTT_HOST, MQTT_PORT, keepalive=60, clean_start=False, properties=connect_properties
+        MQTT_HOST,
+        MQTT_PORT,
+        keepalive=60,
+        clean_start=False,
+        properties=connect_properties,
     )
     client.loop_start()
     print(f"Listening for {LISTEN_SECONDS}s ...")

@@ -19,17 +19,28 @@ import pytest
 from custom_components.grib_overlay import _refresh_precompressed
 
 INIT = Path("custom_components/grib_overlay/__init__.py").read_text(encoding="utf-8")
-JS = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(encoding="utf-8")
+JS = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(
+    encoding="utf-8"
+)
 
 
 def test_static_assets_are_cached_under_a_versioned_url() -> None:
-    assert "StaticPathConfig(STATIC_URL_PREFIX, str(www_dir), cache_headers=True)" in INIT
+    assert (
+        "StaticPathConfig(STATIC_URL_PREFIX, str(www_dir), cache_headers=True)" in INIT
+    )
     assert 'add_extra_js_url(hass, f"{FRONTEND_URL_PATH}?v={version}")' in INIT
     # The vendored files the card loads itself must carry the same version, or a
     # month-long cache would keep serving the Leaflet from before an update.
     assert "const GRIB_ASSET_QUERY" in JS
-    for name in ("LEAFLET_JS_URL", "LEAFLET_CSS_URL", "VELOCITY_JS_URL", "VELOCITY_CSS_URL"):
-        line = next(line for line in JS.splitlines() if line.startswith(f"const {name} ="))
+    for name in (
+        "LEAFLET_JS_URL",
+        "LEAFLET_CSS_URL",
+        "VELOCITY_JS_URL",
+        "VELOCITY_CSS_URL",
+    ):
+        line = next(
+            line for line in JS.splitlines() if line.startswith(f"const {name} =")
+        )
         assert line.endswith("${GRIB_ASSET_QUERY}`;"), line
 
 
@@ -63,8 +74,12 @@ def test_a_copy_older_than_its_source_is_rebuilt(tmp_path: Path) -> None:
     assert gz.stat().st_mtime_ns == before
 
 
-def test_copies_without_a_source_and_half_written_ones_are_removed(tmp_path: Path) -> None:
-    (tmp_path / "gone.js.gz").write_bytes(gzip.compress(b"a card from an older version"))
+def test_copies_without_a_source_and_half_written_ones_are_removed(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "gone.js.gz").write_bytes(
+        gzip.compress(b"a card from an older version")
+    )
     (tmp_path / "card.js.gz.tmp").write_bytes(b"half written")
     (tmp_path / "card.js").write_text("hello")
 
@@ -91,7 +106,11 @@ def test_a_throwing_hass_setter_cannot_blank_the_card() -> None:
     "configuration error" -- no message, nothing to go on. Every setter guards
     its body, so a hiccup costs a frame and not the card.
     """
-    assert JS.count("set hass(hass) {") == JS.count('gribGuard("hass update", () => {') == 3
+    assert (
+        JS.count("set hass(hass) {")
+        == JS.count('gribGuard("hass update", () => {')
+        == 3
+    )
     for block in JS.split("set hass(hass) {")[1:]:
         body = block.split("\n  }\n", 1)[0]
         assert 'gribGuard("hass update"' in body
@@ -127,12 +146,19 @@ def test_the_card_is_served_before_any_entry_is_set_up() -> None:
     must not get a 404 for the card: that breaks every card of this integration
     at once, until the page is reloaded.
     """
-    assert "async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:" in INIT
-    setup = INIT.split("async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:", 1)[1]
+    assert (
+        "async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:"
+        in INIT
+    )
+    setup = INIT.split(
+        "async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:", 1
+    )[1]
     setup = setup.split("\nasync def ", 1)[0]
     assert "await _async_register_frontend(hass)" in setup
     # Registering twice would raise, so it is guarded and does the views too.
-    register = INIT.split("async def _async_register_frontend(hass: HomeAssistant) -> None:", 1)[1]
+    register = INIT.split(
+        "async def _async_register_frontend(hass: HomeAssistant) -> None:", 1
+    )[1]
     register = register.split("\ndef ", 1)[0]
     assert "if hass.data.get(FRONTEND_READY):" in register
     assert "hass.http.register_view(view())" in register
@@ -149,7 +175,9 @@ def test_a_blank_map_is_measured_again_and_rebuilt_if_needed() -> None:
     """Switching dashboards can hand the card back with nothing painted: the
     controls and data are there, the map area is empty.
     """
-    body = JS.split("  async _ensureTilesOnce(allowRebuild) {", 1)[1].split("\n  }\n", 1)[0]
+    body = JS.split("  async _ensureTilesOnce(allowRebuild) {", 1)[1].split(
+        "\n  }\n", 1
+    )[0]
     assert "for (const wait of [250, 750, 1500, 3000])" in body
     assert "layer.redraw()" in body  # tiles that were dropped have to be drawn again
     assert "if (this._rebuilds > 2) {" in body  # and never in a loop
@@ -188,7 +216,9 @@ def test_the_dataset_fit_waits_until_the_card_has_a_size() -> None:
     overlay, which is what an "empty" card on another page turns out to be.
     """
     fit = JS.split("  _fitBounds(bounds) {", 1)[1].split("\n  }\n", 1)[0]
-    assert "if (!this._els.mapDiv.offsetWidth || !this._els.mapDiv.offsetHeight) {" in fit
+    assert (
+        "if (!this._els.mapDiv.offsetWidth || !this._els.mapDiv.offsetHeight) {" in fit
+    )
     assert "this._pendingFit = bounds;" in fit
     # ... and it is honoured as soon as there is a size, from the resize
     # observer and from the tile check.
@@ -197,7 +227,9 @@ def test_the_dataset_fit_waits_until_the_card_has_a_size() -> None:
     assert "if (this._applyPendingFit()) return;" in JS
     # The fit is only marked done when it actually happened.
     apply = JS.split("  _applyPendingFit() {", 1)[1].split("\n  }\n", 1)[0]
-    assert "this._boundsFit = true;" in apply and "this._map.fitBounds(bounds);" in apply
+    assert (
+        "this._boundsFit = true;" in apply and "this._map.fitBounds(bounds);" in apply
+    )
 
 
 def test_the_banner_says_how_the_card_was_loaded() -> None:
@@ -221,7 +253,11 @@ def test_a_second_copy_of_the_card_does_not_take_the_file_down() -> None:
     body = JS.split("function gribDefineCard(tag, cls) {", 1)[1].split("\n}\n", 1)[0]
     assert "const existing = customElements.get(tag);" in body
     assert "console.warn(" in body
-    for tag in ("grib-overlay-card", "grib-overlay-compare-card", "grib-overlay-weathermap-card"):
+    for tag in (
+        "grib-overlay-card",
+        "grib-overlay-compare-card",
+        "grib-overlay-weathermap-card",
+    ):
         assert f'gribDefineCard("{tag}"' in JS
 
 
@@ -315,7 +351,10 @@ def test_a_map_is_never_rebuilt_into_a_container_with_no_size() -> None:
     page was hidden has no tiles either -- and it spent the rebuild budget
     doing it, so the card stayed blank for the rest of the session.
     """
-    for method in ("  async _ensureTilesOnce(allowRebuild) {", "  async _ensureTiles() {"):
+    for method in (
+        "  async _ensureTilesOnce(allowRebuild) {",
+        "  async _ensureTiles() {",
+    ):
         body = JS.split(method, 1)[1].split("\n  }\n", 1)[0]
         assert "offsetWidth || !this._els.mapDiv.offsetHeight) return;" in body, method
 
@@ -324,7 +363,9 @@ def test_a_recovery_asked_for_mid_run_is_not_dropped() -> None:
     """The run that matters is the one arriving as the card gains a size, and
     that is exactly when an earlier, useless run is still going.
     """
-    body = JS.split("  async _ensureTiles({ allowRebuild = false } = {}) {", 1)[1].split("\n  }\n", 1)[0]
+    body = JS.split("  async _ensureTiles({ allowRebuild = false } = {}) {", 1)[
+        1
+    ].split("\n  }\n", 1)[0]
     assert "this._ensureAgain = this._ensureAgain || allowRebuild;" in body
     assert "while (this._ensureAgain) {" in body
     compare = JS.split("  async _ensureTiles() {", 1)[1].split("\n  }\n", 1)[0]
@@ -373,7 +414,9 @@ def test_the_card_goes_looking_for_its_own_red_block() -> None:
 
 
 def test_a_map_that_is_on_screen_and_blank_says_so() -> None:
-    body = JS.split("function gribReportBlankMap(card, mapDiv, detail) {", 1)[1].split("\n}\n", 1)[0]
+    body = JS.split("function gribReportBlankMap(card, mapDiv, detail) {", 1)[1].split(
+        "\n}\n", 1
+    )[0]
     assert "if (!mapDiv || !mapDiv.offsetWidth" in body  # hidden is not blank
     assert "querySelector(GRIB_PAINTED_TILE)" in body
     assert '"blank-map"' in body
@@ -398,14 +441,18 @@ def test_a_registry_that_replaced_the_browsers_own_is_told_about_the_cards() -> 
     # The check has to run before Home Assistant's two-second placeholder shows,
     # and again after, because the registry can be swapped at any point.
     assert "const GRIB_REGISTRY_CHECKS_MS = [0, 100, 300, 700, 1500, 2500];" in JS
-    assert JS.index("gribWatchRegistry();") > JS.index('gribDefineCard("grib-overlay-weathermap-card"')
+    assert JS.index("gribWatchRegistry();") > JS.index(
+        'gribDefineCard("grib-overlay-weathermap-card"'
+    )
 
 
 def test_a_card_home_assistant_gave_up_on_is_asked_for_again() -> None:
     """The promise it was waiting on came from the registry that never knew us,
     so it will not resolve by itself.
     """
-    body = JS.split("function gribRebuildErrorCards(found) {", 1)[1].split("\n}\n", 1)[0]
+    body = JS.split("function gribRebuildErrorCards(found) {", 1)[1].split("\n}\n", 1)[
+        0
+    ]
     assert 'new CustomEvent("ll-rebuild", { bubbles: true, composed: true })' in body
     once = JS.split("function gribScanOnce() {", 1)[1].split("\n}\n", 1)[0]
     assert "gribTeachRegistry();" in once
@@ -433,14 +480,20 @@ def test_leaflet_may_not_pin_the_map_to_no_height() -> None:
     """
     body = JS.split("function gribFixMapPosition(mapDiv) {", 1)[1].split("\n}\n", 1)[0]
     assert 'mapDiv.style.position !== "relative"' in body
-    assert 'mapDiv.style.position = "";' in body  # back to the stylesheet, not another value
+    assert (
+        'mapDiv.style.position = "";' in body
+    )  # back to the stylesheet, not another value
     # Both maps are handed back the moment Leaflet has had the container...
     assert JS.count("gribFixMapPosition(this._els.mapDiv);\n") >= 2
     # ...and anything already in that state is healed on the way back on screen.
     for method in ("  _recoverIfBlank() {",):
         for block in JS.split(method)[1:]:
-            assert "gribFixMapPosition(this._els.mapDiv)" in block.split("\n  }\n", 1)[0]
-    assert JS.count("gribFixMapPosition") >= 8  # both resize observers and both retry loops
+            assert (
+                "gribFixMapPosition(this._els.mapDiv)" in block.split("\n  }\n", 1)[0]
+            )
+    assert (
+        JS.count("gribFixMapPosition") >= 8
+    )  # both resize observers and both retry loops
 
 
 SHOTS_HTML = Path("dev/shots.html").read_text(encoding="utf-8")
@@ -466,4 +519,6 @@ def test_the_readme_shows_the_yaml_the_screenshot_page_renders() -> None:
 def test_every_screenshot_example_names_a_real_card() -> None:
     for name, yaml in _shot_examples().items():
         (card_type,) = re.findall(r"^type: custom:(\S+)$", yaml, re.M)
-        assert f'customElements.define("{card_type}"' in JS or f'"{card_type}"' in JS, name
+        assert f'customElements.define("{card_type}"' in JS or f'"{card_type}"' in JS, (
+            name
+        )

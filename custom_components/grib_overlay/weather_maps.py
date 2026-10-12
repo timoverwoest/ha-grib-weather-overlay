@@ -83,11 +83,17 @@ def select_charts(files: list[dict]) -> list[Chart]:
         )
         if chart.name not in newest or chart.issued > newest[chart.name].issued:
             newest[chart.name] = chart
-    analyses = sorted((c for c in newest.values() if c.kind == "analysis"), key=lambda c: c.valid_time)
+    analyses = sorted(
+        (c for c in newest.values() if c.kind == "analysis"), key=lambda c: c.valid_time
+    )
     analyses = analyses[-_HISTORY_ANALYSES:]
     latest = analyses[-1].valid_time if analyses else None
     forecasts = sorted(
-        (c for c in newest.values() if c.kind == "forecast" and (latest is None or c.valid_time > latest)),
+        (
+            c
+            for c in newest.values()
+            if c.kind == "forecast" and (latest is None or c.valid_time > latest)
+        ),
         key=lambda c: c.valid_time,
     )
     return analyses + forecasts
@@ -116,6 +122,7 @@ class WeatherMaps:
 
     async def _cache_dir(self) -> Path:
         if self._dir is None:
+
             def make() -> Path:
                 path = storage_paths.default_storage_root() / "weather_maps"
                 path.mkdir(parents=True, exist_ok=True)
@@ -182,7 +189,8 @@ class WeatherMaps:
         if not key:
             raise WeatherMapError("no KNMI entry configured")
         resp = await self._get(
-            f"{API_BASE_URL}/{DATASET_PATH}?maxKeys=40&orderBy=lastModified&sorting=desc", key
+            f"{API_BASE_URL}/{DATASET_PATH}?maxKeys=40&orderBy=lastModified&sorting=desc",
+            key,
         )
         async with resp:
             listing = await resp.json(content_type=None)
@@ -204,9 +212,13 @@ class WeatherMaps:
         index = await self._hass.async_add_executor_job(read_index)
         for chart in charts:
             path = folder / chart.name
-            if index.get(chart.name) == chart.issued and await self._hass.async_add_executor_job(path.exists):
+            if index.get(
+                chart.name
+            ) == chart.issued and await self._hass.async_add_executor_job(path.exists):
                 continue
-            resp = await self._get(f"{API_BASE_URL}/{DATASET_PATH}/{chart.name}/url", key)
+            resp = await self._get(
+                f"{API_BASE_URL}/{DATASET_PATH}/{chart.name}/url", key
+            )
             async with resp:
                 link = (await resp.json(content_type=None)).get("temporaryDownloadUrl")
             if not link:
@@ -223,7 +235,9 @@ class WeatherMaps:
             for old in folder.glob("*.gif"):
                 if old.name not in wanted:
                     old.unlink(missing_ok=True)
-            index_path.write_text(json.dumps({k: v for k, v in index.items() if k in wanted}))
+            index_path.write_text(
+                json.dumps({k: v for k, v in index.items() if k in wanted})
+            )
 
         await self._hass.async_add_executor_job(tidy)
 

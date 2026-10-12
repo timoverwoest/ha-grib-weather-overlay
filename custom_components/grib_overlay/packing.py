@@ -30,7 +30,9 @@ def unpack_bits(data: bytes, count: int, bits: int) -> np.ndarray:
     if len(data) * 8 < count * bits:
         raise ValueError(f"data section holds fewer than {count} values of {bits} bits")
     if bits in _WHOLE_BYTES:
-        return np.frombuffer(data, dtype=_WHOLE_BYTES[bits], count=count).astype(np.uint64)
+        return np.frombuffer(data, dtype=_WHOLE_BYTES[bits], count=count).astype(
+            np.uint64
+        )
     buf = np.frombuffer(bytes(data) + bytes(8), dtype=np.uint8)
     start = np.arange(count, dtype=np.int64) * bits
     windows = np.lib.stride_tricks.sliding_window_view(buf, 8)[start >> 3]

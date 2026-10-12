@@ -69,7 +69,9 @@ async def test_full_flow_creates_entry(hass: HomeAssistant, aioclient_mock) -> N
     assert CONF_NOTIFICATION_API_KEY not in result["data"]
 
 
-async def test_optional_notification_key_is_stored(hass: HomeAssistant, aioclient_mock) -> None:
+async def test_optional_notification_key_is_stored(
+    hass: HomeAssistant, aioclient_mock
+) -> None:
     aioclient_mock.get(
         FILES_URL,
         json={
@@ -290,7 +292,12 @@ def test_source_uses_notification_key_for_mqtt() -> None:
     assert same_key.supports_push_notifications is False
 
     # Blank/whitespace is not a key either.
-    assert KnmiSource(object(), "data-key", notification_api_key="  ").supports_push_notifications is False
+    assert (
+        KnmiSource(
+            object(), "data-key", notification_api_key="  "
+        ).supports_push_notifications
+        is False
+    )
 
     # A unique MQTT client id is required by the KNMI broker (a missing one is
     # rejected with CONNACK "Not authorized").
@@ -308,8 +315,14 @@ def test_mqtt_client_id_is_stable_per_instance() -> None:
     b = KnmiSource(object(), "k", instance_id="entry-123")
     assert a._mqtt_client_id == b._mqtt_client_id == "ha-grib-overlay-entry-123"
     # Different entries differ; no instance_id falls back to a random unique id.
-    assert KnmiSource(object(), "k", instance_id="other")._mqtt_client_id != a._mqtt_client_id
-    assert KnmiSource(object(), "k")._mqtt_client_id != KnmiSource(object(), "k")._mqtt_client_id
+    assert (
+        KnmiSource(object(), "k", instance_id="other")._mqtt_client_id
+        != a._mqtt_client_id
+    )
+    assert (
+        KnmiSource(object(), "k")._mqtt_client_id
+        != KnmiSource(object(), "k")._mqtt_client_id
+    )
 
 
 async def test_invalid_auth_shows_error(hass: HomeAssistant, aioclient_mock) -> None:
@@ -445,7 +458,10 @@ async def test_options_flow_can_switch_parameters_on(hass: HomeAssistant) -> Non
     choices = _choices(result, CONF_PARAMETERS)
     assert {"swell_height", "swell_direction", "wind_wave_height"} <= set(choices)
     marker = next(m for m in result["data_schema"].schema if m == CONF_PARAMETERS)
-    assert marker.default() == ["wave_height", "wave_direction"]  # current choice preselected
+    assert marker.default() == [
+        "wave_height",
+        "wave_direction",
+    ]  # current choice preselected
 
     wanted = ["wave_height", "wave_direction", "swell_height", "swell_direction"]
     result = await hass.config_entries.options.async_configure(
@@ -499,7 +515,9 @@ async def _horizon_range(hass: HomeAssistant, entry: MockConfigEntry):
     return result, result["data_schema"].schema[CONF_FORECAST_HORIZON_HOURS]
 
 
-async def test_the_horizon_may_go_as_far_as_the_dataset_reaches(hass: HomeAssistant) -> None:
+async def test_the_horizon_may_go_as_far_as_the_dataset_reaches(
+    hass: HomeAssistant,
+) -> None:
     """GFS runs to +384 h. A cap left over from when the longest model was DMI's
     +132 h stopped anyone from asking for more than a week of it.
     """
@@ -520,7 +538,9 @@ async def test_the_horizon_may_go_as_far_as_the_dataset_reaches(hass: HomeAssist
     assert entry.options[CONF_FORECAST_HORIZON_HOURS] == 240
 
 
-async def test_the_horizon_stops_at_what_a_shorter_dataset_has(hass: HomeAssistant) -> None:
+async def test_the_horizon_stops_at_what_a_shorter_dataset_has(
+    hass: HomeAssistant,
+) -> None:
     """EWAM ends at +78 h; asking for more just yields its last lead time."""
     _, validator = await _horizon_range(hass, _ewam_entry(hass))
     assert validator(78) == 78
@@ -533,7 +553,9 @@ async def test_a_horizon_already_set_is_never_refused(hass: HomeAssistant) -> No
     must still open -- and save -- on such a value, not reject its own default.
     """
     entry = _ewam_entry(hass)
-    hass.config_entries.async_update_entry(entry, options={CONF_FORECAST_HORIZON_HOURS: 168})
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_FORECAST_HORIZON_HOURS: 168}
+    )
     result, validator = await _horizon_range(hass, entry)
     assert validator(168) == 168
 

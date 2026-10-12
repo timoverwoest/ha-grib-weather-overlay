@@ -50,13 +50,17 @@ def test_totals_become_hourly_amounts() -> None:
     step = GribOverlayCoordinator._deaccumulate
     assert step(_total(0, [0.0, 0.0]), totals).data.tolist() == [0.0, 0.0]
     assert step(_total(1, [1.0, 2.0]), totals).data.tolist() == [1.0, 2.0]
-    assert step(_total(2, [1.5, 2.0]), totals).data.tolist() == pytest.approx([0.5, 0.0])
+    assert step(_total(2, [1.5, 2.0]), totals).data.tolist() == pytest.approx(
+        [0.5, 0.0]
+    )
     # Packing rounding can make a total dip a hair; that is no negative rain.
     assert step(_total(3, [1.4999, 2.0]), totals).data.tolist() == [0.0, 0.0]
 
 
 def test_a_run_seen_from_its_first_hour_needs_no_earlier_total() -> None:
-    assert GribOverlayCoordinator._deaccumulate(_total(1, [0.4, 0.0]), {}).data.tolist() == [0.4, 0.0]
+    assert GribOverlayCoordinator._deaccumulate(
+        _total(1, [0.4, 0.0]), {}
+    ).data.tolist() == [0.4, 0.0]
 
 
 def test_a_later_first_total_is_not_passed_off_as_one_hour() -> None:
@@ -104,7 +108,12 @@ def _write_cached_run(
                     "wind": None,
                     "field": None,
                     "bounds": [30.0, -10.5, 66.0, 42.0],
-                    "legend": {"unit": "m", "min_value": 0, "max_value": 8, "stops": []},
+                    "legend": {
+                        "unit": "m",
+                        "min_value": 0,
+                        "max_value": 8,
+                        "stops": [],
+                    },
                 }
             )
     manifest: dict = {
@@ -128,12 +137,15 @@ async def test_options_choice_wins_over_the_setup_choice(hass, tmp_path) -> None
     entry = _entry(hass, tmp_path)
     assert enabled_parameter_keys(entry) == ["wave_height"]
     hass.config_entries.async_update_entry(
-        entry, options={**entry.options, CONF_PARAMETERS: ["wave_height", "swell_height"]}
+        entry,
+        options={**entry.options, CONF_PARAMETERS: ["wave_height", "swell_height"]},
     )
     assert enabled_parameter_keys(entry) == ["wave_height", "swell_height"]
 
 
-async def test_cache_without_a_newly_enabled_parameter_is_reprocessed(hass, tmp_path) -> None:
+async def test_cache_without_a_newly_enabled_parameter_is_reprocessed(
+    hass, tmp_path
+) -> None:
     entry = _entry(hass, tmp_path, **{CONF_PARAMETERS: ["wave_height", "swell_height"]})
     coordinator = GribOverlayCoordinator(hass, entry)
     _write_cached_run(coordinator, ["wave_height"])
@@ -149,7 +161,9 @@ async def test_cache_with_the_enabled_parameters_is_restored(hass, tmp_path) -> 
     assert list(frames) == ["wave_height"]
 
 
-async def test_a_switched_off_parameter_is_not_offered_from_the_cache(hass, tmp_path) -> None:
+async def test_a_switched_off_parameter_is_not_offered_from_the_cache(
+    hass, tmp_path
+) -> None:
     entry = _entry(hass, tmp_path)  # only wave_height enabled
     coordinator = GribOverlayCoordinator(hass, entry)
     _write_cached_run(coordinator, ["wave_height", "swell_height"])
@@ -182,7 +196,9 @@ async def test_a_second_empty_run_is_taken_as_it_is(hass, tmp_path) -> None:
     assert frames["swell_height"] == []
 
 
-async def test_the_manifest_records_which_parameters_came_out_empty(hass, tmp_path) -> None:
+async def test_the_manifest_records_which_parameters_came_out_empty(
+    hass, tmp_path
+) -> None:
     entry = _entry(hass, tmp_path)
     coordinator = GribOverlayCoordinator(hass, entry)
     run_dir = tmp_path / "run-empty"
@@ -222,4 +238,7 @@ async def test_the_manifest_records_the_horizon(hass, tmp_path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     coordinator._write_frames_manifest(run_dir, "2026091600", {}, 48.0)
-    assert json.loads((run_dir / coordinator.MANIFEST_NAME).read_text())["horizon_hours"] == 48.0
+    assert (
+        json.loads((run_dir / coordinator.MANIFEST_NAME).read_text())["horizon_hours"]
+        == 48.0
+    )

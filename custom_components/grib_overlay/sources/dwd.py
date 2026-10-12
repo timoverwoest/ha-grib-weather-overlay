@@ -143,6 +143,7 @@ _WAVE_PARAMETERS: tuple[GribParameter, ...] = (
     ),
 )
 
+
 @dataclass(frozen=True)
 class _WaveModel:
     """One of DWD's wave models. They share a server layout and a parameter set.
@@ -157,7 +158,11 @@ class _WaveModel:
     step_hours: int
 
     def steps_within(self, horizon_hours: float) -> list[int]:
-        return [s for s in range(0, self.last_step + 1, self.step_hours) if s <= horizon_hours]
+        return [
+            s
+            for s in range(0, self.last_step + 1, self.step_hours)
+            if s <= horizon_hours
+        ]
 
 
 _WAVE_MODELS = {
@@ -369,6 +374,7 @@ KNOWN_DATASETS: tuple[GribDatasetInfo, ...] = (
     ),
 )
 
+
 @functools.cache
 def _wave_file_re(prefix: str) -> re.Pattern:
     # EWAM_SWH_2026072200_003.grib2.bz2 -> (filename, run YYYYMMDDHH, step hours)
@@ -408,9 +414,16 @@ class DwdSource(GribSource):
     supports_push_notifications = False
     provides_archive = False
 
-    def __init__(self, session: aiohttp.ClientSession, api_key: str | None = None,
-                 notification_api_key: str | None = None, instance_id: str | None = None) -> None:
-        self._session = session  # api_key/instance_id unused: DWD Open Data needs no key or push
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        api_key: str | None = None,
+        notification_api_key: str | None = None,
+        instance_id: str | None = None,
+    ) -> None:
+        self._session = (
+            session  # api_key/instance_id unused: DWD Open Data needs no key or push
+        )
 
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
         return list(KNOWN_DATASETS)
@@ -419,7 +432,9 @@ class DwdSource(GribSource):
         try:
             async with self._session.get(url) as resp:
                 if resp.status >= 400:
-                    raise GribSourceError(f"DWD listing {url} returned HTTP {resp.status}")
+                    raise GribSourceError(
+                        f"DWD listing {url} returned HTTP {resp.status}"
+                    )
                 return await resp.text()
         except aiohttp.ClientError as err:
             raise GribSourceError(f"DWD listing failed: {err}") from err
@@ -448,7 +463,9 @@ class DwdSource(GribSource):
     ) -> list[Path]:
         wanted_steps = model.steps_within(horizon_hours)
         keys = [k for k in param_keys if k in _WAVE_DIR]
-        listings = await asyncio.gather(*(self._runs_for(model, _WAVE_DIR[k]) for k in keys))
+        listings = await asyncio.gather(
+            *(self._runs_for(model, _WAVE_DIR[k]) for k in keys)
+        )
         available: dict[str, dict[int, str]] = {}
         for key, runs in zip(keys, listings, strict=True):
             steps = {
@@ -460,7 +477,11 @@ class DwdSource(GribSource):
             )
             available[key] = steps
         return await self._fetch_all(
-            [([available[k][s]], run_dir / f"{k}_{s:03d}.grib2") for k in keys for s in wanted_steps],
+            [
+                ([available[k][s]], run_dir / f"{k}_{s:03d}.grib2")
+                for k in keys
+                for s in wanted_steps
+            ],
             loop,
         )
 
@@ -493,7 +514,12 @@ class DwdSource(GribSource):
         return max(complete) if complete else None
 
     async def _download_icon_d2_run(
-        self, run_id: str, run_dir: Path, param_keys: list[str], horizon_hours: float, loop
+        self,
+        run_id: str,
+        run_dir: Path,
+        param_keys: list[str],
+        horizon_hours: float,
+        loop,
     ) -> list[Path]:
         hh = run_id[8:10]
         wanted_steps = [s for s in range(_ICON_D2_LAST_STEP + 1) if s <= horizon_hours]
@@ -503,13 +529,18 @@ class DwdSource(GribSource):
         # is there, so a run caught mid-publication fails cleanly (and is retried
         # at the next poll) instead of leaving gaps.
         listings = await asyncio.gather(*(self._icon_d2_steps(hh, d) for d in dirs))
-        available = {d: runs.get(run_id, {}) for d, runs in zip(dirs, listings, strict=True)}
+        available = {
+            d: runs.get(run_id, {}) for d, runs in zip(dirs, listings, strict=True)
+        }
         for dwd_dir, steps in available.items():
             _require_steps(f"ICON-D2 run {run_id}", dwd_dir, steps, wanted_steps)
         return await self._fetch_all(
             [
                 (
-                    [f"{_ICON_D2_BASE}/{hh}/{d}/{available[d][s]}" for d in _ICON_D2_DIRS[k]],
+                    [
+                        f"{_ICON_D2_BASE}/{hh}/{d}/{available[d][s]}"
+                        for d in _ICON_D2_DIRS[k]
+                    ],
                     run_dir / f"{k}_{s:03d}.grib2",
                 )
                 for k in keys
@@ -602,10 +633,13 @@ class DwdSource(GribSource):
             try:
                 async with self._session.get(url) as resp:
                     if resp.status >= 400:
-                        raise GribSourceError(f"DWD download {url} returned HTTP {resp.status}")
+                        raise GribSourceError(
+                            f"DWD download {url} returned HTTP {resp.status}"
+                        )
                     compressed.append(await resp.read())
             except aiohttp.ClientError as err:
                 raise GribSourceError(f"DWD download failed: {err}") from err
         await loop.run_in_executor(
-            None, lambda: dest.write_bytes(b"".join(bz2.decompress(c) for c in compressed))
+            None,
+            lambda: dest.write_bytes(b"".join(bz2.decompress(c) for c in compressed)),
         )

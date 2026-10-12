@@ -51,8 +51,16 @@ _PARAMETERS: tuple[GribParameter, ...] = (
         name="Wind (10m)",
         unit="m/s",
         kind="vector",
-        grib_filter_u={"indicatorOfParameter": 33, "indicatorOfTypeOfLevel": 105, "level": 10},
-        grib_filter_v={"indicatorOfParameter": 34, "indicatorOfTypeOfLevel": 105, "level": 10},
+        grib_filter_u={
+            "indicatorOfParameter": 33,
+            "indicatorOfTypeOfLevel": 105,
+            "level": 10,
+        },
+        grib_filter_v={
+            "indicatorOfParameter": 34,
+            "indicatorOfTypeOfLevel": 105,
+            "level": 10,
+        },
         colormap="wind",
         value_range=(0, 25),
     ),
@@ -61,7 +69,11 @@ _PARAMETERS: tuple[GribParameter, ...] = (
         key="precipitation",
         name="Neerslag",
         unit="mm",
-        grib_filter={"indicatorOfParameter": 61, "indicatorOfTypeOfLevel": 105, "level": 0},
+        grib_filter={
+            "indicatorOfParameter": 61,
+            "indicatorOfTypeOfLevel": 105,
+            "level": 0,
+        },
         colormap="precipitation",
         value_range=(0, 20),
     ),
@@ -71,7 +83,11 @@ _PARAMETERS: tuple[GribParameter, ...] = (
         key="pressure_msl",
         name="Luchtdruk (zeeniveau)",
         unit="hPa",
-        grib_filter={"indicatorOfParameter": 1, "indicatorOfTypeOfLevel": 105, "level": 0},
+        grib_filter={
+            "indicatorOfParameter": 1,
+            "indicatorOfTypeOfLevel": 105,
+            "level": 0,
+        },
         scale=0.01,
         colormap="pressure",
         value_range=(980, 1040),
@@ -80,7 +96,11 @@ _PARAMETERS: tuple[GribParameter, ...] = (
         key="wave_height",
         name="Golfhoogte (significant)",
         unit="m",
-        grib_filter={"indicatorOfParameter": 100, "indicatorOfTypeOfLevel": 105, "level": 0},
+        grib_filter={
+            "indicatorOfParameter": 100,
+            "indicatorOfTypeOfLevel": 105,
+            "level": 0,
+        },
         colormap="wave",
         value_range=(0, 8),
     ),
@@ -89,7 +109,11 @@ _PARAMETERS: tuple[GribParameter, ...] = (
         key="wave_direction",
         name="Golfrichting (gemiddeld)",
         unit="°",
-        grib_filter={"indicatorOfParameter": 230, "indicatorOfTypeOfLevel": 105, "level": 0},
+        grib_filter={
+            "indicatorOfParameter": 230,
+            "indicatorOfTypeOfLevel": 105,
+            "level": 0,
+        },
         colormap="direction",
         value_range=(0, 360),
     ),
@@ -98,8 +122,16 @@ _PARAMETERS: tuple[GribParameter, ...] = (
         name="Zeestroming (3 m diep)",
         unit="m/s",
         kind="vector",
-        grib_filter_u={"indicatorOfParameter": 49, "indicatorOfTypeOfLevel": 160, "level": 3},
-        grib_filter_v={"indicatorOfParameter": 50, "indicatorOfTypeOfLevel": 160, "level": 3},
+        grib_filter_u={
+            "indicatorOfParameter": 49,
+            "indicatorOfTypeOfLevel": 160,
+            "level": 3,
+        },
+        grib_filter_v={
+            "indicatorOfParameter": 50,
+            "indicatorOfTypeOfLevel": 160,
+            "level": 3,
+        },
         colormap="current",
         value_range=(0, 1.5),
     ),
@@ -115,7 +147,9 @@ _CONTENT_OF = {
 }
 
 
-def _dataset(area: str, label: str, bounds: tuple[float, float, float, float]) -> GribDatasetInfo:
+def _dataset(
+    area: str, label: str, bounds: tuple[float, float, float, float]
+) -> GribDatasetInfo:
     return GribDatasetInfo(
         key=f"metno_{area}",
         name=f"MET Norway - {label}: weer, golven en stroming",
@@ -138,6 +172,7 @@ KNOWN_DATASETS: tuple[GribDatasetInfo, ...] = (
     _dataset("skagerrak", "Skagerrak", (57.7, 7.8, 59.4, 12.0)),
     _dataset("sorlandet", "Sørlandet", (57.8, 7.0, 58.8, 9.4)),
 )
+
 
 @functools.cache
 def _user_agent() -> str:
@@ -175,12 +210,16 @@ def _with_run_time(message: bytes, run: datetime, lead_hours: int) -> bytes:
     pds = 8
     out[pds + 12] = (run.year - 1) % 100 + 1
     out[pds + 24] = (run.year - 1) // 100 + 1
-    out[pds + 13:pds + 17] = bytes([run.month, run.day, run.hour, run.minute])
+    out[pds + 13 : pds + 17] = bytes([run.month, run.day, run.hour, run.minute])
     out[pds + 17] = 1  # unit: hour
     if lead_hours <= 255:
         out[pds + 18], out[pds + 19], out[pds + 20] = lead_hours, 0, 0
     else:  # P1 over both octets
-        out[pds + 18], out[pds + 19], out[pds + 20] = lead_hours >> 8, lead_hours & 0xFF, 10
+        out[pds + 18], out[pds + 19], out[pds + 20] = (
+            lead_hours >> 8,
+            lead_hours & 0xFF,
+            10,
+        )
     return bytes(out)
 
 
@@ -196,8 +235,8 @@ def split_by_lead(
             break
         if buf[start + 7] != 1:
             raise GribSourceError("MET Norway file is not GRIB edition 1")
-        length = int.from_bytes(buf[start + 4:start + 7], "big")
-        message = buf[start:start + length]
+        length = int.from_bytes(buf[start + 4 : start + 7], "big")
+        message = buf[start : start + length]
         if len(message) < length:
             raise GribSourceError("MET Norway file is truncated")
         groups[_message_time(message)].append(message)
@@ -232,8 +271,13 @@ class MetnoSource(GribSource):
     supports_push_notifications = False
     provides_archive = False
 
-    def __init__(self, session: aiohttp.ClientSession, api_key: str | None = None,
-                 notification_api_key: str | None = None, instance_id: str | None = None) -> None:
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        api_key: str | None = None,
+        notification_api_key: str | None = None,
+        instance_id: str | None = None,
+    ) -> None:
         self._session = session
 
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
@@ -251,7 +295,9 @@ class MetnoSource(GribSource):
                         "User-Agent and may have blocked this one"
                     )
                 if resp.status >= 400:
-                    raise GribSourceError(f"MET Norway {url} returned HTTP {resp.status}")
+                    raise GribSourceError(
+                        f"MET Norway {url} returned HTTP {resp.status}"
+                    )
                 return await resp.read()
         except (TimeoutError, aiohttp.ClientError) as err:
             raise GribSourceError(f"MET Norway request failed: {err}") from err
@@ -271,28 +317,33 @@ class MetnoSource(GribSource):
             try:
                 items = json.loads(body)
             except ValueError as err:
-                raise GribSourceError(f"MET Norway availability list unreadable: {err}") from err
+                raise GribSourceError(
+                    f"MET Norway availability list unreadable: {err}"
+                ) from err
             updated.extend(
                 item["updated"]
                 for item in items
-                if (item.get("params") or {}).get("area") == area and item.get("updated")
+                if (item.get("params") or {}).get("area") == area
+                and item.get("updated")
             )
         if not updated:
             return []
         # Any content updated -> a new "run" for this area.
-        latest = max(
-            datetime.fromisoformat(u.replace("Z", "+00:00")) for u in updated
-        )
+        latest = max(datetime.fromisoformat(u.replace("Z", "+00:00")) for u in updated)
         return [
             GribFileInfo(
-                filename=latest.strftime("%Y%m%d%H%M%S"), size=0, last_modified=latest.isoformat()
+                filename=latest.strftime("%Y%m%d%H%M%S"),
+                size=0,
+                last_modified=latest.isoformat(),
             )
         ]
 
     async def async_download_file(
         self, dataset: GribDatasetInfo, filename: str, destination: Path
     ) -> Path:
-        raise GribSourceError("MET Norway files are split per lead time; use async_download_run")
+        raise GribSourceError(
+            "MET Norway files are split per lead time; use async_download_run"
+        )
 
     async def async_download_run(
         self,

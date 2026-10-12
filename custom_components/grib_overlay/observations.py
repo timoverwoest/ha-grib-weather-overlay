@@ -53,14 +53,14 @@ KNMI_EDR_BASE = (
     "10-minute-in-situ-meteorological-observations"
 )
 KNMI_EDR: dict[str, tuple[str, float]] = {
-    "wind_10m": ("ff", 1.0),          # 10-min mean wind speed (m/s)
-    "wind_gust_10m": ("gff", 1.0),    # maximum wind gust (m/s)
-    "temperature_2m": ("ta", 1.0),    # air temperature (degC)
-    "dewpoint_2m": ("td", 1.0),       # dew point (degC)
-    "humidity_2m": ("rh", 1.0),       # relative humidity (%)
-    "precipitation": ("rg", 1.0),     # precipitation intensity (mm/h) -- see note
-    "pressure_msl": ("pp", 1.0),      # MSL pressure (hPa)
-    "visibility": ("zm", 0.001),      # horizontal visibility (m) -> km
+    "wind_10m": ("ff", 1.0),  # 10-min mean wind speed (m/s)
+    "wind_gust_10m": ("gff", 1.0),  # maximum wind gust (m/s)
+    "temperature_2m": ("ta", 1.0),  # air temperature (degC)
+    "dewpoint_2m": ("td", 1.0),  # dew point (degC)
+    "humidity_2m": ("rh", 1.0),  # relative humidity (%)
+    "precipitation": ("rg", 1.0),  # precipitation intensity (mm/h) -- see note
+    "pressure_msl": ("pp", 1.0),  # MSL pressure (hPa)
+    "visibility": ("zm", 0.001),  # horizontal visibility (m) -> km
 }
 # Companion from-direction code for the vector params (so the Meting row can show
 # an arrow, like the manual measurement row does).
@@ -77,9 +77,9 @@ RWS_WAARNEMINGEN = f"{RWS_BASE}/ONLINEWAARNEMINGENSERVICES/OphalenWaarnemingen"
 RWS_HEADERS = {"X-API-KEY": "grib_overlay"}
 # param_key -> (AQUO grootheid code, optional companion direction grootheid).
 RWS_AQUO: dict[str, tuple[str, str | None]] = {
-    "wave_height": ("Hm0", None),          # significant wave height (cm -> m)
-    "wave_period": ("Tm02", None),         # mean wave period (s)
-    "wave_direction": ("Th0", None),       # mean wave direction (deg)
+    "wave_height": ("Hm0", None),  # significant wave height (cm -> m)
+    "wave_period": ("Tm02", None),  # mean wave period (s)
+    "wave_direction": ("Th0", None),  # mean wave direction (deg)
     "current": ("STROOMSHD", "STROOMRTG"),  # surface current (m/s, deg)
 }
 # RWS unit (a series' AquoMetadata.Eenheid.Code) -> factor to the forecast's SI
@@ -108,7 +108,9 @@ def _knmi_api_key(hass: HomeAssistant) -> str | None:
     for entry in hass.config_entries.async_entries(DOMAIN):
         if entry.data.get(CONF_SOURCE) != "knmi":
             continue
-        obs = entry.options.get(CONF_OBSERVATIONS_API_KEY) or entry.data.get(CONF_OBSERVATIONS_API_KEY)
+        obs = entry.options.get(CONF_OBSERVATIONS_API_KEY) or entry.data.get(
+            CONF_OBSERVATIONS_API_KEY
+        )
         if obs:
             return obs
         if fallback is None and entry.data.get(CONF_API_KEY):
@@ -202,7 +204,9 @@ def _features_within(
         props = feat.get("properties") or {}
         out.append(
             {
-                "name": props.get("name") or props.get("locationName") or feat.get("id"),
+                "name": props.get("name")
+                or props.get("locationName")
+                or feat.get("id"),
                 "lat": flat,
                 "lon": flon,
                 "dist_km": round(d, 1),
@@ -301,7 +305,9 @@ async def _fetch_knmi(
     locs = await _knmi_locations(hass, key)
     if not locs:
         reason = hass.data.get(DATA_KNMI_LOCATIONS, {}).get("error")
-        return {"error": reason or "KNMI EDR /locations niet beschikbaar (sleutel/netwerk)"}
+        return {
+            "error": reason or "KNMI EDR /locations niet beschikbaar (sleutel/netwerk)"
+        }
     station = nearest_knmi_location(locs, lat, lon)
     if not station:
         return {"error": "no KNMI station found"}
@@ -319,7 +325,9 @@ async def _fetch_knmi(
         ) as resp:
             body = await resp.text()
             if resp.status != 200:
-                _LOGGER.warning("KNMI EDR %s -> HTTP %s: %s", url, resp.status, body[:200])
+                _LOGGER.warning(
+                    "KNMI EDR %s -> HTTP %s: %s", url, resp.status, body[:200]
+                )
                 return {"error": f"KNMI EDR HTTP {resp.status}"}
             data = json.loads(body)
     except Exception as err:  # noqa: BLE001 - surface a clean message to the card
@@ -327,11 +335,18 @@ async def _fetch_knmi(
         return {"error": f"KNMI EDR request failed: {err}"}
     series = parse_knmi_coveragejson(data, code, dir_code, scale)
     if not series:
-        _LOGGER.info("KNMI EDR returned no usable values for %s at %s", code, station.get("name"))
+        _LOGGER.info(
+            "KNMI EDR returned no usable values for %s at %s", code, station.get("name")
+        )
     return {
         "provider": "knmi",
         "unit": None,
-        "station": {"name": station.get("name") or "KNMI-station", "lat": station["lat"], "lon": station["lon"], "provider": "knmi"},
+        "station": {
+            "name": station.get("name") or "KNMI-station",
+            "lat": station["lat"],
+            "lon": station["lon"],
+            "provider": "knmi",
+        },
         "series": series,
     }
 
@@ -439,7 +454,8 @@ async def _rws_catalogus(hass: HomeAssistant) -> dict | None:
         return None
     if not (data or {}).get("LocatieLijst"):  # e.g. Succesvol=false: don't cache
         _LOGGER.warning(
-            "RWS OphalenCatalogus returned no locations: %s", (data or {}).get("Foutmelding")
+            "RWS OphalenCatalogus returned no locations: %s",
+            (data or {}).get("Foutmelding"),
         )
         return None
     cache["data"] = data
@@ -603,7 +619,9 @@ def _haversine_km(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> flo
     d_lon = math.radians(b_lon - a_lon)
     s = (
         math.sin(d_lat / 2) ** 2
-        + math.cos(math.radians(a_lat)) * math.cos(math.radians(b_lat)) * math.sin(d_lon / 2) ** 2
+        + math.cos(math.radians(a_lat))
+        * math.cos(math.radians(b_lat))
+        * math.sin(d_lon / 2) ** 2
     )
     return 2 * r * math.asin(math.sqrt(s))
 

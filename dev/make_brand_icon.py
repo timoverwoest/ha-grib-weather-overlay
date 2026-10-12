@@ -16,7 +16,12 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 SS = 1024  # supersample resolution
-BRAND_DIR = Path(__file__).resolve().parent.parent / "custom_components" / "grib_overlay" / "brand"
+BRAND_DIR = (
+    Path(__file__).resolve().parent.parent
+    / "custom_components"
+    / "grib_overlay"
+    / "brand"
+)
 
 
 def _lerp(a, b, t):
@@ -25,7 +30,9 @@ def _lerp(a, b, t):
 
 def _rounded_mask(size, radius):
     m = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(m).rounded_rectangle([0, 0, size - 1, size - 1], radius=radius, fill=255)
+    ImageDraw.Draw(m).rounded_rectangle(
+        [0, 0, size - 1, size - 1], radius=radius, fill=255
+    )
     return m
 
 
@@ -90,8 +97,22 @@ def build(size):
 
     # wind streaks above the waves
     wr = size * 0.026
-    _stamp_stroke(badge, _wind_path(size, size * 0.12, size * 0.60, size * 0.30, size * 0.02, size * 0.075), wr, (255, 255, 255, 205))
-    _stamp_stroke(badge, _wind_path(size, size * 0.18, size * 0.66, size * 0.44, size * 0.02, size * 0.062), wr * 0.9, (255, 255, 255, 175))
+    _stamp_stroke(
+        badge,
+        _wind_path(
+            size, size * 0.12, size * 0.60, size * 0.30, size * 0.02, size * 0.075
+        ),
+        wr,
+        (255, 255, 255, 205),
+    )
+    _stamp_stroke(
+        badge,
+        _wind_path(
+            size, size * 0.18, size * 0.66, size * 0.44, size * 0.02, size * 0.062
+        ),
+        wr * 0.9,
+        (255, 255, 255, 175),
+    )
 
     draw = ImageDraw.Draw(badge, "RGBA")
     wl = size * 0.66

@@ -78,8 +78,18 @@ def test_the_same_plan_applies_to_several_grids() -> None:
 def _global_message() -> bytes:
     """One synthetic global field: 8 longitudes from 0 to 315, 4 latitudes."""
     return _make_grib2(
-        ni=8, nj=4, lat1=30.0, lon1=0.0, lat2=0.0, lon2=315.0,
-        cat=0, num=3, ref=0.0, bits=6, raw_values=list(range(32)), forecast_time=3,
+        ni=8,
+        nj=4,
+        lat1=30.0,
+        lon1=0.0,
+        lat2=0.0,
+        lon2=315.0,
+        cat=0,
+        num=3,
+        ref=0.0,
+        bits=6,
+        raw_values=list(range(32)),
+        forecast_time=3,
     )
 
 
@@ -87,7 +97,9 @@ def test_decoding_with_a_window_keeps_the_values_it_kept(tmp_path) -> None:
     path = tmp_path / "global.grib2"
     path.write_bytes(_global_message())
     parameter = GribParameter(
-        key="wave_height", name="x", unit="m",
+        key="wave_height",
+        name="x",
+        unit="m",
         grib_filter={"discipline": 10, "parameterCategory": 0, "parameterNumber": 3},
     )
 
@@ -99,7 +111,9 @@ def test_decoding_with_a_window_keeps_the_values_it_kept(tmp_path) -> None:
     assert np.all(np.diff(cut.lons) > 0)
     for lat in cut.lats:
         for lon in cut.lons:
-            here = cut.data[np.argmin(abs(cut.lats - lat)), np.argmin(abs(cut.lons - lon))]
+            here = cut.data[
+                np.argmin(abs(cut.lats - lat)), np.argmin(abs(cut.lons - lon))
+            ]
             there = whole.data[
                 np.argmin(abs(whole.lats - lat)), np.argmin(abs(whole.lons - lon))
             ]
@@ -110,21 +124,46 @@ def test_decoding_vector_components_with_a_window(tmp_path) -> None:
     """decode_vector_components has its own path through the crop."""
     path = tmp_path / "wind.grib2"
     u = _make_grib2(
-        ni=8, nj=4, lat1=30.0, lon1=0.0, lat2=0.0, lon2=315.0,
-        cat=2, num=2, ref=0.0, bits=6, raw_values=list(range(32)), forecast_time=3,
+        ni=8,
+        nj=4,
+        lat1=30.0,
+        lon1=0.0,
+        lat2=0.0,
+        lon2=315.0,
+        cat=2,
+        num=2,
+        ref=0.0,
+        bits=6,
+        raw_values=list(range(32)),
+        forecast_time=3,
     )
     v = _make_grib2(
-        ni=8, nj=4, lat1=30.0, lon1=0.0, lat2=0.0, lon2=315.0,
-        cat=2, num=3, ref=0.0, bits=6, raw_values=list(range(32)), forecast_time=3,
+        ni=8,
+        nj=4,
+        lat1=30.0,
+        lon1=0.0,
+        lat2=0.0,
+        lon2=315.0,
+        cat=2,
+        num=3,
+        ref=0.0,
+        bits=6,
+        raw_values=list(range(32)),
+        forecast_time=3,
     )
     path.write_bytes(u + v)
     parameter = GribParameter(
-        key="wind_10m", name="x", unit="m/s", kind="vector",
+        key="wind_10m",
+        name="x",
+        unit="m/s",
+        kind="vector",
         grib_filter_u={"discipline": 10, "parameterCategory": 2, "parameterNumber": 2},
         grib_filter_v={"discipline": 10, "parameterCategory": 2, "parameterNumber": 3},
     )
 
-    vec = grib_decode.decode_vector_components(path, parameter, (0.0, -100.0, 20.0, 50.0))
+    vec = grib_decode.decode_vector_components(
+        path, parameter, (0.0, -100.0, 20.0, 50.0)
+    )
     assert vec.u.shape == vec.v.shape == (3, 4)
     assert np.array_equal(vec.u, vec.v)
     assert np.all(np.diff(vec.lons) > 0)

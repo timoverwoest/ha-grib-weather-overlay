@@ -48,7 +48,9 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._datasets: list[GribDatasetInfo] = []
         self._dataset: GribDatasetInfo | None = None
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             source_key = user_input[CONF_SOURCE]
@@ -90,7 +92,9 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
-    async def async_step_dataset(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_dataset(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             dataset_key = user_input[CONF_DATASET]
@@ -109,9 +113,13 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ),
             }
         )
-        return self.async_show_form(step_id="dataset", data_schema=schema, errors=errors)
+        return self.async_show_form(
+            step_id="dataset", data_schema=schema, errors=errors
+        )
 
-    async def async_step_parameters(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_parameters(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         assert self._dataset is not None
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -142,7 +150,9 @@ class GribOverlayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ),
             }
         )
-        return self.async_show_form(step_id="parameters", data_schema=schema, errors=errors)
+        return self.async_show_form(
+            step_id="parameters", data_schema=schema, errors=errors
+        )
 
     @staticmethod
     @callback
@@ -161,13 +171,21 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
             source_cls = get_source_class(data[CONF_SOURCE])
         except (KeyError, ValueError):
             return None
-        source = source_cls(async_get_clientsession(self.hass), data.get(CONF_API_KEY, ""))
+        source = source_cls(
+            async_get_clientsession(self.hass), data.get(CONF_API_KEY, "")
+        )
         datasets = await source.async_list_datasets()
         return next((d for d in datasets if d.key == data.get(CONF_DATASET)), None)
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
-        if user_input is not None and CONF_PARAMETERS in user_input and not user_input[CONF_PARAMETERS]:
+        if (
+            user_input is not None
+            and CONF_PARAMETERS in user_input
+            and not user_input[CONF_PARAMETERS]
+        ):
             errors["base"] = "no_parameters_selected"
         elif user_input is not None:
             # Normalise the notification key: strip, and drop it entirely when
@@ -222,13 +240,16 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
         # fallback for when the source could not be listed to ask.
         max_horizon = max(
             dataset.forecast_horizon_hours if dataset else MAX_FORECAST_HORIZON_HOURS,
-            float(options.get(CONF_FORECAST_HORIZON_HOURS, DEFAULT_FORECAST_HORIZON_HOURS)),
+            float(
+                options.get(CONF_FORECAST_HORIZON_HOURS, DEFAULT_FORECAST_HORIZON_HOURS)
+            ),
         )
         parameter_field: dict = {}
         if dataset is not None:
             lang = labels.language(self.hass)
             choices = {
-                p.key: f"{labels.parameter_name(lang, p)} ({p.unit})" for p in dataset.parameters
+                p.key: f"{labels.parameter_name(lang, p)} ({p.unit})"
+                for p in dataset.parameters
             }
             parameter_field = {
                 vol.Required(
@@ -240,7 +261,9 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 **parameter_field,
                 vol.Required(
                     CONF_FORECAST_HORIZON_HOURS,
-                    default=options.get(CONF_FORECAST_HORIZON_HOURS, DEFAULT_FORECAST_HORIZON_HOURS),
+                    default=options.get(
+                        CONF_FORECAST_HORIZON_HOURS, DEFAULT_FORECAST_HORIZON_HOURS
+                    ),
                 ): vol.All(vol.Coerce(float), vol.Range(min=1, max=max_horizon)),
                 vol.Required(
                     CONF_RETAIN_RUNS,
@@ -248,7 +271,9 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 ): vol.All(vol.Coerce(int), vol.Range(min=1, max=10)),
                 vol.Required(
                     CONF_UPDATE_INTERVAL_MINUTES,
-                    default=options.get(CONF_UPDATE_INTERVAL_MINUTES, DEFAULT_UPDATE_INTERVAL_MINUTES),
+                    default=options.get(
+                        CONF_UPDATE_INTERVAL_MINUTES, DEFAULT_UPDATE_INTERVAL_MINUTES
+                    ),
                 ): vol.All(vol.Coerce(int), vol.Range(min=5, max=180)),
                 vol.Optional(
                     CONF_NOTIFICATION_API_KEY, default=current_notification_key
@@ -259,7 +284,8 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                     CONF_OBSERVATIONS_API_KEY,
                     description={
                         "suggested_value": options.get(
-                            CONF_OBSERVATIONS_API_KEY, data.get(CONF_OBSERVATIONS_API_KEY, "")
+                            CONF_OBSERVATIONS_API_KEY,
+                            data.get(CONF_OBSERVATIONS_API_KEY, ""),
                         )
                     },
                 ): str,
@@ -269,7 +295,9 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_ALIAS,
                     description={
-                        "suggested_value": options.get(CONF_ALIAS, data.get(CONF_ALIAS, ""))
+                        "suggested_value": options.get(
+                            CONF_ALIAS, data.get(CONF_ALIAS, "")
+                        )
                     },
                 ): str,
                 # Where the GRIB working files go. Blank -> the default root
@@ -292,9 +320,7 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_COLOR_SCALES,
                     description={"suggested_value": options.get(CONF_COLOR_SCALES, "")},
-                ): selector.TextSelector(
-                    selector.TextSelectorConfig(multiline=True)
-                ),
+                ): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
             }
         )
         return self.async_show_form(

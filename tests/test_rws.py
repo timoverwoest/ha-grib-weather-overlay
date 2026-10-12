@@ -23,13 +23,19 @@ def test_member_round_trip_through_grib_decode(tmp_path) -> None:
     sep = np.array([[0.1, 0.2, np.nan], [0.4, 0.5, 0.6]])
     path = tmp_path / "m.npz"
     gridded.write_member(
-        path, fields={"sep": sep, "velu": sep * 2, "velv": sep * 0},
-        lats=lats, lons=lons, valid_time=RUN + timedelta(hours=3), run_time=RUN,
+        path,
+        fields={"sep": sep, "velu": sep * 2, "velv": sep * 0},
+        lats=lats,
+        lons=lons,
+        valid_time=RUN + timedelta(hours=3),
+        run_time=RUN,
     )
     valid, run = grib_decode.peek_valid_time(path)
     assert (valid, run) == (RUN + timedelta(hours=3), RUN)
 
-    level = GribParameter(key="water_level", name="w", unit="m", grib_filter={"field": "sep"})
+    level = GribParameter(
+        key="water_level", name="w", unit="m", grib_filter={"field": "sep"}
+    )
     field = grib_decode.decode_parameter(path, level)
     assert np.allclose(field.data, sep, equal_nan=True)
     assert field.lats.tolist() == lats.tolist() and field.lons.tolist() == lons.tolist()
@@ -39,7 +45,9 @@ def test_member_round_trip_through_grib_decode(tmp_path) -> None:
     assert np.allclose(vec.u, sep * 2, equal_nan=True)
 
     # A GRIB-style filter finds nothing in a member (and vice versa).
-    grib_like = GribParameter(key="x", name="x", unit="m", grib_filter={"indicatorOfParameter": 82})
+    grib_like = GribParameter(
+        key="x", name="x", unit="m", grib_filter={"indicatorOfParameter": 82}
+    )
     with pytest.raises(grib_decode.GribDecodeError):
         grib_decode.decode_parameter(path, grib_like)
 
@@ -47,9 +55,12 @@ def test_member_round_trip_through_grib_decode(tmp_path) -> None:
 def test_member_axes_must_ascend(tmp_path) -> None:
     with pytest.raises(gridded.GriddedError):
         gridded.write_member(
-            tmp_path / "m.npz", fields={"a": np.zeros((2, 2))},
-            lats=np.array([52.0, 51.0]), lons=np.array([3.0, 4.0]),
-            valid_time=RUN, run_time=RUN,
+            tmp_path / "m.npz",
+            fields={"a": np.zeros((2, 2))},
+            lats=np.array([52.0, 51.0]),
+            lons=np.array([3.0, 4.0]),
+            valid_time=RUN,
+            run_time=RUN,
         )
 
 
@@ -64,10 +75,14 @@ def test_despike_masks_isolated_impossible_levels_only() -> None:
     assert out[2, 4] == 1.8
 
 
-def _matroos_nc(start: datetime, hours: list[int], fields=("sep", "velu", "velv")) -> bytes:
+def _matroos_nc(
+    start: datetime, hours: list[int], fields=("sep", "velu", "velv")
+) -> bytes:
     y, x = np.array([51.0, 51.05, 51.1]), np.array([3.0, 3.05, 3.1])
     epoch = datetime(1970, 1, 1, tzinfo=UTC)
-    minutes = np.array([((start + timedelta(hours=h)) - epoch).total_seconds() / 60 for h in hours])
+    minutes = np.array(
+        [((start + timedelta(hours=h)) - epoch).total_seconds() / 60 for h in hours]
+    )
     variables = [
         ("x", ["x"], x.astype(">f8"), {}),
         ("y", ["y"], y.astype(">f8"), {}),
@@ -78,7 +93,9 @@ def _matroos_nc(start: datetime, hours: list[int], fields=("sep", "velu", "velv"
         data[:, 0, 0] = -9999.0
         variables.append((name, ["time", "y", "x"], data, {"_FillValue": -9999.0}))
     return nc3_writer.write(
-        dims=[("time", None), ("y", 3), ("x", 3)], variables=variables, numrecs=len(hours)
+        dims=[("time", None), ("y", 3), ("x", 3)],
+        variables=variables,
+        numrecs=len(hours),
     )
 
 
@@ -125,13 +142,21 @@ class _Session:
         start = datetime.strptime(q["from"], "%Y%m%d%H%M").replace(tzinfo=UTC)
         end = datetime.strptime(q["to"], "%Y%m%d%H%M").replace(tzinfo=UTC)
         run = datetime.strptime(q["anal"], "%Y%m%d%H%M").replace(tzinfo=UTC)
-        self.windows.append((int((start - run).total_seconds() // 3600), int((end - run).total_seconds() // 3600), q))
+        self.windows.append(
+            (
+                int((start - run).total_seconds() // 3600),
+                int((end - run).total_seconds() // 3600),
+                q,
+            )
+        )
         hours = [
             int((start - run).total_seconds() // 3600) + i
             for i in range(int((end - start).total_seconds() // 3600) + 1)
         ]
         last = self.computed_to.get(q["anal"])
-        hours = [h for h in hours if h not in self.missing and (last is None or h <= last)]
+        hours = [
+            h for h in hours if h not in self.missing and (last is None or h <= last)
+        ]
         if not hours:
             return _Resp(self.NO_DATA)
         return _Resp(_matroos_nc(run, hours, q["color"].split(",")))
@@ -143,7 +168,9 @@ class _Session:
 
 @pytest.mark.asyncio
 async def test_lists_the_newest_six_hourly_run() -> None:
-    src = RwsSource(_Session(["202609160900", "202609161200", "202609161500", "garbage"]))
+    src = RwsSource(
+        _Session(["202609160900", "202609161200", "202609161500", "garbage"])
+    )
     files = await src.async_list_files(DCSM)
     assert [f.filename for f in files] == ["202609161200"]
 
@@ -153,7 +180,8 @@ async def test_a_run_that_is_still_being_computed_is_skipped() -> None:
     # The newest six-hourly run stops at +40 h: it is still being produced, so
     # the run before it -- the one we most likely already have -- is used.
     session = _Session(
-        ["202609160600", "202609160900", "202609161200"], computed_to={"202609161200": 40}
+        ["202609160600", "202609160900", "202609161200"],
+        computed_to={"202609161200": 40},
     )
     files = await RwsSource(session).async_list_files(DCSM)
     assert [f.filename for f in files] == ["202609160600"]
@@ -165,14 +193,17 @@ async def test_a_finished_run_is_only_probed_once() -> None:
     session = _Session(["202609161200"])
     src = RwsSource(session)
     for _ in range(3):
-        assert [f.filename for f in await src.async_list_files(DCSM)] == ["202609161200"]
+        assert [f.filename for f in await src.async_list_files(DCSM)] == [
+            "202609161200"
+        ]
     assert session.probes() == ["202609161200"]
 
 
 @pytest.mark.asyncio
 async def test_no_finished_run_lists_nothing() -> None:
     session = _Session(
-        ["202609160600", "202609161200"], computed_to={"202609160600": 10, "202609161200": 10}
+        ["202609160600", "202609161200"],
+        computed_to={"202609160600": 10, "202609161200": 10},
     )
     assert await RwsSource(session).async_list_files(DCSM) == []
 
@@ -191,7 +222,9 @@ async def test_matroos_error_text_is_an_error() -> None:
 async def test_downloads_the_horizon_in_windows(tmp_path) -> None:
     session = _Session([])
     src = RwsSource(session)
-    paths = await src.async_download_run(DCSM, "202609161200", tmp_path, ["current"], horizon_hours=10)
+    paths = await src.async_download_run(
+        DCSM, "202609161200", tmp_path, ["current"], horizon_hours=10
+    )
     assert [p.name for p in paths] == [f"202609161200_{h:03d}.npz" for h in range(11)]
     assert [(a, b) for a, b, _ in session.windows] == [(0, 6), (7, 10)]
     q = session.windows[0][2]
@@ -208,7 +241,9 @@ async def test_downloads_the_horizon_in_windows(tmp_path) -> None:
 async def test_a_run_with_gaps_fails(tmp_path) -> None:
     src = RwsSource(_Session([], missing_hours={5}))
     with pytest.raises(GribSourceError, match="missing 1 of 7"):
-        await src.async_download_run(DCSM, "202609161200", tmp_path, ["current"], horizon_hours=6)
+        await src.async_download_run(
+            DCSM, "202609161200", tmp_path, ["current"], horizon_hours=6
+        )
 
 
 @pytest.mark.asyncio
@@ -241,7 +276,13 @@ def test_the_zuno_nest_is_the_same_model_on_a_finer_grid() -> None:
 def test_the_zuno_nest_covers_the_dutch_coast() -> None:
     south, west, north, east = ZUNO.bounds
     # Vlissingen, Den Helder, Terschelling, Borkum, and the Channel's east end.
-    for lat, lon in ((51.44, 3.57), (52.96, 4.75), (53.36, 5.22), (53.58, 6.66), (50.95, 1.85)):
+    for lat, lon in (
+        (51.44, 3.57),
+        (52.96, 4.75),
+        (53.36, 5.22),
+        (53.58, 6.66),
+        (50.95, 1.85),
+    ):
         assert south <= lat <= north and west <= lon <= east
 
 

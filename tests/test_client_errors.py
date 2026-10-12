@@ -24,7 +24,8 @@ REPORT = {
             "card": "custom:grib-overlay-card",
             "name": "TypeError",
             "message": "Cannot set property hass of #<GribOverlayCard> which has only a getter",
-            "stack": "TypeError: no\n    at HuiCard.update (core.js:1:2)\n" + "    at x\n" * 20,
+            "stack": "TypeError: no\n    at HuiCard.update (core.js:1:2)\n"
+            + "    at x\n" * 20,
             "elements": [
                 {
                     "tag": "grib-overlay-card",
@@ -56,20 +57,36 @@ def test_the_report_reads_as_one_paragraph_naming_what_matters() -> None:
 
 
 def test_an_element_that_looks_normal_says_so() -> None:
-    state = {"tag": "grib-overlay-card", "connected": True, "current": True,
-             "extensible": True, "frozen": False, "prototype_hass": "setter", "own_hass": "none"}
+    state = {
+        "tag": "grib-overlay-card",
+        "connected": True,
+        "current": True,
+        "extensible": True,
+        "frozen": False,
+        "prototype_hass": "setter",
+        "own_hass": "none",
+    }
     assert "nothing out of the ordinary" in client_errors._describe_element(state)
 
 
 def test_a_frozen_element_is_called_out() -> None:
-    state = {"tag": "grib-overlay-card", "connected": True, "current": True,
-             "extensible": False, "frozen": True, "prototype_hass": "setter", "own_hass": "read-only value"}
+    state = {
+        "tag": "grib-overlay-card",
+        "connected": True,
+        "current": True,
+        "extensible": False,
+        "frozen": True,
+        "prototype_hass": "setter",
+        "own_hass": "read-only value",
+    }
     described = client_errors._describe_element(state)
     assert "frozen" in described and "read-only value" in described
 
 
 def test_a_wall_of_text_is_cut_down() -> None:
-    text = client_errors.format_report({"events": [{"card": "x" * 500, "message": "y" * 5000}]})
+    text = client_errors.format_report(
+        {"events": [{"card": "x" * 500, "message": "y" * 5000}]}
+    )
     assert len(text) < 1000
 
 
@@ -112,7 +129,10 @@ async def test_the_endpoint_logs_the_report_and_shows_it_as_a_notification(
     assert "grib_overlay_client_error" in notifications, (
         "the failure should be visible without opening the log"
     )
-    assert "Cannot set property hass" in notifications["grib_overlay_client_error"]["message"]
+    assert (
+        "Cannot set property hass"
+        in notifications["grib_overlay_client_error"]["message"]
+    )
 
     # The same card failing on every state change must not fill the log.
     again = await client.post("/api/grib_overlay/client_error", json=REPORT)
@@ -120,7 +140,9 @@ async def test_the_endpoint_logs_the_report_and_shows_it_as_a_notification(
 
 
 @pytest.mark.parametrize("body", [{"events": []}, {"nothing": "here"}, []])
-async def test_a_report_without_a_failure_in_it_is_refused(hass, hass_client, body) -> None:
+async def test_a_report_without_a_failure_in_it_is_refused(
+    hass, hass_client, body
+) -> None:
     assert await async_setup_component(hass, "http", {})
     hass.http.register_view(GribOverlayClientErrorView)
     client = await hass_client()

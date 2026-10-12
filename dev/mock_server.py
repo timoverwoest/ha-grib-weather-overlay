@@ -31,51 +31,113 @@ BOUNDS = (49.0, 0.0, 56.002, 11.281)  # south, west, north, east
 FRAME_COUNT = 6
 FRAME_STEP_HOURS = 1
 # Anchor the mock run around "now" so the meteogram's now-column marker shows.
-BASE_RUN_TIME = (
-    datetime.now(UTC).replace(minute=0, second=0, microsecond=0) - timedelta(hours=2)
-)
+BASE_RUN_TIME = datetime.now(UTC).replace(
+    minute=0, second=0, microsecond=0
+) - timedelta(hours=2)
 
 # Mirrors the real colormap stops from render.py so the legend looks right.
 LEGENDS = {
-    "wind_10m": {"unit": "m/s", "min_value": 0, "max_value": 25, "stops": [
-        {"offset": 0.0, "color": "#62b5e5"}, {"offset": 0.2, "color": "#7fcb85"},
-        {"offset": 0.4, "color": "#f0de69"}, {"offset": 0.6, "color": "#ee9448"},
-        {"offset": 0.8, "color": "#da4437"}, {"offset": 1.0, "color": "#89216d"},
-    ]},
-    "wind_gust_10m": {"unit": "m/s", "min_value": 0, "max_value": 35, "stops": [
-        {"offset": 0.0, "color": "#62b5e5"}, {"offset": 0.2, "color": "#7fcb85"},
-        {"offset": 0.4, "color": "#f0de69"}, {"offset": 0.6, "color": "#ee9448"},
-        {"offset": 0.8, "color": "#da4437"}, {"offset": 1.0, "color": "#89216d"},
-    ]},
-    "precipitation": {"unit": "mm", "min_value": 0, "max_value": 20, "stops": [
-        {"offset": 0.0, "color": "#deebf7"}, {"offset": 0.3, "color": "#6badd6"},
-        {"offset": 0.6, "color": "#2171b5"}, {"offset": 1.0, "color": "#08306b"},
-    ]},
-    "temperature_2m": {"unit": "°C", "min_value": -10, "max_value": 35, "stops": [
-        {"offset": 0.0, "color": "#313695"}, {"offset": 0.25, "color": "#4575b4"},
-        {"offset": 0.5, "color": "#ffffbf"}, {"offset": 0.75, "color": "#fc8d59"},
-        {"offset": 1.0, "color": "#a50026"},
-    ]},
-    "pressure_msl": {"unit": "hPa", "min_value": 980, "max_value": 1040, "stops": [
-        {"offset": 0.0, "color": "#4575b4"}, {"offset": 0.5, "color": "#ffffbf"},
-        {"offset": 1.0, "color": "#d73027"},
-    ]},
-    "wave_height": {"unit": "m", "min_value": 0, "max_value": 8, "stops": [
-        {"offset": 0.0, "color": "#0c2c5c"}, {"offset": 0.4, "color": "#40bebe"},
-        {"offset": 0.6, "color": "#f0d66a"}, {"offset": 1.0, "color": "#961a5a"},
-    ]},
-    "wave_direction": {"unit": "°", "min_value": 0, "max_value": 360, "stops": [
-        {"offset": 0.0, "color": "#d73027"}, {"offset": 0.5, "color": "#3cb4c8"},
-        {"offset": 1.0, "color": "#d73027"},
-    ]},
-    "cape": {"unit": "J/kg", "min_value": 0, "max_value": 2000, "stops": [
-        {"offset": 0.0, "color": "#f0f0f0"}, {"offset": 0.3, "color": "#fdbe5a"},
-        {"offset": 0.55, "color": "#f06e32"}, {"offset": 1.0, "color": "#821478"},
-    ]},
-    "current": {"unit": "m/s", "min_value": 0, "max_value": 2, "stops": [
-        {"offset": 0.0, "color": "#deebf7"}, {"offset": 0.5, "color": "#4292c6"},
-        {"offset": 1.0, "color": "#084594"},
-    ]},
+    "wind_10m": {
+        "unit": "m/s",
+        "min_value": 0,
+        "max_value": 25,
+        "stops": [
+            {"offset": 0.0, "color": "#62b5e5"},
+            {"offset": 0.2, "color": "#7fcb85"},
+            {"offset": 0.4, "color": "#f0de69"},
+            {"offset": 0.6, "color": "#ee9448"},
+            {"offset": 0.8, "color": "#da4437"},
+            {"offset": 1.0, "color": "#89216d"},
+        ],
+    },
+    "wind_gust_10m": {
+        "unit": "m/s",
+        "min_value": 0,
+        "max_value": 35,
+        "stops": [
+            {"offset": 0.0, "color": "#62b5e5"},
+            {"offset": 0.2, "color": "#7fcb85"},
+            {"offset": 0.4, "color": "#f0de69"},
+            {"offset": 0.6, "color": "#ee9448"},
+            {"offset": 0.8, "color": "#da4437"},
+            {"offset": 1.0, "color": "#89216d"},
+        ],
+    },
+    "precipitation": {
+        "unit": "mm",
+        "min_value": 0,
+        "max_value": 20,
+        "stops": [
+            {"offset": 0.0, "color": "#deebf7"},
+            {"offset": 0.3, "color": "#6badd6"},
+            {"offset": 0.6, "color": "#2171b5"},
+            {"offset": 1.0, "color": "#08306b"},
+        ],
+    },
+    "temperature_2m": {
+        "unit": "°C",
+        "min_value": -10,
+        "max_value": 35,
+        "stops": [
+            {"offset": 0.0, "color": "#313695"},
+            {"offset": 0.25, "color": "#4575b4"},
+            {"offset": 0.5, "color": "#ffffbf"},
+            {"offset": 0.75, "color": "#fc8d59"},
+            {"offset": 1.0, "color": "#a50026"},
+        ],
+    },
+    "pressure_msl": {
+        "unit": "hPa",
+        "min_value": 980,
+        "max_value": 1040,
+        "stops": [
+            {"offset": 0.0, "color": "#4575b4"},
+            {"offset": 0.5, "color": "#ffffbf"},
+            {"offset": 1.0, "color": "#d73027"},
+        ],
+    },
+    "wave_height": {
+        "unit": "m",
+        "min_value": 0,
+        "max_value": 8,
+        "stops": [
+            {"offset": 0.0, "color": "#0c2c5c"},
+            {"offset": 0.4, "color": "#40bebe"},
+            {"offset": 0.6, "color": "#f0d66a"},
+            {"offset": 1.0, "color": "#961a5a"},
+        ],
+    },
+    "wave_direction": {
+        "unit": "°",
+        "min_value": 0,
+        "max_value": 360,
+        "stops": [
+            {"offset": 0.0, "color": "#d73027"},
+            {"offset": 0.5, "color": "#3cb4c8"},
+            {"offset": 1.0, "color": "#d73027"},
+        ],
+    },
+    "cape": {
+        "unit": "J/kg",
+        "min_value": 0,
+        "max_value": 2000,
+        "stops": [
+            {"offset": 0.0, "color": "#f0f0f0"},
+            {"offset": 0.3, "color": "#fdbe5a"},
+            {"offset": 0.55, "color": "#f06e32"},
+            {"offset": 1.0, "color": "#821478"},
+        ],
+    },
+    "current": {
+        "unit": "m/s",
+        "min_value": 0,
+        "max_value": 2,
+        "stops": [
+            {"offset": 0.0, "color": "#deebf7"},
+            {"offset": 0.5, "color": "#4292c6"},
+            {"offset": 1.0, "color": "#084594"},
+        ],
+    },
 }
 
 # Swell shares the wave legends (same colour scales in render.py).
@@ -85,25 +147,85 @@ LEGENDS["swell_direction"] = LEGENDS["wave_direction"]
 ENTRY_ID = "mock_entry_1"
 PARAMETERS = [
     {"key": "wind_10m", "name": "Wind (10m)", "unit": "m/s", "colormap": "wind"},
-    {"key": "wind_gust_10m", "name": "Windstoten (10m)", "unit": "m/s", "colormap": "wind"},
-    {"key": "precipitation", "name": "Neerslag", "unit": "mm", "colormap": "precipitation"},
-    {"key": "temperature_2m", "name": "Temperatuur (2m)", "unit": "°C", "colormap": "temperature"},
-    {"key": "pressure_msl", "name": "Luchtdruk (zeeniveau)", "unit": "hPa", "colormap": "pressure"},
-    {"key": "wave_height", "name": "Golfhoogte (significant)", "unit": "m", "colormap": "wave"},
-    {"key": "wave_direction", "name": "Golfrichting", "unit": "°", "colormap": "direction"},
+    {
+        "key": "wind_gust_10m",
+        "name": "Windstoten (10m)",
+        "unit": "m/s",
+        "colormap": "wind",
+    },
+    {
+        "key": "precipitation",
+        "name": "Neerslag",
+        "unit": "mm",
+        "colormap": "precipitation",
+    },
+    {
+        "key": "temperature_2m",
+        "name": "Temperatuur (2m)",
+        "unit": "°C",
+        "colormap": "temperature",
+    },
+    {
+        "key": "pressure_msl",
+        "name": "Luchtdruk (zeeniveau)",
+        "unit": "hPa",
+        "colormap": "pressure",
+    },
+    {
+        "key": "wave_height",
+        "name": "Golfhoogte (significant)",
+        "unit": "m",
+        "colormap": "wave",
+    },
+    {
+        "key": "wave_direction",
+        "name": "Golfrichting",
+        "unit": "°",
+        "colormap": "direction",
+    },
     {"key": "swell_height", "name": "Deining: hoogte", "unit": "m", "colormap": "wave"},
-    {"key": "swell_direction", "name": "Deining: richting", "unit": "°", "colormap": "direction"},
+    {
+        "key": "swell_direction",
+        "name": "Deining: richting",
+        "unit": "°",
+        "colormap": "direction",
+    },
 ]
 
 # A second source with its own (coarser, 2-hourly) time axis, so the detailed
 # meteogram's multi-source layout + union time-axis can be exercised.
 PARAMETERS_DWD = [
     {"key": "wind_10m", "name": "Wind (10m)", "unit": "m/s", "colormap": "wind"},
-    {"key": "wind_gust_10m", "name": "Windstoten (10m)", "unit": "m/s", "colormap": "wind"},
-    {"key": "temperature_2m", "name": "Temperatuur (2m)", "unit": "°C", "colormap": "temperature"},
-    {"key": "precipitation", "name": "Neerslag", "unit": "mm", "colormap": "precipitation"},
-    {"key": "pressure_msl", "name": "Luchtdruk (zeeniveau)", "unit": "hPa", "colormap": "pressure"},
-    {"key": "cape", "name": "CAPE (onweersenergie)", "unit": "J/kg", "colormap": "cape"},
+    {
+        "key": "wind_gust_10m",
+        "name": "Windstoten (10m)",
+        "unit": "m/s",
+        "colormap": "wind",
+    },
+    {
+        "key": "temperature_2m",
+        "name": "Temperatuur (2m)",
+        "unit": "°C",
+        "colormap": "temperature",
+    },
+    {
+        "key": "precipitation",
+        "name": "Neerslag",
+        "unit": "mm",
+        "colormap": "precipitation",
+    },
+    {
+        "key": "pressure_msl",
+        "name": "Luchtdruk (zeeniveau)",
+        "unit": "hPa",
+        "colormap": "pressure",
+    },
+    {
+        "key": "cape",
+        "name": "CAPE (onweersenergie)",
+        "unit": "J/kg",
+        "colormap": "cape",
+    },
 ]
 
 # entry_id -> config. Each entry may carry its own frame_count/step so the shared
@@ -166,7 +288,12 @@ ENTRIES = {
             "bounds": [51.0, -1.0, 57.0, 9.0],
         },
         "parameters": [
-            {"key": "current", "name": "Zeestroming (oppervlak)", "unit": "m/s", "colormap": "current"},
+            {
+                "key": "current",
+                "name": "Zeestroming (oppervlak)",
+                "unit": "m/s",
+                "colormap": "current",
+            },
         ],
         "frame_count": 4,
         "step_hours": 1,
@@ -194,14 +321,29 @@ def _synth_pressure_field() -> dict:
             d_high = (lon - 7.5) ** 2 + (lat - 52.0) ** 2
             # low + high, plus mild mesoscale wiggles so smoothing has an effect
             noise = 1.2 * math.sin(lon * 2.5) * math.cos(lat * 2.2)
-            val = 1013.0 - 20.0 * math.exp(-d_low / 6.0) + 17.0 * math.exp(-d_high / 8.0) + noise
+            val = (
+                1013.0
+                - 20.0 * math.exp(-d_low / 6.0)
+                + 17.0 * math.exp(-d_high / 8.0)
+                + noise
+            )
             data.append(round(val, 2))
-    return {"nx": nx, "ny": ny, "lo1": west, "la1": north, "dx": dx, "dy": dy, "data": data}
+    return {
+        "nx": nx,
+        "ny": ny,
+        "lo1": west,
+        "la1": north,
+        "dx": dx,
+        "dy": dy,
+        "data": data,
+    }
 
 
 def _public_entry(entry: dict) -> dict:
     """The subset of an ENTRIES config that the /entries endpoint exposes."""
-    out = {k: entry[k] for k in ("entry_id", "title", "source", "dataset", "parameters")}
+    out = {
+        k: entry[k] for k in ("entry_id", "title", "source", "dataset", "parameters")
+    }
     out["alias"] = entry.get("alias", "")  # optional user-defined short label
     return out
 
@@ -216,10 +358,19 @@ def _point_payload(entry: dict, parameter_key: str, lat: float) -> dict:
     legend = LEGENDS.get(parameter_key, {})
     lo = legend.get("min_value", 0)
     hi = legend.get("max_value", 20)
-    has_dir = parameter_key in ("wind_10m", "wind_gust_10m", "wave_height", "swell_height")
+    has_dir = parameter_key in (
+        "wind_10m",
+        "wind_gust_10m",
+        "wave_height",
+        "swell_height",
+    )
     out_of_range = entry.get("out_of_range", False)  # null samples (point off-grid)
     # A deterministic per-entry phase shift so every model draws a distinct line.
-    phase = 0.0 if entry["entry_id"] == ENTRY_ID else (sum(ord(c) for c in entry["entry_id"]) % 7) * 0.4
+    phase = (
+        0.0
+        if entry["entry_id"] == ENTRY_ID
+        else (sum(ord(c) for c in entry["entry_id"]) % 7) * 0.4
+    )
     series = []
     for i in range(entry["frame_count"]):
         vt = BASE_RUN_TIME + timedelta(hours=i * entry["step_hours"])
@@ -230,7 +381,9 @@ def _point_payload(entry: dict, parameter_key: str, lat: float) -> dict:
             # sweep direction so it crosses the 0/360 wrap (tests the break);
             # give gusts a small offset so wind vs gust direction are distinct.
             offset = 20 if parameter_key == "wind_gust_10m" else 0
-            point["direction"] = None if out_of_range else round((300 + i * 25 + offset) % 360, 0)
+            point["direction"] = (
+                None if out_of_range else round((300 + i * 25 + offset) % 360, 0)
+            )
         series.append(point)
     payload = {"unit": legend.get("unit", ""), "legend": legend, "series": series}
     if has_dir:
@@ -244,7 +397,12 @@ _WATER_PARAMS = ("wave_height", "wave_period", "wave_direction", "current")
 # Zee is flagged as having NO wind data, so it must be filtered out for wind.
 _MOCK_KNMI_STATIONS = [
     {"name": "Schiphol", "lat": 52.318, "lon": 4.790},
-    {"name": "Wijk aan Zee", "lat": 52.506, "lon": 4.603, "no": ("wind_10m", "wind_gust_10m")},
+    {
+        "name": "Wijk aan Zee",
+        "lat": 52.506,
+        "lon": 4.603,
+        "no": ("wind_10m", "wind_gust_10m"),
+    },
     {"name": "De Bilt", "lat": 52.100, "lon": 5.180},
     {"name": "Berkhout", "lat": 52.644, "lon": 4.979},
     {"name": "Lelystad", "lat": 52.458, "lon": 5.520},
@@ -261,7 +419,9 @@ def _haversine_km(a_lat, a_lon, b_lat, b_lon):
     d_lon = math.radians(b_lon - a_lon)
     s = (
         math.sin(d_lat / 2) ** 2
-        + math.cos(math.radians(a_lat)) * math.cos(math.radians(b_lat)) * math.sin(d_lon / 2) ** 2
+        + math.cos(math.radians(a_lat))
+        * math.cos(math.radians(b_lat))
+        * math.sin(d_lon / 2) ** 2
     )
     return 2 * r * math.asin(math.sqrt(s))
 
@@ -278,7 +438,15 @@ def _stations_near(param: str, lat: float, lon: float, radius_km: float) -> list
         d = _haversine_km(lat, lon, s["lat"], s["lon"])
         if d > radius_km:
             continue
-        out.append({"name": s["name"], "lat": s["lat"], "lon": s["lon"], "dist_km": round(d, 1), "provider": provider})
+        out.append(
+            {
+                "name": s["name"],
+                "lat": s["lat"],
+                "lon": s["lon"],
+                "dist_km": round(d, 1),
+                "provider": provider,
+            }
+        )
     out.sort(key=lambda x: x["dist_km"])
     return out
 
@@ -398,14 +566,20 @@ class Handler(BaseHTTPRequestHandler):
             self._file(DEV_DIR / "module.html", "text/html")
         elif parts[:1] == ["grib_overlay_static"]:
             rel = Path(*parts[1:])
-            content_type = "text/css" if rel.suffix == ".css" else "application/javascript"
+            content_type = (
+                "text/css" if rel.suffix == ".css" else "application/javascript"
+            )
             self._file(WWW_DIR / rel, content_type)
         elif parsed.path == "/api/grib_overlay/client_error":
             # What the card reported so far, for the harness to check.
             self._json({"reports": CLIENT_ERRORS})
         elif parsed.path == "/api/grib_overlay/entries":
             self._json({"entries": [_public_entry(e) for e in ENTRIES.values()]})
-        elif parts[:2] == ["api", "grib_overlay"] and len(parts) >= 3 and parts[2] == "frames":
+        elif (
+            parts[:2] == ["api", "grib_overlay"]
+            and len(parts) >= 3
+            and parts[2] == "frames"
+        ):
             entry_id = parts[3]
             entry = ENTRIES.get(entry_id)
             if entry is None:
@@ -424,7 +598,11 @@ class Handler(BaseHTTPRequestHandler):
             parameter_key = parts[4]
             png = OUTPUT_DIR / f"{parameter_key}.png"
             if not png.exists():  # no preview render for this one; reuse a lookalike
-                png = OUTPUT_DIR / ("precipitation.png" if "swell" in parameter_key else "temperature_2m.png")
+                png = OUTPUT_DIR / (
+                    "precipitation.png"
+                    if "swell" in parameter_key
+                    else "temperature_2m.png"
+                )
             self._file(png, "image/png")
         elif parts[:3] == ["api", "grib_overlay", "wind"]:
             # /api/grib_overlay/wind/{entry_id}/{parameter_key}/{frame_id}.json
@@ -435,12 +613,20 @@ class Handler(BaseHTTPRequestHandler):
             if parameter_key in ("swell_height", "swell_direction"):
                 # Derived from the wave fields so the swell arrows visibly differ:
                 # lower, and turned 90 degrees.
-                base = "wave_height" if parameter_key == "swell_height" else "wave_direction"
+                base = (
+                    "wave_height"
+                    if parameter_key == "swell_height"
+                    else "wave_direction"
+                )
                 field = json.loads((DEV_DIR / f"field_{base}.json").read_text())
                 if parameter_key == "swell_height":
-                    field["data"] = [None if v is None else round(v * 0.6, 2) for v in field["data"]]
+                    field["data"] = [
+                        None if v is None else round(v * 0.6, 2) for v in field["data"]
+                    ]
                 else:
-                    field["data"] = [None if v is None else (v + 90) % 360 for v in field["data"]]
+                    field["data"] = [
+                        None if v is None else (v + 90) % 360 for v in field["data"]
+                    ]
                 self._json(field)
             elif parameter_key == "pressure_msl":
                 # Synthetic MSL-pressure field (a low + a high) so the isobars
@@ -454,7 +640,8 @@ class Handler(BaseHTTPRequestHandler):
             q = parse_qs(parsed.query)
             lat = float(q.get("lat", [52.0])[0])
             params = {
-                p["key"]: _point_payload(entry, p["key"], lat) for p in entry["parameters"]
+                p["key"]: _point_payload(entry, p["key"], lat)
+                for p in entry["parameters"]
             }
             self._json({"params": params})
         elif parts[:3] == ["api", "grib_overlay", "station_obs"]:
@@ -476,17 +663,23 @@ class Handler(BaseHTTPRequestHandler):
             # Four analyses and four forecast charts around "now"; every image is
             # the same local sample (dev/output/weather_map.gif, a real KNMI chart
             # if you put one there).
-            base = BASE_RUN_TIME.replace(hour=BASE_RUN_TIME.hour - BASE_RUN_TIME.hour % 6)
+            base = BASE_RUN_TIME.replace(
+                hour=BASE_RUN_TIME.hour - BASE_RUN_TIME.hour % 6
+            )
             charts = []
             for i in range(-3, 5):
                 valid = base + timedelta(hours=6 * i if i <= 0 else 12 * i)
                 kind = "analysis" if i <= 0 else "forecast"
                 name = f"{'AL' if i <= 0 else 'PL'}_{valid:%Y%m%d%H%M}.gif"
-                charts.append({
-                    "name": name, "kind": kind, "valid_time": valid.isoformat(),
-                    "issued": (base + timedelta(minutes=40)).isoformat(),
-                    "image_url": f"/api/grib_overlay/weather_maps/{name}",
-                })
+                charts.append(
+                    {
+                        "name": name,
+                        "kind": kind,
+                        "valid_time": valid.isoformat(),
+                        "issued": (base + timedelta(minutes=40)).isoformat(),
+                        "image_url": f"/api/grib_overlay/weather_maps/{name}",
+                    }
+                )
             self._json({"charts": charts, "attribution": "© KNMI"})
         elif parts[:3] == ["api", "grib_overlay", "weather_maps"]:
             sample = OUTPUT_DIR / "weather_map.gif"

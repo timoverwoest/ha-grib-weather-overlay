@@ -89,7 +89,9 @@ def test_parse_knmi_coveragecollection_keeps_direction() -> None:
             {
                 "domain": {
                     "axes": {
-                        "t": {"values": ["2026-08-23T10:00:00Z", "2026-08-23T10:10:00Z"]}
+                        "t": {
+                            "values": ["2026-08-23T10:00:00Z", "2026-08-23T10:10:00Z"]
+                        }
                     }
                 },
                 "ranges": {
@@ -109,8 +111,16 @@ def test_nearest_knmi_location_picks_closest_feature() -> None:
     locs = {
         "type": "FeatureCollection",
         "features": [
-            {"id": "0-20000-0-06260", "properties": {"name": "De Bilt"}, "geometry": {"type": "Point", "coordinates": [5.18, 52.10]}},
-            {"id": "0-20000-0-06269", "properties": {"name": "Lelystad"}, "geometry": {"type": "Point", "coordinates": [5.52, 52.458]}},
+            {
+                "id": "0-20000-0-06260",
+                "properties": {"name": "De Bilt"},
+                "geometry": {"type": "Point", "coordinates": [5.18, 52.10]},
+            },
+            {
+                "id": "0-20000-0-06269",
+                "properties": {"name": "Lelystad"},
+                "geometry": {"type": "Point", "coordinates": [5.52, 52.458]},
+            },
         ],
     }
     st = nearest_knmi_location(locs, 52.458, 5.52)  # Lelystad
@@ -122,9 +132,21 @@ def test_nearest_knmi_location_picks_closest_feature() -> None:
 def test_features_within_filters_by_radius_and_sorts() -> None:
     geo = {
         "features": [
-            {"id": "A", "properties": {"name": "Near"}, "geometry": {"type": "Point", "coordinates": [5.18, 52.10]}},
-            {"id": "B", "properties": {"name": "Mid"}, "geometry": {"type": "Point", "coordinates": [5.52, 52.458]}},
-            {"id": "C", "properties": {"name": "Far"}, "geometry": {"type": "Point", "coordinates": [6.60, 53.20]}},
+            {
+                "id": "A",
+                "properties": {"name": "Near"},
+                "geometry": {"type": "Point", "coordinates": [5.18, 52.10]},
+            },
+            {
+                "id": "B",
+                "properties": {"name": "Mid"},
+                "geometry": {"type": "Point", "coordinates": [5.52, 52.458]},
+            },
+            {
+                "id": "C",
+                "properties": {"name": "Far"},
+                "geometry": {"type": "Point", "coordinates": [6.60, 53.20]},
+            },
         ]
     }
     out = _features_within(geo, 52.10, 5.18, 60.0, "knmi")
@@ -203,8 +225,20 @@ def test_nearest_rws_station_picks_closest_offering_the_grootheid() -> None:
     # Classic-service shape (UTM X/Y, no Lat/Lon) -> covers the UTM fallback.
     cat = {
         "LocatieLijst": [
-            {"Locatie_MessageID": 1, "Code": "NEAR", "Naam": "Near", "X": 500000, "Y": 5764000},
-            {"Locatie_MessageID": 2, "Code": "FAR", "Naam": "Far", "X": 600000, "Y": 5900000},
+            {
+                "Locatie_MessageID": 1,
+                "Code": "NEAR",
+                "Naam": "Near",
+                "X": 500000,
+                "Y": 5764000,
+            },
+            {
+                "Locatie_MessageID": 2,
+                "Code": "FAR",
+                "Naam": "Far",
+                "X": 600000,
+                "Y": 5900000,
+            },
         ],
         "AquoMetadataLijst": [
             {"AquoMetadata_MessageID": 10, "Grootheid": {"Code": "Hm0"}},
@@ -228,8 +262,17 @@ def test_nearest_rws_station_picks_closest_offering_the_grootheid() -> None:
 DDAPI20_CATALOGUS = {
     "Succesvol": True,
     "AquoMetadataLijst": [
-        {"AquoMetadata_MessageID": 52, "Grootheid": {"Code": "Hm0", "Omschrijving": "Significante golfhoogte in het spectrale domein"}},
-        {"AquoMetadata_MessageID": 101, "Grootheid": {"Code": "STROOMSHD", "Omschrijving": "Stroomsnelheid"}},
+        {
+            "AquoMetadata_MessageID": 52,
+            "Grootheid": {
+                "Code": "Hm0",
+                "Omschrijving": "Significante golfhoogte in het spectrale domein",
+            },
+        },
+        {
+            "AquoMetadata_MessageID": 101,
+            "Grootheid": {"Code": "STROOMSHD", "Omschrijving": "Stroomsnelheid"},
+        },
     ],
     "AquoMetadataLocatieLijst": [
         {"AquoMetaData_MessageID": 101, "Locatie_MessageID": 1},
@@ -238,9 +281,30 @@ DDAPI20_CATALOGUS = {
         {"AquoMetaData_MessageID": 101, "Locatie_MessageID": 2},
     ],
     "LocatieLijst": [
-        {"Locatie_MessageID": 1, "Code": "ijmuiden.erosiegeul", "Coordinatenstelsel": "ETRS89", "Lat": 52.4697, "Lon": 4.5236, "Naam": "IJmuiden, erosiegeul"},
-        {"Locatie_MessageID": 2, "Code": "ijgeul.1", "Coordinatenstelsel": "ETRS89", "Lat": 52.463943, "Lon": 4.517596, "Naam": "IJGeul, 1"},
-        {"Locatie_MessageID": 3, "Code": "ijmuiden.5a", "Coordinatenstelsel": "ETRS89", "Lat": 52.55, "Lon": 4.40, "Naam": "IJmuiden, 05 A"},
+        {
+            "Locatie_MessageID": 1,
+            "Code": "ijmuiden.erosiegeul",
+            "Coordinatenstelsel": "ETRS89",
+            "Lat": 52.4697,
+            "Lon": 4.5236,
+            "Naam": "IJmuiden, erosiegeul",
+        },
+        {
+            "Locatie_MessageID": 2,
+            "Code": "ijgeul.1",
+            "Coordinatenstelsel": "ETRS89",
+            "Lat": 52.463943,
+            "Lon": 4.517596,
+            "Naam": "IJGeul, 1",
+        },
+        {
+            "Locatie_MessageID": 3,
+            "Code": "ijmuiden.5a",
+            "Coordinatenstelsel": "ETRS89",
+            "Lat": 52.55,
+            "Lon": 4.40,
+            "Naam": "IJmuiden, 05 A",
+        },
     ],
 }
 
@@ -253,12 +317,21 @@ def _ddapi20_series(eenheid: str, values: list, proces: str = "meting") -> dict:
             "Grootheid": {"Code": "Hm0"},
             "ProcesType": proces,
         },
-        "Locatie": {"Code": "ijgeul.1", "Coordinatenstelsel": "ETRS89", "Lat": 52.463943, "Lon": 4.517596, "Naam": "IJGeul, 1"},
+        "Locatie": {
+            "Code": "ijgeul.1",
+            "Coordinatenstelsel": "ETRS89",
+            "Lat": 52.463943,
+            "Lon": 4.517596,
+            "Naam": "IJGeul, 1",
+        },
         "MetingenLijst": [
             {
                 "Meetwaarde": {"Waarde_Alfanumeriek": str(v), "Waarde_Numeriek": v},
                 "Tijdstip": t,
-                "WaarnemingMetadata": {"Statuswaarde": "Ongecontroleerd", "Bemonsteringshoogte": "0"},
+                "WaarnemingMetadata": {
+                    "Statuswaarde": "Ongecontroleerd",
+                    "Bemonsteringshoogte": "0",
+                },
             }
             for t, v in values
         ],
@@ -273,13 +346,18 @@ def test_nearest_rws_station_ddapi20_uses_lat_lon() -> None:
     assert station["_lat"] == 52.463943 and station["_lon"] == 4.517596
     assert 2.0 < station["_dist_km"] < 2.5
     # STROOMSHD: the erosiegeul (closer) now qualifies.
-    assert nearest_rws_station(DDAPI20_CATALOGUS, "STROOMSHD", 52.47, 4.53)["Code"] == "ijmuiden.erosiegeul"
+    assert (
+        nearest_rws_station(DDAPI20_CATALOGUS, "STROOMSHD", 52.47, 4.53)["Code"]
+        == "ijmuiden.erosiegeul"
+    )
 
 
 def test_rws_waarnemingen_body_ddapi20_shape() -> None:
     body = _rws_waarnemingen_body(
-        {"Code": "ijgeul.1", "Lat": 52.46, "Lon": 4.52}, "Hm0",
-        "2026-09-16T14:00:00.000Z", "2026-09-16T20:00:00.000Z",
+        {"Code": "ijgeul.1", "Lat": 52.46, "Lon": 4.52},
+        "Hm0",
+        "2026-09-16T14:00:00.000Z",
+        "2026-09-16T20:00:00.000Z",
     )
     assert body == {
         "Locatie": {"Code": "ijgeul.1"},  # DDAPI20: Code only, no X/Y
@@ -301,11 +379,14 @@ def test_parse_rws_waarnemingen_ddapi20_scales_cm_to_m() -> None:
     data = {
         "Succesvol": True,
         "WaarnemingenLijst": [
-            _ddapi20_series("cm", [
-                ("2026-09-16T15:40:00.000+01:00", 111.0),
-                ("2026-09-16T15:50:00.000+01:00", 999999999.0),  # missing
-                ("2026-09-16T16:00:00.000+01:00", 108.0),
-            ]),
+            _ddapi20_series(
+                "cm",
+                [
+                    ("2026-09-16T15:40:00.000+01:00", 111.0),
+                    ("2026-09-16T15:50:00.000+01:00", 999999999.0),  # missing
+                    ("2026-09-16T16:00:00.000+01:00", 108.0),
+                ],
+            ),
         ],
     }
     assert parse_rws_waarnemingen(data) == [
@@ -319,8 +400,12 @@ def test_parse_rws_waarnemingen_ddapi20_passes_si_units_and_skips_forecasts() ->
         "Succesvol": True,
         "WaarnemingenLijst": [
             _ddapi20_series("m/s", [("2026-09-16T21:20:00.000+01:00", 0.369)]),
-            _ddapi20_series("m/s", [("2026-09-16T22:00:00.000+01:00", 0.5)], proces="verwachting"),
-            _ddapi20_series("cm", [("2026-09-16T22:00:00.000+01:00", 42.0)], proces="astronomisch"),
+            _ddapi20_series(
+                "m/s", [("2026-09-16T22:00:00.000+01:00", 0.5)], proces="verwachting"
+            ),
+            _ddapi20_series(
+                "cm", [("2026-09-16T22:00:00.000+01:00", 42.0)], proces="astronomisch"
+            ),
         ],
     }
     assert parse_rws_waarnemingen(data) == [

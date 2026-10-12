@@ -188,7 +188,11 @@ def parse_color_scale(text: str) -> ColorScale | None:
             continue
         try:
             value = float(value_str.strip())
-            rgb = (int(color_str[0:2], 16), int(color_str[2:4], 16), int(color_str[4:6], 16))
+            rgb = (
+                int(color_str[0:2], 16),
+                int(color_str[2:4], 16),
+                int(color_str[4:6], 16),
+            )
         except ValueError:
             continue
         stops.append((value, rgb))
@@ -225,11 +229,11 @@ def _custom_lut(stops: ColorScale, size: int = 256) -> np.ndarray:
     return lut
 
 
-def _custom_legend_stops(stops: ColorScale, vmin: float, vmax: float) -> tuple[dict, ...]:
+def _custom_legend_stops(
+    stops: ColorScale, vmin: float, vmax: float
+) -> tuple[dict, ...]:
     span = (vmax - vmin) or 1.0
-    return tuple(
-        {"offset": (v - vmin) / span, "color": _hex(c)} for v, c in stops
-    )
+    return tuple({"offset": (v - vmin) / span, "color": _hex(c)} for v, c in stops)
 
 
 def _mercator_north_first_rows(south: float, north: float, nrows: int) -> np.ndarray:
@@ -245,6 +249,7 @@ def _mercator_north_first_rows(south: float, north: float, nrows: int) -> np.nda
     """
     if nrows < 2 or north <= south:
         return np.arange(nrows - 1, -1, -1)  # just flip to north-first
+
     def merc(degrees: float) -> float:
         """Web-Mercator y of a latitude, clamped to where the projection is finite."""
         clamped = max(min(degrees, 85.0), -85.0)
@@ -286,7 +291,11 @@ def render_field(
     else:
         if value_range is None:
             finite = data[np.isfinite(data)]
-            vmin, vmax = (float(finite.min()), float(finite.max())) if finite.size else (0.0, 1.0)
+            vmin, vmax = (
+                (float(finite.min()), float(finite.max()))
+                if finite.size
+                else (0.0, 1.0)
+            )
         else:
             vmin, vmax = value_range
         if vmax <= vmin:

@@ -26,7 +26,8 @@ from custom_components.grib_overlay.sources.knmi import KNOWN_DATASETS
 SAMPLE_ENV_VAR = "GRIB_OVERLAY_SAMPLE_GRIB"
 
 requires_sample = pytest.mark.skipif(
-    not os.environ.get(SAMPLE_ENV_VAR), reason=f"set {SAMPLE_ENV_VAR} to a sample GRIB file to run"
+    not os.environ.get(SAMPLE_ENV_VAR),
+    reason=f"set {SAMPLE_ENV_VAR} to a sample GRIB file to run",
 )
 
 
@@ -58,9 +59,20 @@ def _pack(raw_values, bits: int) -> bytes:
 
 
 def _make_grib1(
-    *, param: int, level: int, raw_values, bits: int, ref: float = 0.0,
-    binary_scale: int = 0, present=None, ni: int = 3, nj: int = 2,
-    scan: int = 0x40, tri: int = 0, p1: int = 3, p2: int = 0,
+    *,
+    param: int,
+    level: int,
+    raw_values,
+    bits: int,
+    ref: float = 0.0,
+    binary_scale: int = 0,
+    present=None,
+    ni: int = 3,
+    nj: int = 2,
+    scan: int = 0x40,
+    tri: int = 0,
+    p1: int = 3,
+    p2: int = 0,
 ) -> bytes:
     """A regular lat/lon (scan 0x40) simple-packing message; ``present`` adds a bitmap."""
     pds = bytearray(28)
@@ -70,7 +82,12 @@ def _make_grib1(
     pds[8], pds[9] = param, 105  # indicatorOfParameter, indicatorOfTypeOfLevel
     pds[10:12] = _u2(level)
     pds[12], pds[13], pds[14], pds[15] = 26, 9, 16, 6  # 2026-09-16 06:00
-    pds[17], pds[18], pds[19], pds[20] = 1, p1, p2, tri  # hours, P1, P2, timeRangeIndicator
+    pds[17], pds[18], pds[19], pds[20] = (
+        1,
+        p1,
+        p2,
+        tri,
+    )  # hours, P1, P2, timeRangeIndicator
     pds[24] = 21  # century
 
     gds = bytearray(32)
@@ -115,8 +132,13 @@ def unpack_calls(monkeypatch) -> list[int]:
 def test_decode_simple_packing_with_bitmap() -> None:
     # 10-bit values straddle byte boundaries; the 6-point bitmap has 2 unused bits.
     raw = _make_grib1(
-        param=11, level=2, bits=10, ref=-2.5, binary_scale=-1,
-        present=[1, 0, 1, 1, 0, 1], raw_values=[0, 5, 1023, 7],
+        param=11,
+        level=2,
+        bits=10,
+        ref=-2.5,
+        binary_scale=-1,
+        present=[1, 0, 1, 1, 0, 1],
+        raw_values=[0, 5, 1023, 7],
     )
     (m,) = list(grib1.iter_messages(raw))
     assert (m.indicator_of_parameter, m.level, m.ni, m.nj) == (11, 2, 3, 2)
@@ -145,20 +167,44 @@ def test_values_are_unpacked_only_when_read(unpack_calls) -> None:
 def test_decode_unpacks_only_the_messages_it_needs(tmp_path, unpack_calls) -> None:
     """A KNMI lead-time file holds every parameter; decoding one must not unpack the rest."""
     path = tmp_path / "member.grib"
-    path.write_bytes(b"".join([
-        _make_grib1(param=11, level=2, bits=16, ref=250.0, raw_values=[0, 1, 2, 3, 4, 5]),
-        _make_grib1(param=33, level=10, bits=8, raw_values=[3] * 6),
-        _make_grib1(param=34, level=10, bits=8, raw_values=[4] * 6),
-        _make_grib1(param=1, level=0, bits=24, raw_values=[101325] * 6),
-    ]))
+    path.write_bytes(
+        b"".join(
+            [
+                _make_grib1(
+                    param=11, level=2, bits=16, ref=250.0, raw_values=[0, 1, 2, 3, 4, 5]
+                ),
+                _make_grib1(param=33, level=10, bits=8, raw_values=[3] * 6),
+                _make_grib1(param=34, level=10, bits=8, raw_values=[4] * 6),
+                _make_grib1(param=1, level=0, bits=24, raw_values=[101325] * 6),
+            ]
+        )
+    )
     temperature = GribParameter(
-        key="temperature_2m", name="T", unit="degC", offset=-273.15,
-        grib_filter={"indicatorOfParameter": 11, "indicatorOfTypeOfLevel": 105, "level": 2},
+        key="temperature_2m",
+        name="T",
+        unit="degC",
+        offset=-273.15,
+        grib_filter={
+            "indicatorOfParameter": 11,
+            "indicatorOfTypeOfLevel": 105,
+            "level": 2,
+        },
     )
     wind = GribParameter(
-        key="wind_10m", name="Wind", unit="m/s", kind="vector",
-        grib_filter_u={"indicatorOfParameter": 33, "indicatorOfTypeOfLevel": 105, "level": 10},
-        grib_filter_v={"indicatorOfParameter": 34, "indicatorOfTypeOfLevel": 105, "level": 10},
+        key="wind_10m",
+        name="Wind",
+        unit="m/s",
+        kind="vector",
+        grib_filter_u={
+            "indicatorOfParameter": 33,
+            "indicatorOfTypeOfLevel": 105,
+            "level": 10,
+        },
+        grib_filter_v={
+            "indicatorOfParameter": 34,
+            "indicatorOfTypeOfLevel": 105,
+            "level": 10,
+        },
     )
 
     valid_time, run_time = grib_decode.peek_valid_time(path)
@@ -239,7 +285,9 @@ def test_grid_bounds_match_dataset() -> None:
 
 @requires_sample
 def test_matches_eccodes_bit_for_bit() -> None:
-    eccodes = pytest.importorskip("eccodes", reason="eccodes not installed; cross-check skipped")
+    eccodes = pytest.importorskip(
+        "eccodes", reason="eccodes not installed; cross-check skipped"
+    )
     path = _sample_path()
     buf = path.read_bytes()
     mine = list(grib1.iter_messages(buf))
@@ -265,7 +313,9 @@ def test_matches_eccodes_bit_for_bit() -> None:
 
 def test_north_first_grid_is_flipped_to_south_first() -> None:
     """DMI WAM and MET Norway scan north to south (mode 0x00)."""
-    raw = _make_grib1(param=229, level=0, bits=4, raw_values=[1, 2, 3, 4, 5, 6], scan=0x00)
+    raw = _make_grib1(
+        param=229, level=0, bits=4, raw_values=[1, 2, 3, 4, 5, 6], scan=0x00
+    )
     (m,) = list(grib1.iter_messages(raw))
     grid, lats, lons = grib1.to_grid(m)
     assert lats.tolist() == [49.0, 56.0]
@@ -283,7 +333,9 @@ def test_other_scan_modes_still_refuse() -> None:
 
 def test_two_octet_lead_time(tmp_path) -> None:
     """TimeRangeIndicator 10: P1 spans octets 19-20 (DMI, leads past 255 h)."""
-    raw = _make_grib1(param=229, level=0, bits=4, raw_values=range(6), tri=10, p1=1, p2=8)
+    raw = _make_grib1(
+        param=229, level=0, bits=4, raw_values=range(6), tri=10, p1=1, p2=8
+    )
     path = tmp_path / "wam.grib"
     path.write_bytes(raw)
     valid, run = grib_decode.peek_valid_time(path)

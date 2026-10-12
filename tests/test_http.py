@@ -26,7 +26,8 @@ from homeassistant.setup import async_setup_component
 SAMPLE_ENV_VAR = "GRIB_OVERLAY_SAMPLE_GRIB"
 
 pytestmark = pytest.mark.skipif(
-    not os.environ.get(SAMPLE_ENV_VAR), reason=f"set {SAMPLE_ENV_VAR} to a sample GRIB file to run"
+    not os.environ.get(SAMPLE_ENV_VAR),
+    reason=f"set {SAMPLE_ENV_VAR} to a sample GRIB file to run",
 )
 
 
@@ -80,7 +81,9 @@ async def test_entries_frames_and_image_endpoints(
     frames_body = await resp.json()
     assert len(frames_body["wind_10m"]) == 1
     frame_info = frames_body["wind_10m"][0]
-    assert frame_info["image_url"].startswith(f"/api/grib_overlay/frame/{entry.entry_id}/wind_10m/")
+    assert frame_info["image_url"].startswith(
+        f"/api/grib_overlay/frame/{entry.entry_id}/wind_10m/"
+    )
 
     resp = await client.get(frame_info["image_url"])
     assert resp.status == 200

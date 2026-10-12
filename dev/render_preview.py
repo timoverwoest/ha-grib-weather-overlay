@@ -74,5 +74,9 @@ if __name__ == "__main__":
         print(__doc__)
         sys.exit(1)
     grib_file = Path(sys.argv[1]).resolve()
-    output_dir = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else REPO_ROOT / "dev" / "output"
+    output_dir = (
+        Path(sys.argv[2]).resolve()
+        if len(sys.argv) > 2
+        else REPO_ROOT / "dev" / "output"
+    )
     main(grib_file, output_dir)

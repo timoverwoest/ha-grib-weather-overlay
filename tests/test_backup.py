@@ -70,7 +70,9 @@ def test_backup_flag_toggles_and_auto_expires() -> None:
 
     # If async_post_backup never fires (crashed backup), the pause must not last
     # forever -- it expires after _BACKUP_MAX_SECONDS.
-    GribOverlayCoordinator._backup_since -= GribOverlayCoordinator._BACKUP_MAX_SECONDS + 1
+    GribOverlayCoordinator._backup_since -= (
+        GribOverlayCoordinator._BACKUP_MAX_SECONDS + 1
+    )
     assert GribOverlayCoordinator.backup_in_progress() is False
 
 
@@ -147,7 +149,9 @@ async def test_working_files_stay_out_of_the_config_folder(hass) -> None:
 async def test_run_archive_is_downloaded_into_the_scratch_dir(hass, tmp_path) -> None:
     """The ~850MB archive must land in scratch, never in /config or a run dir."""
     entry = _make_entry(hass)
-    hass.config_entries.async_update_entry(entry, options={CONF_STORAGE_PATH: str(tmp_path)})
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_STORAGE_PATH: str(tmp_path)}
+    )
     coordinator = GribOverlayCoordinator(hass, entry)
 
     destinations = []
@@ -175,10 +179,14 @@ async def test_run_archive_is_downloaded_into_the_scratch_dir(hass, tmp_path) ->
     assert coordinator._scratch_root in extract_target.parents
 
 
-async def test_scratch_dir_is_cleaned_up_even_when_decoding_fails(hass, tmp_path) -> None:
+async def test_scratch_dir_is_cleaned_up_even_when_decoding_fails(
+    hass, tmp_path
+) -> None:
     """A leaked archive would cost ~850MB on real disk until the next restart."""
     entry = _make_entry(hass)
-    hass.config_entries.async_update_entry(entry, options={CONF_STORAGE_PATH: str(tmp_path)})
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_STORAGE_PATH: str(tmp_path)}
+    )
     coordinator = GribOverlayCoordinator(hass, entry)
 
     raw_dir = coordinator._scratch_root / "run-A"
@@ -211,7 +219,9 @@ async def test_stale_scratch_is_dropped_on_setup(hass, tmp_path) -> None:
     writes shutdown stage"), so the next start is the only chance.
     """
     entry = _make_entry(hass)
-    hass.config_entries.async_update_entry(entry, options={CONF_STORAGE_PATH: str(tmp_path)})
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_STORAGE_PATH: str(tmp_path)}
+    )
     coordinator = GribOverlayCoordinator(hass, entry)
 
     stranded = coordinator._scratch_root / "HARM43_V1_P1_2026090500"
@@ -230,7 +240,9 @@ async def test_stale_scratch_is_dropped_on_setup(hass, tmp_path) -> None:
 
 async def test_storage_path_option_overrides_the_default(hass, tmp_path) -> None:
     entry = _make_entry(hass)
-    hass.config_entries.async_update_entry(entry, options={CONF_STORAGE_PATH: str(tmp_path)})
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_STORAGE_PATH: str(tmp_path)}
+    )
     coordinator = GribOverlayCoordinator(hass, entry)
     assert coordinator.storage_dir == tmp_path / entry.entry_id
 
@@ -262,7 +274,9 @@ async def test_legacy_cache_is_dropped_when_it_cannot_be_moved(hass, tmp_path) -
     """
     entry = _make_entry(hass)
     new_root = tmp_path / "new"
-    hass.config_entries.async_update_entry(entry, options={CONF_STORAGE_PATH: str(new_root)})
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_STORAGE_PATH: str(new_root)}
+    )
     coordinator = GribOverlayCoordinator(hass, entry)
     # Destination already populated -> the rename is skipped.
     coordinator.storage_dir.mkdir(parents=True)
@@ -304,7 +318,9 @@ async def test_run_retention_does_not_delete_during_a_backup(hass, tmp_path) -> 
     started during the decode -- after the check that let this run through.
     """
     entry = _make_entry(hass)
-    hass.config_entries.async_update_entry(entry, options={CONF_STORAGE_PATH: str(tmp_path)})
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_STORAGE_PATH: str(tmp_path)}
+    )
     coordinator = GribOverlayCoordinator(hass, entry)
 
     for run in ("run-1", "run-2", "run-3"):
@@ -312,11 +328,15 @@ async def test_run_retention_does_not_delete_during_a_backup(hass, tmp_path) -> 
 
     GribOverlayCoordinator.set_backup_active(True)
     coordinator._cleanup_old_runs()
-    assert len(list(coordinator.storage_dir.iterdir())) == 3, "nothing may be removed mid-backup"
+    assert len(list(coordinator.storage_dir.iterdir())) == 3, (
+        "nothing may be removed mid-backup"
+    )
 
     GribOverlayCoordinator.set_backup_active(False)
     coordinator._cleanup_old_runs()
-    assert len(list(coordinator.storage_dir.iterdir())) == 2  # retain_runs defaults to 2
+    assert (
+        len(list(coordinator.storage_dir.iterdir())) == 2
+    )  # retain_runs defaults to 2
 
 
 def _share_entry(hass, tmp_path, monkeypatch, storage_path=None):
@@ -325,15 +345,26 @@ def _share_entry(hass, tmp_path, monkeypatch, storage_path=None):
     monkeypatch.setattr(storage_paths, "LEGACY_SHARE_ROOT", share_root)
     entry = _make_entry(hass)
     hass.config_entries.async_update_entry(
-        entry, options={CONF_STORAGE_PATH: storage_path or str(tmp_path / "var-tmp" / "grib_overlay")}
+        entry,
+        options={
+            CONF_STORAGE_PATH: storage_path
+            or str(tmp_path / "var-tmp" / "grib_overlay")
+        },
     )
     return entry, share_root
 
 
-async def test_share_cache_of_earlier_versions_is_cleared(hass, tmp_path, monkeypatch) -> None:
+async def test_share_cache_of_earlier_versions_is_cleared(
+    hass, tmp_path, monkeypatch
+) -> None:
     """0.26-0.34 kept the cache in /share, which many backups include."""
     entry, share_root = _share_entry(hass, tmp_path, monkeypatch)
-    for leftover in (entry.entry_id + "/run-1", ".raw/" + entry.entry_id, "weather_maps", "01DELETED/run-1"):
+    for leftover in (
+        entry.entry_id + "/run-1",
+        ".raw/" + entry.entry_id,
+        "weather_maps",
+        "01DELETED/run-1",
+    ):
         (share_root / leftover).mkdir(parents=True)
     (share_root / entry.entry_id / "run-1" / "frames.json").write_text("{}")
 
@@ -362,12 +393,19 @@ async def test_a_share_folder_in_use_is_left_alone(hass, tmp_path, monkeypatch) 
     assert (share_root / "weather_maps").exists()
 
 
-async def test_another_entry_using_share_protects_it(hass, tmp_path, monkeypatch) -> None:
+async def test_another_entry_using_share_protects_it(
+    hass, tmp_path, monkeypatch
+) -> None:
     share_root = tmp_path / "share" / "grib_overlay"
     entry, _ = _share_entry(hass, tmp_path, monkeypatch)
     other = MockConfigEntry(
         domain=DOMAIN,
-        data={CONF_SOURCE: "dwd", CONF_API_KEY: "", CONF_DATASET: "ewam", CONF_PARAMETERS: ["wave_height"]},
+        data={
+            CONF_SOURCE: "dwd",
+            CONF_API_KEY: "",
+            CONF_DATASET: "ewam",
+            CONF_PARAMETERS: ["wave_height"],
+        },
         options={CONF_STORAGE_PATH: str(share_root)},
     )
     other.add_to_hass(hass)
@@ -393,7 +431,9 @@ async def test_share_cleanup_waits_for_a_backup(hass, tmp_path, monkeypatch) -> 
     assert not share_root.exists()
 
 
-async def test_share_root_is_removed_and_logged_once(hass, tmp_path, monkeypatch, caplog) -> None:
+async def test_share_root_is_removed_and_logged_once(
+    hass, tmp_path, monkeypatch, caplog
+) -> None:
     """All entries set up at once, each in an executor thread."""
     entry, share_root = _share_entry(hass, tmp_path, monkeypatch)
     (share_root / "weather_maps").mkdir(parents=True)
@@ -402,5 +442,9 @@ async def test_share_root_is_removed_and_logged_once(hass, tmp_path, monkeypatch
     await asyncio.gather(*(c._async_migrate_legacy_storage() for c in coordinators))
 
     assert not share_root.exists()
-    removed = [r for r in caplog.records if "Removed the old GRIB cache folder" in r.getMessage()]
+    removed = [
+        r
+        for r in caplog.records
+        if "Removed the old GRIB cache folder" in r.getMessage()
+    ]
     assert len(removed) == 1

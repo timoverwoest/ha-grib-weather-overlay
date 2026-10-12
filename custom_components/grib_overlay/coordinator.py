@@ -76,14 +76,22 @@ type GribOverlayConfigEntry = ConfigEntry[GribOverlayCoordinator]
 @callback
 def async_loaded_coordinators(hass: HomeAssistant) -> list[GribOverlayCoordinator]:
     """Return the coordinator of every entry that is currently set up."""
-    return [entry.runtime_data for entry in hass.config_entries.async_loaded_entries(DOMAIN)]
+    return [
+        entry.runtime_data for entry in hass.config_entries.async_loaded_entries(DOMAIN)
+    ]
 
 
 @callback
-def async_coordinator_for(hass: HomeAssistant, entry_id: str) -> GribOverlayCoordinator | None:
+def async_coordinator_for(
+    hass: HomeAssistant, entry_id: str
+) -> GribOverlayCoordinator | None:
     """Return the coordinator of one loaded entry, or None if there is no such entry."""
     entry = hass.config_entries.async_get_entry(entry_id)
-    if entry is None or entry.domain != DOMAIN or entry.state is not ConfigEntryState.LOADED:
+    if (
+        entry is None
+        or entry.domain != DOMAIN
+        or entry.state is not ConfigEntryState.LOADED
+    ):
         return None
     return entry.runtime_data
 
@@ -197,7 +205,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         # (FileNotFoundError on a member deleted mid-tar) and the cache made them
         # gigabytes heavier, while all of it can be downloaded again. See
         # storage_paths.
-        configured = entry.options.get(CONF_STORAGE_PATH) or entry.data.get(CONF_STORAGE_PATH)
+        configured = entry.options.get(CONF_STORAGE_PATH) or entry.data.get(
+            CONF_STORAGE_PATH
+        )
         self.storage_dir = storage_paths.entry_dir(configured, entry.entry_id)
         self._scratch_root = storage_paths.scratch_dir(configured, entry.entry_id)
         # Earlier locations -- /config (up to 0.25) and /share (0.26-0.34), both in
@@ -239,7 +249,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         if self._legacy_migrated:
             return
         for legacy in self._legacy_storage_dirs:
-            if not legacy.is_dir() or any(storage_paths.overlaps(legacy, p) for p in in_use):
+            if not legacy.is_dir() or any(
+                storage_paths.overlaps(legacy, p) for p in in_use
+            ):
                 continue
             moved = False
             try:
@@ -248,7 +260,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                     legacy.rename(self.storage_dir)
                     moved = True
             except OSError as err:
-                _LOGGER.debug("Could not move %s to %s: %s", legacy, self.storage_dir, err)
+                _LOGGER.debug(
+                    "Could not move %s to %s: %s", legacy, self.storage_dir, err
+                )
             if not moved:
                 shutil.rmtree(legacy, ignore_errors=True)
             _LOGGER.warning(
@@ -276,10 +290,14 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         """
         root = storage_paths.LEGACY_SHARE_ROOT
         with cls._share_root_lock:
-            if not root.is_dir() or any(storage_paths.overlaps(root, p) for p in in_use):
+            if not root.is_dir() or any(
+                storage_paths.overlaps(root, p) for p in in_use
+            ):
                 return
             shutil.rmtree(root, ignore_errors=True)
-            _LOGGER.warning("Removed the old GRIB cache folder %s (part of backups)", root)
+            _LOGGER.warning(
+                "Removed the old GRIB cache folder %s (part of backups)", root
+            )
 
     async def _async_migrate_legacy_storage(self) -> None:
         """Run the one-time cleanup of old cache folders, unless a backup is walking them."""
@@ -342,9 +360,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         disk. Nothing is in flight for this entry at setup, so the whole scratch
         tree can go.
         """
-        await self.hass.async_add_executor_job(
-            shutil.rmtree, self._scratch_root, True
-        )
+        await self.hass.async_add_executor_job(shutil.rmtree, self._scratch_root, True)
 
     async def async_setup(self) -> None:
         """Fast setup (does not download): restore cached frames, start push, poll timer.
@@ -356,7 +372,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         """
         await self._async_migrate_legacy_storage()
         await self._async_drop_stale_scratch()
-        run_filename, frames = await self.hass.async_add_executor_job(self._load_cached_frames)
+        run_filename, frames = await self.hass.async_add_executor_job(
+            self._load_cached_frames
+        )
         if run_filename:
             self._current_run_filename = run_filename
             self.frames = frames
@@ -432,7 +450,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             datasets = await self.source.async_list_datasets()
         except GribSourceError:
             return  # the first poll will surface and retry the real error
-        dataset = next((d for d in datasets if d.key == self.entry.data[CONF_DATASET]), None)
+        dataset = next(
+            (d for d in datasets if d.key == self.entry.data[CONF_DATASET]), None
+        )
         if dataset is None:
             return
         await self.source.async_start_notifications(dataset, self._on_new_file_notified)
@@ -459,9 +479,13 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         except GribSourceError as err:
             raise UpdateFailed(str(err)) from err
 
-        dataset = next((d for d in datasets if d.key == self.entry.data[CONF_DATASET]), None)
+        dataset = next(
+            (d for d in datasets if d.key == self.entry.data[CONF_DATASET]), None
+        )
         if dataset is None:
-            raise UpdateFailed(f"Dataset '{self.entry.data[CONF_DATASET]}' not offered by source")
+            raise UpdateFailed(
+                f"Dataset '{self.entry.data[CONF_DATASET]}' not offered by source"
+            )
 
         try:
             files = await self.source.async_list_files(dataset, max_keys=1)
@@ -482,7 +506,10 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             # A run takes minutes; starting one now just gets cancelled halfway
             # and leaves a scratch dir behind for the next start to clean up.
             return {"run_filename": self._current_run_filename, "dataset": dataset.key}
-        if latest.filename != self._current_run_filename and not self.backup_in_progress():
+        if (
+            latest.filename != self._current_run_filename
+            and not self.backup_in_progress()
+        ):
             async with self._process_lock:
                 # A backup may have started while we waited for the lock; the
                 # download/decode below deletes files under /config, so bail and
@@ -522,7 +549,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         enabled_keys = set(enabled_parameter_keys(self.entry))
         parameters = [p for p in dataset.parameters if p.key in enabled_keys]
         if not parameters:
-            _LOGGER.warning("No parameters enabled for %s, skipping run %s", dataset.key, filename)
+            _LOGGER.warning(
+                "No parameters enabled for %s, skipping run %s", dataset.key, filename
+            )
             return
 
         horizon_hours = self.entry.options.get(
@@ -549,7 +578,11 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             # DWD/BSH: individual per-parameter/per-lead-time GRIB files.
             try:
                 member_paths = await self.source.async_download_run(
-                    dataset, filename, raw_dir, [p.key for p in parameters], horizon_hours
+                    dataset,
+                    filename,
+                    raw_dir,
+                    [p.key for p in parameters],
+                    horizon_hours,
                 )
             except BaseException:
                 # e.g. a run that turned out to be still publishing: drop what
@@ -629,7 +662,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             except (grib_decode.GribDecodeError, OSError) as err:
                 # OSError covers a member that vanished/was unreadable -- skip it
                 # rather than aborting the whole run (the next poll re-fetches).
-                _LOGGER.debug("Skipping unreadable member %s: %s", member_path.name, err)
+                _LOGGER.debug(
+                    "Skipping unreadable member %s: %s", member_path.name, err
+                )
                 member_path.unlink(missing_ok=True)
                 continue
 
@@ -645,7 +680,10 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                     )
                 except (grib_decode.GribDecodeError, OSError) as err:
                     _LOGGER.debug(
-                        "Parameter %s not in member %s: %s", parameter.key, member_path.name, err
+                        "Parameter %s not in member %s: %s",
+                        parameter.key,
+                        member_path.name,
+                        err,
                     )
                     continue
                 new_frames[parameter.key].append(frame)
@@ -716,10 +754,14 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                 run_time=vec.run_time,
                 unit=parameter.unit,
             )
-            wind_path = run_dir / f"{parameter.key}_{vec.valid_time:%Y%m%dT%H%M}.wind.json"
+            wind_path = (
+                run_dir / f"{parameter.key}_{vec.valid_time:%Y%m%dT%H%M}.wind.json"
+            )
             wind_path.write_text(
                 json.dumps(
-                    velocity.build_velocity_data(vec.u, vec.v, vec.lats, vec.lons, vec.valid_time)
+                    velocity.build_velocity_data(
+                        vec.u, vec.v, vec.lats, vec.lons, vec.valid_time
+                    )
                 )
             )
         else:
@@ -772,7 +814,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         the PNGs match. Empty when no custom scales are set, so an upgrade does
         not force a re-render.
         """
-        return json.dumps(self._color_scales, sort_keys=True) if self._color_scales else ""
+        return (
+            json.dumps(self._color_scales, sort_keys=True) if self._color_scales else ""
+        )
 
     def _write_frames_manifest(
         self,
@@ -790,7 +834,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             # Parameters that were asked for but yielded nothing in this run.
             # Recorded so a restart can tell "we already tried that" from "this
             # run was processed before that parameter was switched on".
-            "empty_parameters": sorted(key for key, flist in frames.items() if not flist),
+            "empty_parameters": sorted(
+                key for key, flist in frames.items() if not flist
+            ),
             "frames": {
                 key: [
                     {
@@ -820,9 +866,13 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             return None, {}
         enabled = set(enabled_parameter_keys(self.entry))
         horizon = float(
-            self.entry.options.get(CONF_FORECAST_HORIZON_HOURS, DEFAULT_FORECAST_HORIZON_HOURS)
+            self.entry.options.get(
+                CONF_FORECAST_HORIZON_HOURS, DEFAULT_FORECAST_HORIZON_HOURS
+            )
         )
-        run_dirs = sorted((p for p in self.storage_dir.iterdir() if p.is_dir()), reverse=True)
+        run_dirs = sorted(
+            (p for p in self.storage_dir.iterdir() if p.is_dir()), reverse=True
+        )
         for run_dir in run_dirs:
             manifest_path = run_dir / self.MANIFEST_NAME
             if not manifest_path.exists():
@@ -912,7 +962,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         # stale run is simply dropped after the next run instead.
         if self.backup_in_progress() or not self.storage_dir.exists():
             return
-        run_dirs = sorted((p for p in self.storage_dir.iterdir() if p.is_dir()), reverse=True)
+        run_dirs = sorted(
+            (p for p in self.storage_dir.iterdir() if p.is_dir()), reverse=True
+        )
         for stale_dir in run_dirs[retain:]:
             shutil.rmtree(stale_dir, ignore_errors=True)
 

@@ -1562,9 +1562,24 @@ Extra's:
 ## Ontwikkelen & testen
 
 ```bash
-python3 -m pip install -r requirements-dev.txt  # numpy, Pillow, paho-mqtt, homeassistant, pytest-homeassistant-custom-component
+python3 -m pip install -r requirements-dev.txt  # numpy, Pillow, paho-mqtt, homeassistant, pytest-homeassistant-custom-component, ruff
 python3 -m pytest tests/
 ```
+
+Lint en opmaak gaan met **ruff**, zoals Home Assistant core dat zelf doet
+(88 kolommen, pydocstyle pep257). De instellingen staan in `pyproject.toml`;
+draai beide voordat je pusht:
+
+```bash
+python3 -m ruff format custom_components dev tests
+python3 -m ruff check custom_components dev tests
+```
+
+De GitHub Actions-workflow (`.github/workflows/ci.yml`) draait hetzelfde, plus
+de tests, `hassfest` (dat `manifest.json` en de vertalingen controleert) en de
+HACS-validator. Twee regels staan bewust uit, met de reden in `pyproject.toml`:
+`RUF046` (de `int()`-casts beschermen tegen numpy-scalars) en `D401` (de
+docstrings beschrijven wat iets *is* waar dat beter leest).
 
 Een paar losse dev-hulpmiddelen werken zonder Home Assistant:
 
@@ -3153,9 +3168,24 @@ Also:
 ## Development & testing
 
 ```bash
-python3 -m pip install -r requirements-dev.txt  # numpy, Pillow, paho-mqtt, homeassistant, pytest-homeassistant-custom-component
+python3 -m pip install -r requirements-dev.txt  # numpy, Pillow, paho-mqtt, homeassistant, pytest-homeassistant-custom-component, ruff
 python3 -m pytest tests/
 ```
+
+Linting and formatting go through **ruff**, configured the way Home Assistant
+core configures it (88 columns, pydocstyle pep257). The settings live in
+`pyproject.toml`; run both before pushing:
+
+```bash
+python3 -m ruff format custom_components dev tests
+python3 -m ruff check custom_components dev tests
+```
+
+The GitHub Actions workflow (`.github/workflows/ci.yml`) runs the same, plus
+the tests, `hassfest` (which checks `manifest.json` and the translations) and
+the HACS validator. Two rules are deliberately off, with the reason recorded in
+`pyproject.toml`: `RUF046` (the `int()` casts guard against numpy scalars) and
+`D401` (the docstrings describe what something *is* where that reads better).
 
 The following standalone dev scripts work without Home Assistant:
 

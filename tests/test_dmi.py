@@ -18,7 +18,9 @@ WAM = next(d for d in KNOWN_DATASETS if d.key == "dmi_wam_nsb")
 DKSS = next(d for d in KNOWN_DATASETS if d.key == "dmi_dkss_nsbs")
 
 
-def _grib1(param: int, level_type: int, level: int, payload: bytes = b"x" * 20) -> bytes:
+def _grib1(
+    param: int, level_type: int, level: int, payload: bytes = b"x" * 20
+) -> bytes:
     """Just enough of a GRIB1 message for the source: length + PDS keys."""
     pds = bytearray(28)
     pds[8], pds[9] = param, level_type
@@ -34,7 +36,7 @@ class _Content:
     async def iter_chunked(self, size: int):
         for i in range(0, len(self._body), self._chunk):
             self._log.append(i + self._chunk)
-            yield self._body[i:i + self._chunk]
+            yield self._body[i : i + self._chunk]
 
 
 class _Resp:
@@ -74,9 +76,13 @@ def _items(run: datetime, leads) -> dict:
             {
                 "properties": {
                     "modelRun": run.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "datetime": (run + timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "datetime": (run + timedelta(hours=h)).strftime(
+                        "%Y-%m-%dT%H:%M:%SZ"
+                    ),
                 },
-                "asset": {"data": {"href": f"https://files/{run:%Y%m%d%H}_{h:03d}.grib"}},
+                "asset": {
+                    "data": {"href": f"https://files/{run:%Y%m%d%H}_{h:03d}.grib"}
+                },
             }
             for h in leads
         ]
@@ -99,10 +105,12 @@ def _now_run() -> datetime:
 async def test_picks_the_newest_run_that_is_complete() -> None:
     newest = _now_run()
     previous = newest - timedelta(hours=6)
-    session = _Session({
-        _items_url(WAM, newest): _items(newest, range(40)),  # still publishing
-        _items_url(WAM, previous): _items(previous, range(133)),
-    })
+    session = _Session(
+        {
+            _items_url(WAM, newest): _items(newest, range(40)),  # still publishing
+            _items_url(WAM, previous): _items(previous, range(133)),
+        }
+    )
     src = DmiSource(session)
     files = await src.async_list_files(WAM)
     assert [f.filename for f in files] == [f"{previous:%Y%m%d%H}"]
@@ -142,7 +150,9 @@ async def test_dkss_stops_reading_once_the_surface_fields_are_in(tmp_path) -> No
     surface = [_grib1(82, 1, 0), _grib1(49, 1, 0), _grib1(50, 1, 0)]
     depths = b"".join(_grib1(49, 160, lv, b"y" * 400) for lv in range(4, 40))
     url = f"https://files/{run:%Y%m%d%H}_000.grib"
-    session = _Session({_items_url(DKSS, run): _items(run, [0]), url: b"".join(surface) + depths})
+    session = _Session(
+        {_items_url(DKSS, run): _items(run, [0]), url: b"".join(surface) + depths}
+    )
     src = DmiSource(session)
     (path,) = await src.async_download_run(
         DKSS, f"{run:%Y%m%d%H}", tmp_path, ["current", "water_level"], horizon_hours=0
@@ -157,7 +167,9 @@ async def test_dkss_stops_reading_once_the_surface_fields_are_in(tmp_path) -> No
 async def test_a_file_without_the_wanted_fields_fails(tmp_path) -> None:
     run = _now_run() - timedelta(hours=6)
     url = f"https://files/{run:%Y%m%d%H}_000.grib"
-    session = _Session({_items_url(WAM, run): _items(run, [0]), url: _grib1(245, 102, 0)})
+    session = _Session(
+        {_items_url(WAM, run): _items(run, [0]), url: _grib1(245, 102, 0)}
+    )
     src = DmiSource(session)
     with pytest.raises(GribSourceError):
         await src.async_download_run(

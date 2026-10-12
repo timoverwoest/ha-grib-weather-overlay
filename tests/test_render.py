@@ -35,8 +35,13 @@ def test_render_field_shape_and_bounds() -> None:
     data = np.tile(lats[:, None], (1, lons.size))  # value == latitude
     data[0, 0] = np.nan  # a missing point
     field = grib_decode.DecodedField(
-        parameter_key="wave_height", data=data, lats=lats, lons=lons,
-        valid_time=None, run_time=None, unit="m",
+        parameter_key="wave_height",
+        data=data,
+        lats=lats,
+        lons=lons,
+        valid_time=None,
+        run_time=None,
+        unit="m",
     )
     frame, _legend = render.render_field(field, colormap="wave", value_range=(0, 8))
     assert frame.width == lons.size and frame.height == lats.size
@@ -46,7 +51,11 @@ def test_render_field_shape_and_bounds() -> None:
 
 def test_parse_color_scale() -> None:
     stops = render.parse_color_scale("0:#2c7fb8, 16:#ffffb2 , 30:#bd0026")
-    assert stops == [(0.0, (44, 127, 184)), (16.0, (255, 255, 178)), (30.0, (189, 0, 38))]
+    assert stops == [
+        (0.0, (44, 127, 184)),
+        (16.0, (255, 255, 178)),
+        (30.0, (189, 0, 38)),
+    ]
     # sorts by value, tolerates whitespace and a missing leading '#'
     assert render.parse_color_scale("30:bd0026, 0:2c7fb8")[0][0] == 0.0
     # fewer than two valid stops -> None (caller falls back to the built-in map)
@@ -71,12 +80,20 @@ def test_render_field_custom_colormap_drives_legend() -> None:
     lons = np.linspace(0.0, 11.0, 15)
     data = np.zeros((lats.size, lons.size))
     field = grib_decode.DecodedField(
-        parameter_key="wind_10m", data=data, lats=lats, lons=lons,
-        valid_time=None, run_time=None, unit="m/s",
+        parameter_key="wind_10m",
+        data=data,
+        lats=lats,
+        lons=lons,
+        valid_time=None,
+        run_time=None,
+        unit="m/s",
     )
     stops = [(0.0, (44, 127, 184)), (16.0, (255, 255, 178)), (24.0, (189, 0, 38))]
     _frame, legend = render.render_field(
-        field, colormap="wind", value_range=(0, 25), custom_colormap=stops,
+        field,
+        colormap="wind",
+        value_range=(0, 25),
+        custom_colormap=stops,
     )
     # Legend range + stops come from the custom scale, not the built-in colormap.
     assert (legend.min_value, legend.max_value) == (0.0, 24.0)

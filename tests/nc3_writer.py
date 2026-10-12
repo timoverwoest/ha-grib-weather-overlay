@@ -45,8 +45,12 @@ class _Var(NamedTuple):
     size: int  # bytes per record for a record variable, else the whole array
 
 
-def write(dims: list[tuple[str, int | None]], variables: list[tuple[str, list[str], np.ndarray, dict]],
-          global_attrs: dict | None = None, numrecs: int = 0) -> bytes:
+def write(
+    dims: list[tuple[str, int | None]],
+    variables: list[tuple[str, list[str], np.ndarray, dict]],
+    global_attrs: dict | None = None,
+    numrecs: int = 0,
+) -> bytes:
     """Write a NetCDF-3 classic file.
 
     ``dims``: (name, length or None for the record dimension).

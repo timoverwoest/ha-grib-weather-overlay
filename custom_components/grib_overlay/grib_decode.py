@@ -103,7 +103,9 @@ def _message_times(message) -> tuple[datetime, datetime]:
     if message.time_range_indicator == 10:
         step = message.p1 * 256 + message.p2
     else:
-        step = message.p2 if message.time_range_indicator in (2, 3, 4, 5) else message.p1
+        step = (
+            message.p2 if message.time_range_indicator in (2, 3, 4, 5) else message.p1
+        )
     valid_time = run_time + timedelta(hours=step * unit_hours)
     return valid_time, run_time
 
@@ -201,7 +203,9 @@ def decode_parameter(
         if msg is None:
             raise GribDecodeError(f"Parameter '{parameter.key}' not found in {path}")
         if _empty_interval(msg):
-            raise GribDecodeError(f"Parameter '{parameter.key}' covers no time yet in {path}")
+            raise GribDecodeError(
+                f"Parameter '{parameter.key}' covers no time yet in {path}"
+            )
         grid, lats, lons = _to_grid(msg)
         valid_time, run_time = _message_times(msg)
         data = grid * parameter.scale + parameter.offset
@@ -249,5 +253,10 @@ def decode_vector_components(
         u_grid, v_grid = _cropped(plan, u_grid, v_grid)
         lats, lons = plan[2], plan[3]
     return DecodedVector(
-        u=u_grid, v=v_grid, lats=lats, lons=lons, valid_time=valid_time, run_time=run_time
+        u=u_grid,
+        v=v_grid,
+        lats=lats,
+        lons=lons,
+        valid_time=valid_time,
+        run_time=run_time,
     )

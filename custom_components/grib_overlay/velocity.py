@@ -21,8 +21,14 @@ import numpy as np
 _MAX_POINTS_PER_AXIS = 160
 
 
-def _header(nx: int, ny: int, lons: np.ndarray, lats: np.ndarray, param_number: int,
-            valid_time: datetime) -> dict:
+def _header(
+    nx: int,
+    ny: int,
+    lons: np.ndarray,
+    lats: np.ndarray,
+    param_number: int,
+    valid_time: datetime,
+) -> dict:
     return {
         "parameterCategory": 2,
         "parameterNumber": param_number,  # 2 = u (eastward), 3 = v (northward)

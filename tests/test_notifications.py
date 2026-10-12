@@ -40,7 +40,9 @@ def _make_entry(hass, notification_key: str | None = "notify-key") -> MockConfig
     return entry
 
 
-async def test_async_setup_starts_push_notifications_for_the_right_dataset(hass) -> None:
+async def test_async_setup_starts_push_notifications_for_the_right_dataset(
+    hass,
+) -> None:
     entry = _make_entry(hass)
     coordinator = GribOverlayCoordinator(hass, entry)
     coordinator.source.async_start_notifications = AsyncMock()
@@ -48,7 +50,9 @@ async def test_async_setup_starts_push_notifications_for_the_right_dataset(hass)
     await coordinator._async_start_notifications()
 
     coordinator.source.async_start_notifications.assert_awaited_once()
-    dataset_arg, callback_arg = coordinator.source.async_start_notifications.call_args.args
+    dataset_arg, callback_arg = (
+        coordinator.source.async_start_notifications.call_args.args
+    )
     assert dataset_arg.key == "harmonie_arome_cy43_p1"
     assert callback_arg == coordinator._on_new_file_notified
 
@@ -121,17 +125,25 @@ async def test_rejected_api_key_warns_once_and_re_arms(hass, caplog) -> None:
     entry = _make_entry(hass)
     coordinator = GribOverlayCoordinator(hass, entry)
     coordinator.source.async_list_datasets = AsyncMock(
-        side_effect=GribSourceAuthError("KNMI API rejected the API key (HTTP 403)", status=403)
+        side_effect=GribSourceAuthError(
+            "KNMI API rejected the API key (HTTP 403)", status=403
+        )
     )
 
     for _ in range(3):
         with pytest.raises(UpdateFailed):
             await coordinator._async_update_data()
 
-    warnings = [r for r in caplog.records if r.levelname == "WARNING" and "API key was rejected" in r.message]
+    warnings = [
+        r
+        for r in caplog.records
+        if r.levelname == "WARNING" and "API key was rejected" in r.message
+    ]
     assert len(warnings) == 1, "the same rejection must not be logged every poll"
     text = warnings[0].getMessage()
-    assert "harmonie_arome_cy43_p1" in text  # 403 -> names the dataset it lacks access to
+    assert (
+        "harmonie_arome_cy43_p1" in text
+    )  # 403 -> names the dataset it lacks access to
     assert "NOT authorised" in text
     assert "THREE separate keys" in text  # points at the right key of the three
 
@@ -146,7 +158,9 @@ async def test_rejected_api_key_warns_once_and_re_arms(hass, caplog) -> None:
     assert coordinator._auth_warned is False
 
 
-async def test_unrecognised_key_gets_different_advice_than_unauthorised(hass, caplog) -> None:
+async def test_unrecognised_key_gets_different_advice_than_unauthorised(
+    hass, caplog
+) -> None:
     import pytest
 
     from custom_components.grib_overlay.sources.base import GribSourceAuthError
@@ -155,12 +169,18 @@ async def test_unrecognised_key_gets_different_advice_than_unauthorised(hass, ca
     entry = _make_entry(hass)
     coordinator = GribOverlayCoordinator(hass, entry)
     coordinator.source.async_list_datasets = AsyncMock(
-        side_effect=GribSourceAuthError("KNMI API rejected the API key (HTTP 401)", status=401)
+        side_effect=GribSourceAuthError(
+            "KNMI API rejected the API key (HTTP 401)", status=401
+        )
     )
     with pytest.raises(UpdateFailed):
         await coordinator._async_update_data()
 
-    text = next(r.getMessage() for r in caplog.records if "API key was rejected" in r.getMessage())
+    text = next(
+        r.getMessage()
+        for r in caplog.records
+        if "API key was rejected" in r.getMessage()
+    )
     assert "not recognised at all" in text
     assert "expire or be revoked" in text
 
@@ -178,9 +198,12 @@ async def test_refreshes_run_as_entry_background_tasks(hass) -> None:
     coordinator = GribOverlayCoordinator(hass, entry)
     coordinator.async_request_refresh = AsyncMock()
 
-    with patch.object(
-        type(entry), "async_create_background_task", autospec=True
-    ) as background, patch.object(hass, "async_create_task") as plain:
+    with (
+        patch.object(
+            type(entry), "async_create_background_task", autospec=True
+        ) as background,
+        patch.object(hass, "async_create_task") as plain,
+    ):
         coordinator._scheduled_poll(None)
         coordinator._on_new_file_notified("HARM43_V1_P1_2026090512.tar")
 
@@ -188,7 +211,10 @@ async def test_refreshes_run_as_entry_background_tasks(hass) -> None:
     plain.assert_not_called()
     # The task names carry the entry id, so several entries stay tellable apart.
     names = [c.args[3] for c in background.call_args_list]
-    assert names == [f"{DOMAIN}-poll-{entry.entry_id}", f"{DOMAIN}-push-{entry.entry_id}"]
+    assert names == [
+        f"{DOMAIN}-poll-{entry.entry_id}",
+        f"{DOMAIN}-push-{entry.entry_id}",
+    ]
 
     # Close the coroutines the mock never awaited.
     for call in background.call_args_list:

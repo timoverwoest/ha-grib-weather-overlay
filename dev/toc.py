@@ -63,7 +63,9 @@ def rebuild(text: str) -> str:
 
     # The English half starts at the second level-1 heading.
     tops = [i for i, level, _ in found if level == 1]
-    halves = [(0, tops[1]), (tops[1], len(lines))] if len(tops) > 1 else [(0, len(lines))]
+    halves = (
+        [(0, tops[1]), (tops[1], len(lines))] if len(tops) > 1 else [(0, len(lines))]
+    )
 
     edits = []
     for lang, (start, end) in zip(TOC_TITLES, halves, strict=False):
@@ -80,7 +82,9 @@ def rebuild(text: str) -> str:
         block = [f"## {TOC_TITLES[lang]}", "", *entries, ""]
         at = next(i for i, level, _ in found if start <= i < end and level == 2)
         stop = at
-        if lines[at].strip() == f"## {TOC_TITLES[lang]}":  # replace the one already there
+        if (
+            lines[at].strip() == f"## {TOC_TITLES[lang]}"
+        ):  # replace the one already there
             stop = next(i for i, level, _ in found if i > at and level == 2)
         edits.append((at, stop, block))
 

@@ -18,7 +18,12 @@ def _matroos_like(times=3, fill=-9999.0) -> tuple[bytes, np.ndarray]:
         variables=[
             ("x", ["x"], np.array([4.0, 4.05, 4.1], ">f8"), {"units": "degrees_east"}),
             ("y", ["y"], np.array([52.0, 52.05], ">f8"), {"units": "degrees_north"}),
-            ("time", ["time"], np.array([0.0, 60.0, 120.0][:times], ">f8"), {"units": "minutes since 1970-01-01"}),
+            (
+                "time",
+                ["time"],
+                np.array([0.0, 60.0, 120.0][:times], ">f8"),
+                {"units": "minutes since 1970-01-01"},
+            ),
             ("sep", ["time", "y", "x"], sep, {"_FillValue": fill, "units": "m"}),
             ("velu", ["time", "y", "x"], velu, {"_FillValue": fill}),
         ],

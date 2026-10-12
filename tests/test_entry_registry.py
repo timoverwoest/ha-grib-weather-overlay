@@ -30,7 +30,9 @@ from homeassistant.config_entries import ConfigEntryState
 
 def _stub(name: str) -> SimpleNamespace:
     """A stand-in coordinator: only unloading it has to work for real."""
-    return SimpleNamespace(name=name, source=SimpleNamespace(async_stop_notifications=AsyncMock()))
+    return SimpleNamespace(
+        name=name, source=SimpleNamespace(async_stop_notifications=AsyncMock())
+    )
 
 
 def _loaded(hass, coordinator: object, *, domain: str = DOMAIN) -> MockConfigEntry:

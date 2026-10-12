@@ -471,9 +471,7 @@ def _floor_run(moment: datetime) -> datetime:
 @functools.cache
 def _window_query() -> str:
     south, west, north, east = WINDOW
-    return (
-        f"subregion=&leftlon={west}&rightlon={east}&toplat={north}&bottomlat={south}"
-    )
+    return f"subregion=&leftlon={west}&rightlon={east}&toplat={north}&bottomlat={south}"
 
 
 class NoaaSource(GribSource):
@@ -484,8 +482,13 @@ class NoaaSource(GribSource):
     supports_push_notifications = False
     provides_archive = False
 
-    def __init__(self, session: aiohttp.ClientSession, api_key: str | None = None,
-                 notification_api_key: str | None = None, instance_id: str | None = None) -> None:
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        api_key: str | None = None,
+        notification_api_key: str | None = None,
+        instance_id: str | None = None,
+    ) -> None:
         self._session = session  # api_key/instance_id unused: NOMADS needs no key
 
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
@@ -506,7 +509,9 @@ class NoaaSource(GribSource):
         levels = sorted({lev for f in fields for lev in f.levels})
         # A field with no level of its own (the wave model's, whose swell
         # partitions each sit at their own level) needs the lot.
-        selection = "&".join(f"lev_{lev}=on" for lev in levels) if levels else "all_lev=on"
+        selection = (
+            "&".join(f"lev_{lev}=on" for lev in levels) if levels else "all_lev=on"
+        )
         directory = f"/gfs.{run:%Y%m%d}/{hh}/{model.directory}".replace("/", "%2F")
         return (
             f"{_CGI}/{model.cgi}"
@@ -560,7 +565,9 @@ class NoaaSource(GribSource):
             if await self._has_step(model, run, _PROBE_STEP):
                 return [
                     GribFileInfo(
-                        filename=f"{run:%Y%m%d%H}", size=0, last_modified=run.isoformat()
+                        filename=f"{run:%Y%m%d%H}",
+                        size=0,
+                        last_modified=run.isoformat(),
                     )
                 ]
         return []

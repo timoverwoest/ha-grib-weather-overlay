@@ -85,8 +85,16 @@ _HARMONIE_NL_PARAMETERS: tuple[GribParameter, ...] = (
         name="Wind (10m)",
         unit="m/s",
         kind="vector",
-        grib_filter_u={"indicatorOfParameter": 33, "indicatorOfTypeOfLevel": _LEVEL_GROUND, "level": 10},
-        grib_filter_v={"indicatorOfParameter": 34, "indicatorOfTypeOfLevel": _LEVEL_GROUND, "level": 10},
+        grib_filter_u={
+            "indicatorOfParameter": 33,
+            "indicatorOfTypeOfLevel": _LEVEL_GROUND,
+            "level": 10,
+        },
+        grib_filter_v={
+            "indicatorOfParameter": 34,
+            "indicatorOfTypeOfLevel": _LEVEL_GROUND,
+            "level": 10,
+        },
         colormap="wind",
         value_range=(0, 25),
     ),
@@ -95,8 +103,16 @@ _HARMONIE_NL_PARAMETERS: tuple[GribParameter, ...] = (
         name="Windstoten (10m)",
         unit="m/s",
         kind="vector",
-        grib_filter_u={"indicatorOfParameter": 162, "indicatorOfTypeOfLevel": _LEVEL_GROUND, "level": 10},
-        grib_filter_v={"indicatorOfParameter": 163, "indicatorOfTypeOfLevel": _LEVEL_GROUND, "level": 10},
+        grib_filter_u={
+            "indicatorOfParameter": 162,
+            "indicatorOfTypeOfLevel": _LEVEL_GROUND,
+            "level": 10,
+        },
+        grib_filter_v={
+            "indicatorOfParameter": 163,
+            "indicatorOfTypeOfLevel": _LEVEL_GROUND,
+            "level": 10,
+        },
         colormap="wind",
         value_range=(0, 35),
     ),
@@ -104,7 +120,11 @@ _HARMONIE_NL_PARAMETERS: tuple[GribParameter, ...] = (
         key="temperature_2m",
         name="Temperatuur (2m)",
         unit="°C",
-        grib_filter={"indicatorOfParameter": 11, "indicatorOfTypeOfLevel": _LEVEL_GROUND, "level": 2},
+        grib_filter={
+            "indicatorOfParameter": 11,
+            "indicatorOfTypeOfLevel": _LEVEL_GROUND,
+            "level": 2,
+        },
         scale=1.0,
         offset=-273.15,  # Kelvin -> Celsius
         colormap="temperature",
@@ -114,7 +134,11 @@ _HARMONIE_NL_PARAMETERS: tuple[GribParameter, ...] = (
         key="dewpoint_2m",
         name="Dauwpunt (2m)",
         unit="°C",
-        grib_filter={"indicatorOfParameter": 17, "indicatorOfTypeOfLevel": _LEVEL_GROUND, "level": 2},
+        grib_filter={
+            "indicatorOfParameter": 17,
+            "indicatorOfTypeOfLevel": _LEVEL_GROUND,
+            "level": 2,
+        },
         scale=1.0,
         offset=-273.15,
         colormap="temperature",
@@ -124,7 +148,11 @@ _HARMONIE_NL_PARAMETERS: tuple[GribParameter, ...] = (
         key="humidity_2m",
         name="Relatieve luchtvochtigheid (2m)",
         unit="%",
-        grib_filter={"indicatorOfParameter": 52, "indicatorOfTypeOfLevel": _LEVEL_GROUND, "level": 2},
+        grib_filter={
+            "indicatorOfParameter": 52,
+            "indicatorOfTypeOfLevel": _LEVEL_GROUND,
+            "level": 2,
+        },
         scale=100.0,  # KNMI stores RH as a 0-1 fraction -> percent
         colormap="humidity",
         value_range=(0, 100),
@@ -133,7 +161,11 @@ _HARMONIE_NL_PARAMETERS: tuple[GribParameter, ...] = (
         key="precipitation",
         name="Neerslag",
         unit="mm",
-        grib_filter={"indicatorOfParameter": 61, "indicatorOfTypeOfLevel": _LEVEL_GROUND, "level": 0},
+        grib_filter={
+            "indicatorOfParameter": 61,
+            "indicatorOfTypeOfLevel": _LEVEL_GROUND,
+            "level": 0,
+        },
         colormap="precipitation",
         value_range=(0, 20),
     ),
@@ -141,7 +173,11 @@ _HARMONIE_NL_PARAMETERS: tuple[GribParameter, ...] = (
         key="pressure_msl",
         name="Luchtdruk (zeeniveau)",
         unit="hPa",
-        grib_filter={"indicatorOfParameter": 1, "indicatorOfTypeOfLevel": _LEVEL_MSL, "level": 0},
+        grib_filter={
+            "indicatorOfParameter": 1,
+            "indicatorOfTypeOfLevel": _LEVEL_MSL,
+            "level": 0,
+        },
         scale=0.01,  # Pa -> hPa
         colormap="pressure",
         value_range=(980, 1040),
@@ -150,7 +186,11 @@ _HARMONIE_NL_PARAMETERS: tuple[GribParameter, ...] = (
         key="visibility",
         name="Zicht",
         unit="km",
-        grib_filter={"indicatorOfParameter": 20, "indicatorOfTypeOfLevel": _LEVEL_GROUND, "level": 0},
+        grib_filter={
+            "indicatorOfParameter": 20,
+            "indicatorOfTypeOfLevel": _LEVEL_GROUND,
+            "level": 0,
+        },
         scale=0.001,  # m -> km
         colormap="visibility",
         value_range=(0, 50),
@@ -159,7 +199,11 @@ _HARMONIE_NL_PARAMETERS: tuple[GribParameter, ...] = (
         key="cloud_cover",
         name="Bewolking",
         unit="%",
-        grib_filter={"indicatorOfParameter": 71, "indicatorOfTypeOfLevel": _LEVEL_GROUND, "level": 0},
+        grib_filter={
+            "indicatorOfParameter": 71,
+            "indicatorOfTypeOfLevel": _LEVEL_GROUND,
+            "level": 0,
+        },
         scale=100.0,  # KNMI stores cloud cover as a 0-1 fraction -> percent
         colormap="cloud",
         value_range=(0, 100),
@@ -248,7 +292,9 @@ class KnmiSource(GribSource):
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
         return list(KNOWN_DATASETS)
 
-    async def _request(self, url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def _request(
+        self, url: str, params: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         headers = {"Authorization": self._api_key}
         try:
             async with self._session.get(url, headers=headers, params=params) as resp:
@@ -286,7 +332,9 @@ class KnmiSource(GribSource):
             for f in data.get("files", [])
         ]
 
-    async def async_get_download_url(self, dataset: GribDatasetInfo, filename: str) -> str:
+    async def async_get_download_url(
+        self, dataset: GribDatasetInfo, filename: str
+    ) -> str:
         url = (
             f"{API_BASE_URL}/datasets/{dataset.key}/versions/{dataset.version}"
             f"/files/{filename}/url"
@@ -303,7 +351,8 @@ class KnmiSource(GribSource):
         # filesystem writes are blocking, so run mkdir/open/write/close in the
         # executor to keep them off the event loop.
         await loop.run_in_executor(
-            None, functools.partial(destination.parent.mkdir, parents=True, exist_ok=True)
+            None,
+            functools.partial(destination.parent.mkdir, parents=True, exist_ok=True),
         )
         try:
             async with self._session.get(download_url) as resp:
@@ -370,8 +419,12 @@ class KnmiSource(GribSource):
                 return
             loop.call_soon_threadsafe(on_new_file, filename)
 
-        def _on_disconnect(_client, _userdata, _flags, reason_code, _properties) -> None:
-            _LOGGER.debug("Disconnected from KNMI notification service: %s", reason_code)
+        def _on_disconnect(
+            _client, _userdata, _flags, reason_code, _properties
+        ) -> None:
+            _LOGGER.debug(
+                "Disconnected from KNMI notification service: %s", reason_code
+            )
 
         # Building the client calls tls_set(), which loads CA certs from disk
         # (blocking), and connect() does network I/O -- do it all in the executor.
@@ -389,7 +442,9 @@ class KnmiSource(GribSource):
                 transport="websockets",
                 protocol=mqtt.MQTTProtocolVersion.MQTTv5,
             )
-            client.username_pw_set(username="token", password=self._notification_api_key)
+            client.username_pw_set(
+                username="token", password=self._notification_api_key
+            )
             client.tls_set()
             client.ws_set_options(path=MQTT_WS_PATH)
             client.reconnect_delay_set(min_delay=5, max_delay=120)

@@ -18,13 +18,24 @@ import time
 from custom_components.grib_overlay import weather_maps
 from custom_components.grib_overlay.http import _read_for_transfer
 
-JS = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(encoding="utf-8")
+JS = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(
+    encoding="utf-8"
+)
 
 
 def _grid(tmp_path: Path) -> Path:
     """A grid the size of the ones a real instance serves: 16900 numbers."""
     path = tmp_path / "wind_10m_20260922T1200.json"
-    path.write_text(json.dumps([{"header": {"nx": 130, "ny": 130}, "data": [round(i % 30 - 15 + 0.25, 2) for i in range(16900)]}]))
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "header": {"nx": 130, "ny": 130},
+                    "data": [round(i % 30 - 15 + 0.25, 2) for i in range(16900)],
+                }
+            ]
+        )
+    )
     return path
 
 
@@ -81,7 +92,11 @@ def test_the_card_caches_the_request_not_the_answer() -> None:
     the first is back each fetch the file -- which is how one page load came to
     download the same frame list three times.
     """
-    for method in ("async _fetchJson(url, cache) {", "async _fetchWind(url) {", "async _fetchParamFrames(paramKey) {"):
+    for method in (
+        "async _fetchJson(url, cache) {",
+        "async _fetchWind(url) {",
+        "async _fetchParamFrames(paramKey) {",
+    ):
         body = JS.split(method, 1)[1].split("\n  }\n", 1)[0]
         assert "const pending = this._hass" in body, method
         assert "pending.catch(" in body, f"{method}: a failure must not be remembered"
@@ -94,11 +109,12 @@ async def test_the_charts_a_card_already_has_are_served_at_once(hass) -> None:
     """
     maps = weather_maps.WeatherMaps(hass)
     known = [
-        weather_maps.Chart(
-            "AL_202609221800.gif", "analysis", datetime.now(UTC), "x"
-        )
+        weather_maps.Chart("AL_202609221800.gif", "analysis", datetime.now(UTC), "x")
     ]
-    maps._charts, maps._listed_at = known, time.monotonic() - weather_maps._LIST_TTL_SECONDS - 1
+    maps._charts, maps._listed_at = (
+        known,
+        time.monotonic() - weather_maps._LIST_TTL_SECONDS - 1,
+    )
 
     refreshed = asyncio.Event()
 
@@ -157,7 +173,11 @@ async def test_every_source_polls_in_its_own_slot(hass) -> None:
         entry.add_to_hass(hass)
         return GribOverlayCoordinator(hass, entry)
 
-    ids = ("01KXXR63PBA5JRBGJ7BDZZ0HS8", "01M2NZQCGMA8HRYZMZZGEYK456", "01M2NZR1SAQ4XZK437ZW2B1HYF")
+    ids = (
+        "01KXXR63PBA5JRBGJ7BDZZ0HS8",
+        "01M2NZQCGMA8HRYZMZZGEYK456",
+        "01M2NZR1SAQ4XZK437ZW2B1HYF",
+    )
     offsets = [coordinator_for(i)._poll_offset for i in ids]
     assert len(set(offsets)) == len(ids), "different entries, different slots"
     assert all(0 <= o < 600 for o in offsets), offsets
@@ -173,7 +193,9 @@ def test_the_cards_on_a_page_share_one_list_of_sources() -> None:
     assert "gribEntriesRequest = hass.callApi" in body
     assert "GRIB_ENTRIES_TTL_MS" in body
     assert "gribEntriesRequest = null" in body  # a failure must not be remembered
-    assert "(data.entries || []).slice()" in body  # a card may sort and filter its own copy
+    assert (
+        "(data.entries || []).slice()" in body
+    )  # a card may sort and filter its own copy
     assert JS.count('callApi("GET", "grib_overlay/entries")') == 1
     assert JS.count("gribFetchEntries(this._hass)") == 2
 
@@ -185,9 +207,16 @@ def test_the_lists_are_compressed_too() -> None:
     from custom_components.grib_overlay.http import _COMPRESS_FROM_BYTES, _json
 
     class _Request:
-        def __init__(self, accept): self.headers = {"Accept-Encoding": accept}
+        def __init__(self, accept):
+            self.headers = {"Accept-Encoding": accept}
 
-    big = {"frames": [{"valid_time": f"2026-09-22T{h:02d}:00:00+00:00", "url": "/api/x" * 20} for h in range(24)] * 12}
+    big = {
+        "frames": [
+            {"valid_time": f"2026-09-22T{h:02d}:00:00+00:00", "url": "/api/x" * 20}
+            for h in range(24)
+        ]
+        * 12
+    }
     compressed = _json(_Request("gzip, deflate"), big)
     assert compressed.headers["Content-Encoding"] == "gzip"
     assert len(gzip.decompress(compressed.body)) > 3 * len(compressed.body)

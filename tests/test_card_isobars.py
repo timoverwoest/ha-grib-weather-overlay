@@ -10,23 +10,31 @@ from __future__ import annotations
 
 from pathlib import Path
 
-JS = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(encoding="utf-8")
+JS = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(
+    encoding="utf-8"
+)
 ISOBAR = JS.split("async _updateIsobarOverlay(frame) {", 1)[1].split("\n  }\n", 1)[0]
 
 
 def test_the_pressure_frame_is_paired_by_nearest_valid_time() -> None:
     # Equality on the timestamp string would drop the layer as soon as a source
     # publishes pressure on its own step.
-    assert "pf = nearestFrame(pframes, frame.valid_time, ISOBAR_MAX_OFFSET_MS);" in ISOBAR
+    assert (
+        "pf = nearestFrame(pframes, frame.valid_time, ISOBAR_MAX_OFFSET_MS);" in ISOBAR
+    )
     assert "f.valid_time === frame.valid_time" not in ISOBAR
     assert "const ISOBAR_MAX_OFFSET_MS = 90 * 60 * 1000;" in JS
-    body = JS.split("function nearestFrame(frames, isoTime, maxOffsetMs) {", 1)[1].split("\n}\n", 1)[0]
+    body = JS.split("function nearestFrame(frames, isoTime, maxOffsetMs) {", 1)[
+        1
+    ].split("\n}\n", 1)[0]
     assert "return best && bestGap <= maxOffsetMs ? best : null;" in body
 
 
 def test_a_dataset_without_pressure_says_why_the_layer_is_off() -> None:
     assert JS.count("isobarsNoPressure:") == 2  # Dutch and English
-    avail = JS.split("const hasPressure = !!this._pressureParam();", 1)[1].split("\n  }\n", 1)[0]
+    avail = JS.split("const hasPressure = !!this._pressureParam();", 1)[1].split(
+        "\n  }\n", 1
+    )[0]
     assert 'const tip = hasPressure ? "isobarsTitle" : "isobarsNoPressure";' in avail
     # The tooltip follows a language switch like the rest of the chrome.
     assert 'setAttribute("data-i18n-title", tip)' in avail
@@ -48,7 +56,9 @@ def test_the_layer_reports_a_dataset_without_pressure_data_at_once() -> None:
     # Not only when a frame happens to be drawn: switching the layer on, or
     # picking another dataset, has to say straight away that there is nothing.
     assert JS.count("isobarsNoFrames:") == 2  # Dutch and English
-    check = JS.split("  async _checkIsobarAvailability() {", 1)[1].split("\n  }\n", 1)[0]
+    check = JS.split("  async _checkIsobarAvailability() {", 1)[1].split("\n  }\n", 1)[
+        0
+    ]
     assert 'this._setIsobarNote(gribT("isobarsNoFrames"));' in check
     assert "frames = await this._fetchParamFrames(pParam.key);" in check
     toggle = JS.split("  _onIsobarsToggle() {", 1)[1].split("\n  }\n", 1)[0]

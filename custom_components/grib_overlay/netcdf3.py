@@ -89,7 +89,7 @@ def read(buf: bytes) -> Dataset:
     def name() -> str:
         nonlocal pos
         length = u32()
-        text = buf[pos:pos + length].decode("utf-8", errors="replace")
+        text = buf[pos : pos + length].decode("utf-8", errors="replace")
         pos += (length + 3) & ~3
         return text
 
@@ -108,9 +108,13 @@ def read(buf: bytes) -> Dataset:
             if nc_type not in _TYPES:
                 raise NetCDFError(f"unknown attribute type {nc_type}")
             dtype, size = _TYPES[nc_type]
-            raw = buf[pos:pos + count * size]
+            raw = buf[pos : pos + count * size]
             pos += (count * size + 3) & ~3
-            out[key] = raw.decode("utf-8", errors="replace") if nc_type == 2 else np.frombuffer(raw, dtype)
+            out[key] = (
+                raw.decode("utf-8", errors="replace")
+                if nc_type == 2
+                else np.frombuffer(raw, dtype)
+            )
         return out
 
     numrecs = u32()
@@ -150,11 +154,21 @@ def read(buf: bytes) -> Dataset:
         if is_record(dim_ids):
             per_record = int(np.prod(shape[1:])) if len(shape) > 1 else 1
             shape[0] = numrecs
-            if begin + (numrecs - 1) * recsize + per_record * size > len(buf) and numrecs:
+            if (
+                begin + (numrecs - 1) * recsize + per_record * size > len(buf)
+                and numrecs
+            ):
                 raise NetCDFError(f"file truncated in variable {var_name}")
-            data = np.stack(
-                [np.frombuffer(buf, dtype, per_record, begin + r * recsize) for r in range(numrecs)]
-            ) if numrecs else np.empty((0, per_record), dtype)
+            data = (
+                np.stack(
+                    [
+                        np.frombuffer(buf, dtype, per_record, begin + r * recsize)
+                        for r in range(numrecs)
+                    ]
+                )
+                if numrecs
+                else np.empty((0, per_record), dtype)
+            )
             data = data.reshape(shape)
         else:
             count = int(np.prod(shape)) if shape else 1

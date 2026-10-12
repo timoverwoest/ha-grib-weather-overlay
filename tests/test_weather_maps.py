@@ -37,28 +37,44 @@ def _entry(hass, source: str, api_key: str) -> MockConfigEntry:
 
 def test_offers_recent_analyses_then_the_forecasts_after_them() -> None:
     files = [
-        _f("AL_202609151200.gif"), _f("AL_202609151800.gif"), _f("AL_202609160000.gif"),
-        _f("AL_202609160600.gif"), _f("AL_202609161200.gif"), _f("AL_202609161800.gif"),
+        _f("AL_202609151200.gif"),
+        _f("AL_202609151800.gif"),
+        _f("AL_202609160000.gif"),
+        _f("AL_202609160600.gif"),
+        _f("AL_202609161200.gif"),
+        _f("AL_202609161800.gif"),
         # Forecasts for times already analysed are stale.
-        _f("PL_202609161200.gif"), _f("PL_202609160000.gif"),
-        _f("PL_202609170000.gif"), _f("PL_202609171200.gif"), _f("PL_202609181200.gif"),
+        _f("PL_202609161200.gif"),
+        _f("PL_202609160000.gif"),
+        _f("PL_202609170000.gif"),
+        _f("PL_202609171200.gif"),
+        _f("PL_202609181200.gif"),
         _f("readme.txt"),
     ]
     charts = select_charts(files)
     assert [c.name for c in charts] == [
-        "AL_202609160000.gif", "AL_202609160600.gif", "AL_202609161200.gif", "AL_202609161800.gif",
-        "PL_202609170000.gif", "PL_202609171200.gif", "PL_202609181200.gif",
+        "AL_202609160000.gif",
+        "AL_202609160600.gif",
+        "AL_202609161200.gif",
+        "AL_202609161800.gif",
+        "PL_202609170000.gif",
+        "PL_202609171200.gif",
+        "PL_202609181200.gif",
     ]
     assert [c.kind for c in charts][3:5] == ["analysis", "forecast"]
     assert charts[0].as_dict()["valid_time"] == "2026-09-16T00:00:00+00:00"
 
 
 def test_a_reissued_forecast_keeps_its_newest_version() -> None:
-    charts = select_charts([
-        _f("PL_202609170000.gif", "2026-09-16T08:00:00+00:00"),
-        _f("PL_202609170000.gif", "2026-09-16T20:15:00+00:00"),
-    ])
-    assert [(c.name, c.issued) for c in charts] == [("PL_202609170000.gif", "2026-09-16T20:15:00+00:00")]
+    charts = select_charts(
+        [
+            _f("PL_202609170000.gif", "2026-09-16T08:00:00+00:00"),
+            _f("PL_202609170000.gif", "2026-09-16T20:15:00+00:00"),
+        ]
+    )
+    assert [(c.name, c.issued) for c in charts] == [
+        ("PL_202609170000.gif", "2026-09-16T20:15:00+00:00")
+    ]
 
 
 def test_key_comes_from_a_knmi_entry_only(hass) -> None:

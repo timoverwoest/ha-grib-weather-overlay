@@ -128,10 +128,10 @@ def iter_messages(buf: bytes):
         edition = buf[idx + 7]
         if edition != 2:
             raise Grib2Error(f"not a GRIB2 message (edition {edition})")
-        total_len = _u(buf[idx + 8:idx + 16])
+        total_len = _u(buf[idx + 8 : idx + 16])
         if total_len <= 0 or idx + total_len > len(buf):
             return  # truncated / malformed
-        yield _parse_message(buf[idx:idx + total_len])
+        yield _parse_message(buf[idx : idx + total_len])
         pos = idx + total_len
 
 
@@ -143,13 +143,13 @@ def _parse_message(msg: bytes) -> Grib2Message:
 
     o = 16  # Section 0 is 16 octets in edition 2
     while o < len(msg):
-        if msg[o:o + 4] == b"7777":
+        if msg[o : o + 4] == b"7777":
             break
-        seclen = _u(msg[o:o + 4])
+        seclen = _u(msg[o : o + 4])
         if seclen < 5 or o + seclen > len(msg):
             raise Grib2Error("malformed section length")
         secnum = msg[o + 4]
-        s = msg[o:o + seclen]
+        s = msg[o : o + seclen]
 
         if secnum == 1:
             rec["reference_time"] = datetime(
@@ -178,7 +178,9 @@ def _parse_message(msg: bytes) -> Grib2Message:
                 unit_of_time_range=s[17],
                 forecast_time=_u(s[18:22]),
                 type_of_level=s[22],
-                level=_sign_mag(_u(s[24:28]), 32) / (10.0 ** s[23]) if s[23] != 255 else 0.0,
+                level=_sign_mag(_u(s[24:28]), 32) / (10.0 ** s[23])
+                if s[23] != 255
+                else 0.0,
             )
             if pdt == 8:
                 # Octets 35-41: end of the overall time interval. forecast_time is
@@ -235,12 +237,14 @@ def _unpack(
 ) -> np.ndarray:
     """Simple packing (template 5.0) -> float64 values, NaN where the bitmap says missing."""
     if bitmap is not None:
-        bitmap = np.unpackbits(np.frombuffer(bitmap, dtype=np.uint8))[:total].astype(bool)
+        bitmap = np.unpackbits(np.frombuffer(bitmap, dtype=np.uint8))[:total].astype(
+            bool
+        )
         n_present = int(bitmap.sum())
     else:
         n_present = npoints if npoints is not None else total
 
-    dec = 10.0 ** dec_scale
+    dec = 10.0**dec_scale
     if bits == 0:
         present = np.full(n_present, ref / dec, dtype=np.float64)
     else:
@@ -248,7 +252,7 @@ def _unpack(
             raw = unpack_bits(data_bytes, n_present, bits)
         except ValueError as err:
             raise Grib2Error(str(err)) from err
-        present = (ref + raw.astype(np.float64) * (2.0 ** bin_scale)) / dec
+        present = (ref + raw.astype(np.float64) * (2.0**bin_scale)) / dec
 
     if bitmap is not None:
         values = np.full(total, MISSING, dtype=np.float64)

@@ -29,7 +29,8 @@ from custom_components.grib_overlay.coordinator import GribOverlayCoordinator
 SAMPLE_ENV_VAR = "GRIB_OVERLAY_SAMPLE_GRIB"
 
 pytestmark = pytest.mark.skipif(
-    not os.environ.get(SAMPLE_ENV_VAR), reason=f"set {SAMPLE_ENV_VAR} to a sample GRIB file to run"
+    not os.environ.get(SAMPLE_ENV_VAR),
+    reason=f"set {SAMPLE_ENV_VAR} to a sample GRIB file to run",
 )
 
 

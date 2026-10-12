@@ -69,12 +69,18 @@ def _rotated_from(lat, lon, rot):
     return rlat, rlon - angle
 
 
-def _geo_bbox(rlats: np.ndarray, rlons: np.ndarray, rot) -> tuple[float, float, float, float]:
+def _geo_bbox(
+    rlats: np.ndarray, rlons: np.ndarray, rot
+) -> tuple[float, float, float, float]:
     """Geographic bounding box of the rotated grid, sampled along its border."""
     rlat1, rlat2 = float(rlats[0]), float(rlats[-1])
     rlon1, rlon2 = float(rlons[0]), float(rlons[-1])
-    edge_rlat = np.concatenate([rlats, rlats, np.full(rlons.size, rlat1), np.full(rlons.size, rlat2)])
-    edge_rlon = np.concatenate([np.full(rlats.size, rlon1), np.full(rlats.size, rlon2), rlons, rlons])
+    edge_rlat = np.concatenate(
+        [rlats, rlats, np.full(rlons.size, rlat1), np.full(rlons.size, rlat2)]
+    )
+    edge_rlon = np.concatenate(
+        [np.full(rlats.size, rlon1), np.full(rlats.size, rlon2), rlons, rlons]
+    )
     glat, glon = _geo_from(edge_rlat, edge_rlon, rot)
     return float(glat.min()), float(glat.max()), float(glon.min()), float(glon.max())
 
@@ -87,7 +93,9 @@ def _regular_axes(lat_min, lat_max, lon_min, lon_max):
     return np.linspace(lat_min, lat_max, ny), np.linspace(lon_min, lon_max, nx)
 
 
-def _bilinear(grid: np.ndarray, rlats: np.ndarray, rlons: np.ndarray, rlat_t, rlon_t) -> np.ndarray:
+def _bilinear(
+    grid: np.ndarray, rlats: np.ndarray, rlons: np.ndarray, rlat_t, rlon_t
+) -> np.ndarray:
     """Bilinearly sample ``grid`` (rows south->north) at target rotated coords.
 
     NaN source corners are dropped from the weighted average (like the on-disk
@@ -147,7 +155,9 @@ def regrid_scalar(grid: np.ndarray, rlats: np.ndarray, rlons: np.ndarray, rotati
     return out, lats_geo, lons_geo
 
 
-def regrid_vector(u: np.ndarray, v: np.ndarray, rlats: np.ndarray, rlons: np.ndarray, rotation):
+def regrid_vector(
+    u: np.ndarray, v: np.ndarray, rlats: np.ndarray, rlons: np.ndarray, rotation
+):
     """Resample rotated u/v onto a regular geographic grid AND rotate to true N/E.
 
     The components are grid-relative on the rotated grid; at each target point

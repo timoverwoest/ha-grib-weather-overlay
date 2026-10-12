@@ -51,26 +51,86 @@ def _wave(number: int) -> dict:
 # EWAM's, so the comparison lines the models up (and each direction pairs with
 # its family, see base.direction_key_for).
 _WAM_PARAMETERS: tuple[GribParameter, ...] = (
-    GribParameter(key="wave_height", name="Golfhoogte (significant)", unit="m",
-                  grib_filter=_wave(229), colormap="wave", value_range=(0, 8)),
-    GribParameter(key="wave_period", name="Golfperiode (gemiddeld)", unit="s",
-                  grib_filter=_wave(232), colormap="wave_period", value_range=(0, 16)),
-    GribParameter(key="wave_peak_period", name="Golf: piekperiode", unit="s",
-                  grib_filter=_wave(231), colormap="wave_period", value_range=(0, 20)),
-    GribParameter(key="wave_direction", name="Golfrichting (gemiddeld)", unit="°",
-                  grib_filter=_wave(230), colormap="direction", value_range=(0, 360)),
-    GribParameter(key="swell_height", name="Deining: hoogte", unit="m",
-                  grib_filter=_wave(237), colormap="wave", value_range=(0, 8)),
-    GribParameter(key="swell_period", name="Deining: periode (gemiddeld)", unit="s",
-                  grib_filter=_wave(239), colormap="wave_period", value_range=(0, 16)),
-    GribParameter(key="swell_direction", name="Deining: richting", unit="°",
-                  grib_filter=_wave(238), colormap="direction", value_range=(0, 360)),
-    GribParameter(key="wind_wave_height", name="Windgolven: hoogte", unit="m",
-                  grib_filter=_wave(234), colormap="wave", value_range=(0, 8)),
-    GribParameter(key="wind_wave_period", name="Windgolven: periode (gemiddeld)", unit="s",
-                  grib_filter=_wave(236), colormap="wave_period", value_range=(0, 16)),
-    GribParameter(key="wind_wave_direction", name="Windgolven: richting", unit="°",
-                  grib_filter=_wave(235), colormap="direction", value_range=(0, 360)),
+    GribParameter(
+        key="wave_height",
+        name="Golfhoogte (significant)",
+        unit="m",
+        grib_filter=_wave(229),
+        colormap="wave",
+        value_range=(0, 8),
+    ),
+    GribParameter(
+        key="wave_period",
+        name="Golfperiode (gemiddeld)",
+        unit="s",
+        grib_filter=_wave(232),
+        colormap="wave_period",
+        value_range=(0, 16),
+    ),
+    GribParameter(
+        key="wave_peak_period",
+        name="Golf: piekperiode",
+        unit="s",
+        grib_filter=_wave(231),
+        colormap="wave_period",
+        value_range=(0, 20),
+    ),
+    GribParameter(
+        key="wave_direction",
+        name="Golfrichting (gemiddeld)",
+        unit="°",
+        grib_filter=_wave(230),
+        colormap="direction",
+        value_range=(0, 360),
+    ),
+    GribParameter(
+        key="swell_height",
+        name="Deining: hoogte",
+        unit="m",
+        grib_filter=_wave(237),
+        colormap="wave",
+        value_range=(0, 8),
+    ),
+    GribParameter(
+        key="swell_period",
+        name="Deining: periode (gemiddeld)",
+        unit="s",
+        grib_filter=_wave(239),
+        colormap="wave_period",
+        value_range=(0, 16),
+    ),
+    GribParameter(
+        key="swell_direction",
+        name="Deining: richting",
+        unit="°",
+        grib_filter=_wave(238),
+        colormap="direction",
+        value_range=(0, 360),
+    ),
+    GribParameter(
+        key="wind_wave_height",
+        name="Windgolven: hoogte",
+        unit="m",
+        grib_filter=_wave(234),
+        colormap="wave",
+        value_range=(0, 8),
+    ),
+    GribParameter(
+        key="wind_wave_period",
+        name="Windgolven: periode (gemiddeld)",
+        unit="s",
+        grib_filter=_wave(236),
+        colormap="wave_period",
+        value_range=(0, 16),
+    ),
+    GribParameter(
+        key="wind_wave_direction",
+        name="Windgolven: richting",
+        unit="°",
+        grib_filter=_wave(235),
+        colormap="direction",
+        value_range=(0, 360),
+    ),
 )
 
 _SURFACE = {"indicatorOfTypeOfLevel": 1, "level": 0}
@@ -189,7 +249,13 @@ def _wanted_keys(parameters: list[GribParameter]) -> set[tuple[int, int, int]]:
     for p in parameters:
         for filt in (p.grib_filter, p.grib_filter_u, p.grib_filter_v):
             if filt:
-                keys.add((filt["indicatorOfParameter"], filt["indicatorOfTypeOfLevel"], filt["level"]))
+                keys.add(
+                    (
+                        filt["indicatorOfParameter"],
+                        filt["indicatorOfTypeOfLevel"],
+                        filt["level"],
+                    )
+                )
     return keys
 
 
@@ -201,8 +267,13 @@ class DmiSource(GribSource):
     supports_push_notifications = False
     provides_archive = False
 
-    def __init__(self, session: aiohttp.ClientSession, api_key: str | None = None,
-                 notification_api_key: str | None = None, instance_id: str | None = None) -> None:
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        api_key: str | None = None,
+        notification_api_key: str | None = None,
+        instance_id: str | None = None,
+    ) -> None:
         self._session = session
         # A complete run stays complete: remember those, so a poll only has to
         # look at the newer runs that may still be publishing.
@@ -220,7 +291,9 @@ class DmiSource(GribSource):
         except aiohttp.ClientError as err:
             raise GribSourceError(f"DMI request failed: {err}") from err
 
-    async def _run_files(self, dataset: GribDatasetInfo, run: datetime) -> dict[int, str]:
+    async def _run_files(
+        self, dataset: GribDatasetInfo, run: datetime
+    ) -> dict[int, str]:
         """{lead hours: download URL} for one model run."""
         url = f"{API_BASE_URL}/{_COLLECTION[dataset.key]}/items?modelRun={_iso(run)}&limit=1000"
         data = await self._get_json(url)
@@ -243,7 +316,10 @@ class DmiSource(GribSource):
     async def _latest_complete_run(self, dataset: GribDatasetInfo) -> str | None:
         now = datetime.now(UTC)
         newest = now.replace(
-            hour=now.hour - now.hour % _RUN_INTERVAL_HOURS, minute=0, second=0, microsecond=0
+            hour=now.hour - now.hour % _RUN_INTERVAL_HOURS,
+            minute=0,
+            second=0,
+            microsecond=0,
         )
         cache = self._complete.setdefault(dataset.key, {})
         for i in range(_RUN_LOOKBACK):
@@ -269,12 +345,18 @@ class DmiSource(GribSource):
         run_id = await self._latest_complete_run(dataset)
         if run_id is None:
             return []
-        return [GribFileInfo(filename=run_id, size=0, last_modified=_iso(_parse_run_id(run_id)))]
+        return [
+            GribFileInfo(
+                filename=run_id, size=0, last_modified=_iso(_parse_run_id(run_id))
+            )
+        ]
 
     async def async_download_file(
         self, dataset: GribDatasetInfo, filename: str, destination: Path
     ) -> Path:
-        raise GribSourceError("DMI delivers one file per lead time; use async_download_run")
+        raise GribSourceError(
+            "DMI delivers one file per lead time; use async_download_run"
+        )
 
     async def async_download_run(
         self,
@@ -307,7 +389,9 @@ class DmiSource(GribSource):
 
         # Let every download finish (or fail) before reporting, so nothing is
         # still writing into run_dir when the caller cleans it up after an error.
-        results = await asyncio.gather(*(fetch(lead) for lead in leads), return_exceptions=True)
+        results = await asyncio.gather(
+            *(fetch(lead) for lead in leads), return_exceptions=True
+        )
         for result in results:
             if isinstance(result, BaseException):
                 raise result
@@ -326,7 +410,9 @@ class DmiSource(GribSource):
         try:
             async with self._session.get(url) as resp:
                 if resp.status >= 400:
-                    raise GribSourceError(f"DMI download {url} returned HTTP {resp.status}")
+                    raise GribSourceError(
+                        f"DMI download {url} returned HTTP {resp.status}"
+                    )
                 async for chunk in resp.content.iter_chunked(256 * 1024):
                     buf += chunk
                     buf = self._take_messages(buf, wanted, found)
@@ -351,11 +437,11 @@ class DmiSource(GribSource):
                 return buf[start:]
             if buf[start + 7] != 1:
                 raise GribSourceError("DMI file is not GRIB edition 1")
-            length = int.from_bytes(buf[start + 4:start + 7], "big")
+            length = int.from_bytes(buf[start + 4 : start + 7], "big")
             if len(buf) < start + length:
                 return buf[start:]
-            message = buf[start:start + length]
+            message = buf[start : start + length]
             key = _grib1_key(message)
             if key in wanted and key not in found:
                 found[key] = message
-            buf = buf[start + length:]
+            buf = buf[start + length :]

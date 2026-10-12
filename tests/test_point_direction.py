@@ -35,7 +35,9 @@ def test_direction_key_follows_the_family_prefix() -> None:
 def _frame(tmp_path, key: str, unit: str, value: float) -> Frame:
     lats, lons = np.array([50.0, 51.0]), np.array([3.0, 4.0])
     path = tmp_path / f"{key}.field.json"
-    path.write_text(json.dumps(field_grid.build_field(np.full((2, 2), value), lats, lons)))
+    path.write_text(
+        json.dumps(field_grid.build_field(np.full((2, 2), value), lats, lons))
+    )
     return Frame(
         parameter_key=key,
         valid_time=T,
@@ -57,7 +59,11 @@ def test_each_height_gets_its_own_familys_direction(tmp_path) -> None:
         }
     )
     swell = _point_payload(coordinator, "swell_height", 50.5, 3.5)
-    assert swell["series"][0] == {"valid_time": T.isoformat(), "value": 1.0, "direction": 90.0}
+    assert swell["series"][0] == {
+        "valid_time": T.isoformat(),
+        "value": 1.0,
+        "direction": 90.0,
+    }
     assert swell["direction_unit"] == "°"
     wave = _point_payload(coordinator, "wave_height", 50.5, 3.5)
     assert wave["series"][0]["direction"] == 270.0

@@ -37,13 +37,17 @@ async def main(api_key: str) -> None:
         print(f"Datasets in catalog: {len(datasets)}")
         for ds in datasets:
             print(f"  - {ds.key} v{ds.version}: {ds.name}")
-            print(f"    bounds={ds.bounds} grid={ds.grid_type} params={[p.key for p in ds.parameters]}")
+            print(
+                f"    bounds={ds.bounds} grid={ds.grid_type} params={[p.key for p in ds.parameters]}"
+            )
 
         dataset = datasets[0]
         print(f"\nListing latest files for {dataset.key}...")
         files = await source.async_list_files(dataset, max_keys=3)
         for f in files:
-            print(f"  {f.filename}  {f.size / 1_000_000:.1f} MB  modified={f.last_modified}")
+            print(
+                f"  {f.filename}  {f.size / 1_000_000:.1f} MB  modified={f.last_modified}"
+            )
 
         if not files:
             print("No files returned - nothing more to check.")
@@ -52,7 +56,9 @@ async def main(api_key: str) -> None:
         latest = files[0]
         print(f"\nRequesting a temporary download URL for {latest.filename}...")
         url = await source.async_get_download_url(dataset, latest.filename)
-        print(f"  got a signed URL ({len(url)} chars) - OK, not downloading the full {latest.size / 1_000_000:.0f} MB file here.")
+        print(
+            f"  got a signed URL ({len(url)} chars) - OK, not downloading the full {latest.size / 1_000_000:.0f} MB file here."
+        )
 
 
 if __name__ == "__main__":

@@ -120,7 +120,7 @@ def _ibm_hex_float(raw_bytes: bytes) -> float:
     sign = -1.0 if (raw >> 31) & 0x1 else 1.0
     exponent = (raw >> 24) & 0x7F
     mantissa = raw & 0x00FFFFFF
-    return sign * (mantissa / (2 ** 24)) * (16.0 ** (exponent - 64))
+    return sign * (mantissa / (2**24)) * (16.0 ** (exponent - 64))
 
 
 def iter_messages(buf: bytes):
@@ -134,13 +134,13 @@ def iter_messages(buf: bytes):
         idx = buf.find(b"GRIB", pos)
         if idx < 0:
             return
-        total_len = _u(buf[idx + 4:idx + 7])
+        total_len = _u(buf[idx + 4 : idx + 7])
         edition = buf[idx + 7]
         if edition != 1:
             raise Grib1Error(f"unsupported GRIB edition {edition}")
         if total_len <= 0 or idx + total_len > len(buf):
             return  # truncated / malformed trailer
-        yield _parse_message(buf[idx:idx + total_len])
+        yield _parse_message(buf[idx : idx + total_len])
         pos = idx + total_len
 
 
@@ -157,13 +157,13 @@ def iter_records(buf: bytes):
         idx = buf.find(b"GRIB", pos)
         if idx < 0:
             return
-        total_len = _u(buf[idx + 4:idx + 7])
+        total_len = _u(buf[idx + 4 : idx + 7])
         edition = buf[idx + 7]
         if edition != 1 or total_len <= 0 or idx + total_len > len(buf):
             return
-        msg = buf[idx:idx + total_len]
+        msg = buf[idx : idx + total_len]
         pds_len = _u(msg[8:11])
-        pds = msg[8:8 + pds_len]
+        pds = msg[8 : 8 + pds_len]
         century = pds[24] if pds_len > 24 else 21
         year = (century - 1) * 100 + pds[12]
         data_date = year * 10000 + pds[13] * 100 + pds[14]
@@ -176,8 +176,8 @@ def _parse_message(msg: bytes) -> Grib1Message:
     o = 8  # Section 0 (indicator) is 8 octets in edition 1
 
     # -- Section 1: Product Definition Section --
-    pds_len = _u(msg[o:o + 3])
-    pds = msg[o:o + pds_len]
+    pds_len = _u(msg[o : o + 3])
+    pds = msg[o : o + pds_len]
     flags = pds[7]
     gds_present = bool(flags & 0x80)
     bms_present = bool(flags & 0x40)
@@ -203,8 +203,8 @@ def _parse_message(msg: bytes) -> Grib1Message:
     # -- Section 2: Grid Definition Section --
     if not gds_present:
         raise Grib1Error("message without a Grid Definition Section is not supported")
-    gds_len = _u(msg[o:o + 3])
-    gds = msg[o:o + gds_len]
+    gds_len = _u(msg[o : o + 3])
+    gds = msg[o : o + gds_len]
     data_rep_type = gds[5]
     # 0 = regular lat/lon; 10 = rotated lat/lon (same octet layout up to the
     # scan mode, with three extra rotation-pole fields at octets 33-42).
@@ -217,7 +217,7 @@ def _parse_message(msg: bytes) -> Grib1Message:
         rotation = (
             _signed(_u(gds[32:35]), 24) / 1000.0,  # latitude of the southern pole
             _signed(_u(gds[35:38]), 24) / 1000.0,  # longitude of the southern pole
-            _ibm_hex_float(gds[38:42]),            # angle of rotation
+            _ibm_hex_float(gds[38:42]),  # angle of rotation
         )
     rec.update(
         ni=ni,
@@ -234,8 +234,8 @@ def _parse_message(msg: bytes) -> Grib1Message:
     # -- Section 3: Bit Map Section (optional) --
     bitmap = None
     if bms_present:
-        bms_len = _u(msg[o:o + 3])
-        bms = msg[o:o + bms_len]
+        bms_len = _u(msg[o : o + 3])
+        bms = msg[o : o + bms_len]
         unused_bits = bms[3]
         table_ref = _u(bms[4:6])
         if table_ref != 0:
@@ -244,8 +244,8 @@ def _parse_message(msg: bytes) -> Grib1Message:
         o += bms_len
 
     # -- Section 4: Binary Data Section --
-    bds_len = _u(msg[o:o + 3])
-    bds = msg[o:o + bds_len]
+    bds_len = _u(msg[o : o + 3])
+    bds = msg[o : o + bds_len]
     bds_flags = bds[3]
     if bds_flags & 0x80:
         raise Grib1Error("spherical harmonic / non-grid-point data is not supported")
@@ -291,7 +291,7 @@ def _unpack(
             raw = unpack_bits(data, n_present, bits_per_value)
         except ValueError as err:
             raise Grib1Error(str(err)) from err
-        present = reference_value + raw.astype(np.float64) * (2.0 ** binary_scale)
+        present = reference_value + raw.astype(np.float64) * (2.0**binary_scale)
 
     if present_mask is not None:
         values = np.full(npoints, MISSING, dtype=np.float64)

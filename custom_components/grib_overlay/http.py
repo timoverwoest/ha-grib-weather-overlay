@@ -55,7 +55,9 @@ def _coordinator(hass: HomeAssistant, entry_id: str) -> GribOverlayCoordinator |
     return async_coordinator_for(hass, entry_id)
 
 
-def _point_payload(coordinator: GribOverlayCoordinator, key: str, lat: float, lon: float) -> dict:
+def _point_payload(
+    coordinator: GribOverlayCoordinator, key: str, lat: float, lon: float
+) -> dict:
     """Sample one parameter's time-series at (lat, lon), plus its colour legend.
 
     Runs off the event loop (reads the cached per-frame field JSON files). The
@@ -70,7 +72,9 @@ def _point_payload(coordinator: GribOverlayCoordinator, key: str, lat: float, lo
     legend = frames[0].legend
     unit = legend.unit
     entries = [
-        (f.valid_time.isoformat(), f.field_path, f.wind_path) for f in frames if f.field_path
+        (f.valid_time.isoformat(), f.field_path, f.wind_path)
+        for f in frames
+        if f.field_path
     ]
     has_direction = any(wind_path is not None for _, _, wind_path in entries)
 
@@ -90,7 +94,10 @@ def _point_payload(coordinator: GribOverlayCoordinator, key: str, lat: float, lo
             field = json.loads(field_path.read_text())
         except (OSError, ValueError):
             continue
-        point = {"valid_time": valid_time, "value": field_grid.sample_field(field, lat, lon)}
+        point = {
+            "valid_time": valid_time,
+            "value": field_grid.sample_field(field, lat, lon),
+        }
         if wind_path is not None and wind_path.exists():
             try:
                 wind = json.loads(wind_path.read_text())
@@ -130,8 +137,12 @@ def _wind_direction(wind, lat: float, lon: float) -> float | None:
     if not isinstance(wind, list) or len(wind) < 2:
         return None
     try:
-        u = field_grid.sample_field({**wind[0]["header"], "data": wind[0]["data"]}, lat, lon)
-        v = field_grid.sample_field({**wind[1]["header"], "data": wind[1]["data"]}, lat, lon)
+        u = field_grid.sample_field(
+            {**wind[0]["header"], "data": wind[0]["data"]}, lat, lon
+        )
+        v = field_grid.sample_field(
+            {**wind[1]["header"], "data": wind[1]["data"]}, lat, lon
+        )
     except (KeyError, TypeError):
         return None
     if u is None or v is None or math.hypot(u, v) < 0.3:
@@ -150,7 +161,9 @@ _COMPRESS_FROM_BYTES = 4096
 def _json(request: web.Request, payload, status: int = 200) -> web.Response:
     """A JSON response, gzipped when it is worth it and the caller takes it."""
     body = json.dumps(payload).encode()
-    if len(body) >= _COMPRESS_FROM_BYTES and "gzip" in (request.headers.get("Accept-Encoding") or ""):
+    if len(body) >= _COMPRESS_FROM_BYTES and "gzip" in (
+        request.headers.get("Accept-Encoding") or ""
+    ):
         return web.Response(
             body=gzip.compress(body, 6),
             status=status,
@@ -187,9 +200,13 @@ def _read_for_transfer(path, accepts_gzip: bool) -> tuple[bytes, str | None]:
     return blob, "gzip"
 
 
-async def _grid_response(hass: HomeAssistant, request: web.Request, path) -> web.Response:
+async def _grid_response(
+    hass: HomeAssistant, request: web.Request, path
+) -> web.Response:
     accepts_gzip = "gzip" in (request.headers.get("Accept-Encoding") or "")
-    body, encoding = await hass.async_add_executor_job(_read_for_transfer, path, accepts_gzip)
+    body, encoding = await hass.async_add_executor_job(
+        _read_for_transfer, path, accepts_gzip
+    )
     headers = {"Cache-Control": "max-age=3600"}
     if encoding:
         headers["Content-Encoding"] = encoding
@@ -209,7 +226,11 @@ class GribOverlayEntriesView(HomeAssistantView):
         for coordinator in async_loaded_coordinators(hass):
             entry = coordinator.entry
             dataset = next(
-                (d for d in (await coordinator.source.async_list_datasets()) if d.key == entry.data[CONF_DATASET]),
+                (
+                    d
+                    for d in (await coordinator.source.async_list_datasets())
+                    if d.key == entry.data[CONF_DATASET]
+                ),
                 None,
             )
             if dataset is None:
@@ -219,7 +240,11 @@ class GribOverlayEntriesView(HomeAssistantView):
                 {
                     "entry_id": entry.entry_id,
                     "title": entry.title,
-                    "alias": (entry.options.get(CONF_ALIAS) or entry.data.get(CONF_ALIAS) or ""),
+                    "alias": (
+                        entry.options.get(CONF_ALIAS)
+                        or entry.data.get(CONF_ALIAS)
+                        or ""
+                    ),
                     "source": entry.data[CONF_SOURCE],
                     "dataset": {
                         "key": dataset.key,
@@ -315,7 +340,11 @@ class GribOverlayFrameImageView(HomeAssistantView):
         if frame is None or not frame.png_path.exists():
             return web.Response(status=404)
         data = await hass.async_add_executor_job(frame.png_path.read_bytes)
-        return web.Response(body=data, content_type="image/png", headers={"Cache-Control": "max-age=3600"})
+        return web.Response(
+            body=data,
+            content_type="image/png",
+            headers={"Cache-Control": "max-age=3600"},
+        )
 
 
 class GribOverlayWindView(HomeAssistantView):
@@ -365,7 +394,9 @@ class GribOverlayPointView(HomeAssistantView):
     name = "api:grib_overlay:point"
     requires_auth = True
 
-    async def get(self, request: web.Request, entry_id: str, parameter_key: str) -> web.Response:
+    async def get(
+        self, request: web.Request, entry_id: str, parameter_key: str
+    ) -> web.Response:
         hass = request.app[KEY_HASS]
         coordinator = _coordinator(hass, entry_id)
         if coordinator is None:
@@ -437,18 +468,28 @@ class GribOverlayStationObsView(HomeAssistantView):
             return web.json_response({"error": "param/lat/lon required"}, status=400)
         start = request.query.get("start", "")
         end = request.query.get("end", "")
-        result = await observations.fetch_observations(hass, param, lat, lon, start, end)
+        result = await observations.fetch_observations(
+            hass, param, lat, lon, start, end
+        )
         if result is None:
-            _LOGGER.warning("station_obs: no observation source for parameter %s", param)
+            _LOGGER.warning(
+                "station_obs: no observation source for parameter %s", param
+            )
             return web.json_response(
                 {"error": f"no observation source for parameter '{param}'"}, status=404
             )
         if result.get("error"):
-            _LOGGER.warning("station_obs %s @ %.3f,%.3f -> %s", param, lat, lon, result["error"])
+            _LOGGER.warning(
+                "station_obs %s @ %.3f,%.3f -> %s", param, lat, lon, result["error"]
+            )
             return web.json_response(result, status=502)
         _LOGGER.debug(
             "station_obs %s @ %.3f,%.3f -> %s obs from %s",
-            param, lat, lon, len(result.get("series") or []), (result.get("station") or {}).get("name"),
+            param,
+            lat,
+            lon,
+            len(result.get("series") or []),
+            (result.get("station") or {}).get("name"),
         )
         return _json(request, result)
 
@@ -525,7 +566,11 @@ class GribOverlayWeatherMapImageView(HomeAssistantView):
         if path is None:
             return web.Response(status=404)
         data = await hass.async_add_executor_job(path.read_bytes)
-        return web.Response(body=data, content_type="image/gif", headers={"Cache-Control": "max-age=600"})
+        return web.Response(
+            body=data,
+            content_type="image/gif",
+            headers={"Cache-Control": "max-age=600"},
+        )
 
 
 class GribOverlayClientErrorView(HomeAssistantView):
@@ -557,7 +602,9 @@ class GribOverlayClientErrorView(HomeAssistantView):
         persistent_notification.async_create(
             hass,
             client_errors.notification(report, labels.language(hass)),
-            title=client_errors.TITLE.get(labels.language(hass), client_errors.TITLE["en"]),
+            title=client_errors.TITLE.get(
+                labels.language(hass), client_errors.TITLE["en"]
+            ),
             notification_id=f"{DOMAIN}_client_error",
         )
         return web.json_response({"logged": True})

@@ -66,19 +66,24 @@ def test_iter_records_reads_times_and_raw_bytes() -> None:
     out = list(grib1.iter_records(buf))
     assert len(out) == 4
     assert [(d, t) for _, d, t in out] == [
-        (20260724, 15), (20260724, 15), (20260724, 30), (20260724, 30)
+        (20260724, 15),
+        (20260724, 15),
+        (20260724, 30),
+        (20260724, 30),
     ]
     # each yielded slice is exactly the original record
     assert [raw for raw, _, _ in out] == recs
 
 
 def test_regroup_by_time_roundtrips_through_decoder() -> None:
-    buf = b"".join([
-        _record(param=49, hour=0, minute=15),
-        _record(param=50, hour=0, minute=15),
-        _record(param=49, hour=0, minute=30),
-        _record(param=50, hour=0, minute=30),
-    ])
+    buf = b"".join(
+        [
+            _record(param=49, hour=0, minute=15),
+            _record(param=50, hour=0, minute=15),
+            _record(param=49, hour=0, minute=30),
+            _record(param=50, hour=0, minute=30),
+        ]
+    )
     groups: dict[tuple[int, int], bytearray] = {}
     for rec, d, t in grib1.iter_records(buf):
         groups.setdefault((d, t), bytearray()).extend(rec)
@@ -87,8 +92,12 @@ def test_regroup_by_time_roundtrips_through_decoder() -> None:
     per_time = bytes(groups[(20260724, 15)])
     msgs = list(grib1.iter_messages(per_time))
     assert len(msgs) == 2
-    assert msgs[0].matches({"indicatorOfParameter": 49, "indicatorOfTypeOfLevel": 160, "level": 1})
-    assert msgs[1].matches({"indicatorOfParameter": 50, "indicatorOfTypeOfLevel": 160, "level": 1})
+    assert msgs[0].matches(
+        {"indicatorOfParameter": 49, "indicatorOfTypeOfLevel": 160, "level": 1}
+    )
+    assert msgs[1].matches(
+        {"indicatorOfParameter": 50, "indicatorOfTypeOfLevel": 160, "level": 1}
+    )
 
 
 def test_plan_blocks_fills_missing_near_term_from_previous_run() -> None:

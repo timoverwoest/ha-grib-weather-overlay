@@ -27,8 +27,23 @@ def _u4(n: int) -> bytes:
     return int(n).to_bytes(4, "big")
 
 
-def _make_grib2(*, ni, nj, lat1, lon1, lat2, lon2, cat, num, ref, bits, raw_values,
-                forecast_time=3, end_time=None, npoints=None) -> bytes:
+def _make_grib2(
+    *,
+    ni,
+    nj,
+    lat1,
+    lon1,
+    lat2,
+    lon2,
+    cat,
+    num,
+    ref,
+    bits,
+    raw_values,
+    forecast_time=3,
+    end_time=None,
+    npoints=None,
+) -> bytes:
     # Section 1 (identification), 21 octets, reference time 2026-07-22 00:00Z
     s1 = bytearray(21)
     s1[0:4] = _u4(21)
@@ -58,13 +73,15 @@ def _make_grib2(*, ni, nj, lat1, lon1, lat2, lon2, cat, num, ref, bits, raw_valu
     if end_time is not None:
         s4[7:9] = _u2(8)
         s4[34:36] = _u2(end_time.year)
-        s4[36:41] = bytes([end_time.month, end_time.day, end_time.hour, end_time.minute, 0])
+        s4[36:41] = bytes(
+            [end_time.month, end_time.day, end_time.hour, end_time.minute, 0]
+        )
     s4[9] = cat
     s4[10] = num
     s4[17] = 1  # unit of time range = hour
     s4[18:22] = _u4(forecast_time)
     s4[22] = 101  # type of level
-    s4[23] = 0    # scale factor
+    s4[23] = 0  # scale factor
     s4[24:28] = _u4(0)  # level value
 
     # Section 5 (data representation), template 5.0 simple packing, 21 octets
@@ -95,8 +112,18 @@ def _make_grib2(*, ni, nj, lat1, lon1, lat2, lon2, cat, num, ref, bits, raw_valu
 
 def test_parse_and_decode_simple_packing() -> None:
     raw = _make_grib2(
-        ni=3, nj=2, lat1=50.0, lon1=4.0, lat2=48.0, lon2=8.0,
-        cat=0, num=3, ref=10.0, bits=4, raw_values=[0, 1, 2, 3, 4, 5], forecast_time=3,
+        ni=3,
+        nj=2,
+        lat1=50.0,
+        lon1=4.0,
+        lat2=48.0,
+        lon2=8.0,
+        cat=0,
+        num=3,
+        ref=10.0,
+        bits=4,
+        raw_values=[0, 1, 2, 3, 4, 5],
+        forecast_time=3,
     )
     (m,) = list(grib2.iter_messages(raw))
     assert m.discipline == 10 and m.parameter_category == 0 and m.parameter_number == 3
@@ -120,8 +147,18 @@ def test_truncated_data_section_raises_when_read() -> None:
     missing tail as zeros.
     """
     raw = _make_grib2(
-        ni=5, nj=1, lat1=50.0, lon1=4.0, lat2=50.0, lon2=8.0,
-        cat=0, num=3, ref=0.0, bits=12, raw_values=[1, 2, 3, 4], npoints=5,
+        ni=5,
+        nj=1,
+        lat1=50.0,
+        lon1=4.0,
+        lat2=50.0,
+        lon2=8.0,
+        cat=0,
+        num=3,
+        ref=0.0,
+        bits=12,
+        raw_values=[1, 2, 3, 4],
+        npoints=5,
     )
     (m,) = list(grib2.iter_messages(raw))  # the headers are fine
     with pytest.raises(grib2.Grib2Error):
@@ -136,8 +173,19 @@ def test_interval_product_is_valid_at_the_end_of_its_interval() -> None:
 
     end = datetime(2026, 7, 22, 3, 0, tzinfo=UTC)
     raw = _make_grib2(
-        ni=2, nj=1, lat1=50.0, lon1=4.0, lat2=50.0, lon2=5.0,
-        cat=1, num=52, ref=0.0, bits=4, raw_values=[1, 2], forecast_time=0, end_time=end,
+        ni=2,
+        nj=1,
+        lat1=50.0,
+        lon1=4.0,
+        lat2=50.0,
+        lon2=5.0,
+        cat=1,
+        num=52,
+        ref=0.0,
+        bits=4,
+        raw_values=[1, 2],
+        forecast_time=0,
+        end_time=end,
     )
     (m,) = list(grib2.iter_messages(raw))
     valid, run = grib2.message_times(m)
@@ -155,16 +203,31 @@ def test_zero_length_interval_is_not_offered_as_a_frame(tmp_path) -> None:
     from custom_components.grib_overlay.sources.base import GribParameter
 
     param = GribParameter(
-        key="wind_gust_10m", name="gust", unit="m/s",
+        key="wind_gust_10m",
+        name="gust",
+        unit="m/s",
         grib_filter={"discipline": 10, "parameterCategory": 2, "parameterNumber": 22},
     )
     run = datetime(2026, 7, 22, 0, tzinfo=UTC)
     for end, expect_frame in ((run, False), (run.replace(hour=1), True)):
         path = tmp_path / f"gust_{end:%H}.grib2"
-        path.write_bytes(_make_grib2(
-            ni=2, nj=1, lat1=50.0, lon1=4.0, lat2=50.0, lon2=5.0,
-            cat=2, num=22, ref=0.0, bits=4, raw_values=[0, 0], forecast_time=0, end_time=end,
-        ))
+        path.write_bytes(
+            _make_grib2(
+                ni=2,
+                nj=1,
+                lat1=50.0,
+                lon1=4.0,
+                lat2=50.0,
+                lon2=5.0,
+                cat=2,
+                num=22,
+                ref=0.0,
+                bits=4,
+                raw_values=[0, 0],
+                forecast_time=0,
+                end_time=end,
+            )
+        )
         if expect_frame:
             assert grib_decode.decode_parameter(path, param).valid_time == end
         else:
@@ -176,8 +239,17 @@ def test_longitude_wrap_normalisation() -> None:
     # DWD numbers 0..360; a domain from 349.5 (west) to 42 (east) must unwrap to
     # a monotonic -10.5 .. 42 axis.
     raw = _make_grib2(
-        ni=4, nj=1, lat1=60.0, lon1=349.5, lat2=60.0, lon2=42.0,
-        cat=0, num=3, ref=0.0, bits=4, raw_values=[1, 2, 3, 4],
+        ni=4,
+        nj=1,
+        lat1=60.0,
+        lon1=349.5,
+        lat2=60.0,
+        lon2=42.0,
+        cat=0,
+        num=3,
+        ref=0.0,
+        bits=4,
+        raw_values=[1, 2, 3, 4],
     )
     (m,) = list(grib2.iter_messages(raw))
     _, _, lons = grib2.to_grid(m)
@@ -189,7 +261,9 @@ def test_longitude_wrap_normalisation() -> None:
 _EWAM = os.environ.get("GRIB_OVERLAY_EWAM_GRIB")
 
 
-@pytest.mark.skipif(not _EWAM, reason="set GRIB_OVERLAY_EWAM_GRIB to a real EWAM .grib2 file")
+@pytest.mark.skipif(
+    not _EWAM, reason="set GRIB_OVERLAY_EWAM_GRIB to a real EWAM .grib2 file"
+)
 def test_real_ewam_file() -> None:
     buf = Path(_EWAM).read_bytes()
     messages = list(grib2.iter_messages(buf))
@@ -201,4 +275,3 @@ def test_real_ewam_file() -> None:
     assert np.all(np.diff(lats) > 0) and np.all(np.diff(lons) > 0)
     finite = grid[np.isfinite(grid)]
     assert finite.size > 0  # sea points present, land masked
-

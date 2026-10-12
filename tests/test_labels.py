@@ -52,8 +52,14 @@ def test_dataset_names_translate_and_fall_back() -> None:
 
 
 def test_source_names_translate_and_fall_back() -> None:
-    assert labels.source_name("nl", "BSH (zeestroming Noordzee)") == "BSH (zeestroming Noordzee)"
-    assert labels.source_name("en", "BSH (zeestroming Noordzee)") == "BSH (North Sea currents)"
+    assert (
+        labels.source_name("nl", "BSH (zeestroming Noordzee)")
+        == "BSH (zeestroming Noordzee)"
+    )
+    assert (
+        labels.source_name("en", "BSH (zeestroming Noordzee)")
+        == "BSH (North Sea currents)"
+    )
     # KNMI's and DWD's names are language-neutral and must be left alone.
     assert labels.source_name("en", "KNMI Data Platform") == "KNMI Data Platform"
     assert labels.source_name("en", "DWD Open Data") == "DWD Open Data"
@@ -71,7 +77,9 @@ def test_every_english_name_covers_a_real_key() -> None:
         for d in importlib.import_module(cls.__module__).KNOWN_DATASETS
     ]
     assert set(labels.DATASET_NAMES_EN) == {d.key for d in datasets}
-    assert set(labels.PARAMETER_NAMES_EN) == {p.key for d in datasets for p in d.parameters}
+    assert set(labels.PARAMETER_NAMES_EN) == {
+        p.key for d in datasets for p in d.parameters
+    }
 
 
 def test_cards_and_config_flow_agree_on_the_english_names() -> None:
@@ -80,7 +88,9 @@ def test_cards_and_config_flow_agree_on_the_english_names() -> None:
     They are two tables for two different scopes, but they must not drift: a
     parameter has to read the same in the config flow and on the card.
     """
-    js = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(encoding="utf-8")
+    js = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(
+        encoding="utf-8"
+    )
 
     def js_block(name: str, lang: str) -> dict[str, str]:
         body = js.split(f"const {name} = {{", 1)[1]
@@ -98,10 +108,13 @@ def test_card_ships_every_string_in_both_languages() -> None:
     """A key present in one language and not the other renders as English (or
     as the raw key). Cheap to prevent, hard to spot by eye.
     """
-    js = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(encoding="utf-8")
+    js = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(
+        encoding="utf-8"
+    )
     body = js.split("const GRIB_TEXT = {", 1)[1]
     nl_block = body.split("  nl: {", 1)[1].split("\n  },", 1)[0]
     en_block = body.split("  en: {", 1)[1].split("\n  },", 1)[0]
+
     def keys(block: str) -> set[str]:
         return set(re.findall(r"^    (\w+):", block, re.M))
 

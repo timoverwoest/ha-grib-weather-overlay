@@ -44,8 +44,16 @@ _CURRENT = GribParameter(
     name="Zeestroming (oppervlak)",
     unit="m/s",
     kind="vector",
-    grib_filter_u={"indicatorOfParameter": 49, "indicatorOfTypeOfLevel": 160, "level": 1},
-    grib_filter_v={"indicatorOfParameter": 50, "indicatorOfTypeOfLevel": 160, "level": 1},
+    grib_filter_u={
+        "indicatorOfParameter": 49,
+        "indicatorOfTypeOfLevel": 160,
+        "level": 1,
+    },
+    grib_filter_v={
+        "indicatorOfParameter": 50,
+        "indicatorOfTypeOfLevel": 160,
+        "level": 1,
+    },
     colormap="current",
     value_range=(0, 2.5),
 )
@@ -122,8 +130,13 @@ class BshSource(GribSource):
     supports_push_notifications = False
     provides_archive = False
 
-    def __init__(self, session=None, api_key: str | None = None,
-                 notification_api_key: str | None = None, instance_id: str | None = None) -> None:
+    def __init__(
+        self,
+        session=None,
+        api_key: str | None = None,
+        notification_api_key: str | None = None,
+        instance_id: str | None = None,
+    ) -> None:
         pass  # anonymous FTP: no session, key or push
 
     async def async_list_datasets(self) -> list[GribDatasetInfo]:
@@ -139,8 +152,12 @@ class BshSource(GribSource):
         return {m.group(1) for n in names if (m := _FILE_RE.search(n))}
 
     async def async_list_files(
-        self, dataset: GribDatasetInfo, *, max_keys: int = 20,
-        order_by: str = "lastModified", sorting: str = "desc",
+        self,
+        dataset: GribDatasetInfo,
+        *,
+        max_keys: int = 20,
+        order_by: str = "lastModified",
+        sorting: str = "desc",
     ) -> list[GribFileInfo]:
         runs = await asyncio.get_running_loop().run_in_executor(None, self._list_runs)
         if not runs:
@@ -152,7 +169,9 @@ class BshSource(GribSource):
     async def async_download_file(self, dataset, filename, destination) -> Path:
         raise GribSourceError("BSH delivers per-time files; use async_download_run")
 
-    def _download_split(self, run_id: str, run_dir: Path, horizon_hours: float) -> list[Path]:
+    def _download_split(
+        self, run_id: str, run_dir: Path, horizon_hours: float
+    ) -> list[Path]:
         target = _run_dt(run_id)
         window_end = target + timedelta(hours=horizon_hours)
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -164,7 +183,7 @@ class BshSource(GribSource):
                 # Which blocks each run actually publishes -- BSH omits/reorders them.
                 available: dict[str, set[int]] = {}
                 for name in ftp.nlst(_DIR):
-                    if (m := _FILE_RE.search(name)):
+                    if m := _FILE_RE.search(name):
                         available.setdefault(m.group(1), set()).add(int(m.group(2)))
                 for source_run, vv in _plan_blocks(run_id, available, horizon_hours):
                     fn = f"Current_{_AREA}_{source_run}_{vv:02d}.grb.bz2"
@@ -193,7 +212,12 @@ class BshSource(GribSource):
         return paths
 
     async def async_download_run(
-        self, dataset, run_id, run_dir, param_keys, horizon_hours,
+        self,
+        dataset,
+        run_id,
+        run_dir,
+        param_keys,
+        horizon_hours,
     ) -> list[Path]:
         return await asyncio.get_running_loop().run_in_executor(
             None, self._download_split, run_id, run_dir, horizon_hours

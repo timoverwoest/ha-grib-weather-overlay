@@ -21,7 +21,9 @@ def test_default_root_prefers_a_writable_base(tmp_path: Path) -> None:
     assert storage_paths.default_storage_root((str(base),)) == base / DOMAIN
 
 
-def test_default_root_skips_missing_bases_and_falls_back_to_tempdir(tmp_path: Path) -> None:
+def test_default_root_skips_missing_bases_and_falls_back_to_tempdir(
+    tmp_path: Path,
+) -> None:
     missing = tmp_path / "does-not-exist"
     root = storage_paths.default_storage_root((str(missing),))
     assert root == Path(tempfile.gettempdir()) / DOMAIN

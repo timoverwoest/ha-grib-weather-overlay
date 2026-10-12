@@ -55,20 +55,29 @@ def write_member(
     """Store ``fields`` (each ``[len(lats), len(lons)]``, south-first) for one lead time."""
     lats = np.asarray(lats, dtype=np.float64)
     lons = np.asarray(lons, dtype=np.float64)
-    if lats.ndim != 1 or lons.ndim != 1 or np.any(np.diff(lats) <= 0) or np.any(np.diff(lons) <= 0):
+    if (
+        lats.ndim != 1
+        or lons.ndim != 1
+        or np.any(np.diff(lats) <= 0)
+        or np.any(np.diff(lons) <= 0)
+    ):
         raise GriddedError("lats and lons must be ascending 1-D axes")
     arrays = {}
     for name, raw_grid in fields.items():
         grid = np.asarray(raw_grid, dtype=np.float32)
         if grid.shape != (lats.size, lons.size):
-            raise GriddedError(f"field {name} has shape {grid.shape}, expected {(lats.size, lons.size)}")
+            raise GriddedError(
+                f"field {name} has shape {grid.shape}, expected {(lats.size, lons.size)}"
+            )
         arrays[f"field_{name}"] = grid
     buf = io.BytesIO()
     np.savez_compressed(
         buf,
         lats=lats,
         lons=lons,
-        times=np.array([valid_time.timestamp(), run_time.timestamp()], dtype=np.float64),
+        times=np.array(
+            [valid_time.timestamp(), run_time.timestamp()], dtype=np.float64
+        ),
         **arrays,
     )
     path.write_bytes(buf.getvalue())
@@ -82,7 +91,7 @@ def iter_messages(buf: bytes) -> list[FieldMessage]:
             run_time = datetime.fromtimestamp(float(times[1]), tz=UTC)
             return [
                 FieldMessage(
-                    field=key[len("field_"):],
+                    field=key[len("field_") :],
                     values=npz[key].astype(np.float64).ravel(),
                     ni=lons.size,
                     nj=lats.size,

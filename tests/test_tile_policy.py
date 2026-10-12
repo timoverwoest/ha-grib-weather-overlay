@@ -14,9 +14,15 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
-JS = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(encoding="utf-8")
-LAYERS = JS.split("// The map layers of both cards:", 1)[1].split("const MAP_CONTROL_CSS", 1)[0]
-FILL = LAYERS.split("async function gribFillOsmBase(group, cfg, getHass) {", 1)[1].split("\n}\n", 1)[0]
+JS = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(
+    encoding="utf-8"
+)
+LAYERS = JS.split("// The map layers of both cards:", 1)[1].split(
+    "const MAP_CONTROL_CSS", 1
+)[0]
+FILL = LAYERS.split("async function gribFillOsmBase(group, cfg, getHass) {", 1)[
+    1
+].split("\n}\n", 1)[0]
 
 
 def _body(name: str) -> str:
@@ -30,7 +36,10 @@ def test_every_map_layer_is_created_in_one_place() -> None:
 
 
 def test_prefers_home_assistants_map_tiles_proxy() -> None:
-    assert 'const HA_MAP_TILES_URL = "/api/map_tiles/raster/{z}/{x}/{y}.png?token={token}";' in JS
+    assert (
+        'const HA_MAP_TILES_URL = "/api/map_tiles/raster/{z}/{x}/{y}.png?token={token}";'
+        in JS
+    )
     assert 'hass.callWS({ type: "map_tiles/access_token" })' in JS
     # The token is renewed well inside core's 30-minute rotation.
     assert "const MAP_TILES_TOKEN_MAX_AGE_MS = 20 * 60 * 1000;" in JS
@@ -38,7 +47,9 @@ def test_prefers_home_assistants_map_tiles_proxy() -> None:
 
 
 def test_direct_fallback_uses_the_one_permitted_osm_url() -> None:
-    assert 'const OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";' in JS
+    assert (
+        'const OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";' in JS
+    )
     assert "{s}.tile.openstreetmap.org" not in JS
 
 
@@ -62,7 +73,10 @@ def test_cross_origin_layers_send_a_referer() -> None:
 
 
 def test_layer_ids_match_the_documentation() -> None:
-    overlays = re.findall(r'key: "(\w+)"', LAYERS.split("const MAP_OVERLAYS = [", 1)[1].split("\n];", 1)[0])
+    overlays = re.findall(
+        r'key: "(\w+)"',
+        LAYERS.split("const MAP_OVERLAYS = [", 1)[1].split("\n];", 1)[0],
+    )
     assert overlays == ["gebco", "soundings", "depth", "sport", "seamarks"]
     assert 'const MAP_BASES = ["osm", "emodnet"];' in LAYERS
     assert 'const MAP_LAYERS_DEFAULT = ["seamarks"];' in LAYERS

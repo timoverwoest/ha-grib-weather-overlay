@@ -60,13 +60,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: GribOverlayConfigEntry) 
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: GribOverlayConfigEntry) -> bool:
+async def async_unload_entry(
+    hass: HomeAssistant, entry: GribOverlayConfigEntry
+) -> bool:
     """Unload one grib_overlay config entry."""
     await entry.runtime_data.source.async_stop_notifications()
     return True
 
 
-async def _async_reload_entry(hass: HomeAssistant, entry: GribOverlayConfigEntry) -> None:
+async def _async_reload_entry(
+    hass: HomeAssistant, entry: GribOverlayConfigEntry
+) -> None:
     """Reload the entry so an options change takes effect."""
     await hass.config_entries.async_reload(entry.entry_id)
 

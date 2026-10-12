@@ -40,7 +40,9 @@ class GribParameter:
     scale: float = 1.0  # raw GRIB value -> display unit: value * scale + offset
     offset: float = 0.0
     colormap: str = "turbo"
-    value_range: tuple[float, float] | None = None  # fixed scale, or None to auto-scale per frame
+    value_range: tuple[float, float] | None = (
+        None  # fixed scale, or None to auto-scale per frame
+    )
     # True when each lead time holds the total since the run started (ICON's
     # tot_prec) rather than the amount since the previous lead time. The
     # coordinator subtracts consecutive totals, so a source that sets this must

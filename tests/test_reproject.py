@@ -106,36 +106,43 @@ def _sgn3(deg: float) -> bytes:
 
 
 def _make_rotated_message(
-    *, ni: int, nj: int, lat1: float, lon1: float, lat2: float, lon2: float,
-    sp_lat: float, sp_lon: float,
+    *,
+    ni: int,
+    nj: int,
+    lat1: float,
+    lon1: float,
+    lat2: float,
+    lon2: float,
+    sp_lat: float,
+    sp_lon: float,
 ) -> bytes:
     # Section 1 (PDS), 28 octets: temperature-like (param 11, level type 105, level 2)
     pds = bytearray(28)
     pds[0:3] = _u3(28)
-    pds[3] = 253      # table2Version
-    pds[4] = 99       # centre
-    pds[6] = 255      # grid definition (not catalogued)
-    pds[7] = 0x80     # GDS present, no BMS
-    pds[8] = 11       # indicatorOfParameter
-    pds[9] = 105      # indicatorOfTypeOfLevel
-    pds[10:12] = _u2(2)   # level
-    pds[12], pds[13], pds[14] = 26, 7, 18   # yy, month, day
-    pds[15], pds[16] = 2, 0                 # hour, minute
-    pds[17] = 1       # unitOfTimeRange (hours)
-    pds[24] = 21      # century -> 2026
+    pds[3] = 253  # table2Version
+    pds[4] = 99  # centre
+    pds[6] = 255  # grid definition (not catalogued)
+    pds[7] = 0x80  # GDS present, no BMS
+    pds[8] = 11  # indicatorOfParameter
+    pds[9] = 105  # indicatorOfTypeOfLevel
+    pds[10:12] = _u2(2)  # level
+    pds[12], pds[13], pds[14] = 26, 7, 18  # yy, month, day
+    pds[15], pds[16] = 2, 0  # hour, minute
+    pds[17] = 1  # unitOfTimeRange (hours)
+    pds[24] = 21  # century -> 2026
 
     # Section 2 (GDS), 42 octets: rotated lat/lon (type 10)
     gds = bytearray(42)
     gds[0:3] = _u3(42)
-    gds[4] = 255      # PV/PL
-    gds[5] = 10       # data representation type = rotated lat/lon
+    gds[4] = 255  # PV/PL
+    gds[5] = 10  # data representation type = rotated lat/lon
     gds[6:8] = _u2(ni)
     gds[8:10] = _u2(nj)
     gds[10:13] = _sgn3(lat1)
     gds[13:16] = _sgn3(lon1)
     gds[17:20] = _sgn3(lat2)
     gds[20:23] = _sgn3(lon2)
-    gds[27] = 0x40    # scan mode +i east, +j north
+    gds[27] = 0x40  # scan mode +i east, +j north
     gds[32:35] = _sgn3(sp_lat)
     gds[35:38] = _sgn3(sp_lon)
     # gds[38:42] angle of rotation = 0.0 (IBM float all-zero)
@@ -152,7 +159,14 @@ def _make_rotated_message(
 
 def test_parse_rotated_gds() -> None:
     raw = _make_rotated_message(
-        ni=3, nj=2, lat1=-5.0, lon1=-10.0, lat2=5.0, lon2=10.0, sp_lat=-30.0, sp_lon=15.0
+        ni=3,
+        nj=2,
+        lat1=-5.0,
+        lon1=-10.0,
+        lat2=5.0,
+        lon2=10.0,
+        sp_lat=-30.0,
+        sp_lon=15.0,
     )
     (msg,) = list(grib1.iter_messages(raw))
     assert msg.ni == 3 and msg.nj == 2
@@ -169,13 +183,26 @@ def test_parse_rotated_gds() -> None:
 
 def test_decode_parameter_reprojects_rotated_message(tmp_path) -> None:
     raw = _make_rotated_message(
-        ni=40, nj=30, lat1=-10.0, lon1=-15.0, lat2=10.0, lon2=15.0, sp_lat=-30.0, sp_lon=15.0
+        ni=40,
+        nj=30,
+        lat1=-10.0,
+        lon1=-15.0,
+        lat2=10.0,
+        lon2=15.0,
+        sp_lat=-30.0,
+        sp_lon=15.0,
     )
     path = tmp_path / "rotated.grib"
     path.write_bytes(raw)
     param = GribParameter(
-        key="temperature_2m", name="T", unit="degC",
-        grib_filter={"indicatorOfParameter": 11, "indicatorOfTypeOfLevel": 105, "level": 2},
+        key="temperature_2m",
+        name="T",
+        unit="degC",
+        grib_filter={
+            "indicatorOfParameter": 11,
+            "indicatorOfTypeOfLevel": 105,
+            "level": 2,
+        },
         offset=-273.15,
     )
     field = grib_decode.decode_parameter(path, param)
