@@ -10,6 +10,7 @@ from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import IntegrationNotFound, async_get_integration
 
@@ -29,6 +30,10 @@ FRONTEND_READY = f"{DOMAIN}_frontend"
 # freshness and disk use can be seen -- and automated on -- from Home Assistant
 # itself rather than only from the map.
 PLATFORMS = [Platform.SENSOR]
+
+# Set up from the UI only; async_setup exists to serve the card early, not to
+# read configuration.yaml.
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
