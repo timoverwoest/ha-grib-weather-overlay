@@ -204,9 +204,15 @@ async def _grid_response(
     hass: HomeAssistant, request: web.Request, path
 ) -> web.Response:
     accepts_gzip = "gzip" in (request.headers.get("Accept-Encoding") or "")
-    body, encoding = await hass.async_add_executor_job(
-        _read_for_transfer, path, accepts_gzip
-    )
+    # No exists() first: that would be a stat on the event loop for every
+    # frame of an animation. The read happens in the executor anyway, so a
+    # file the cleanup already took is answered there.
+    try:
+        body, encoding = await hass.async_add_executor_job(
+            _read_for_transfer, path, accepts_gzip
+        )
+    except FileNotFoundError:
+        return web.Response(status=404)
     headers = {"Cache-Control": "max-age=3600"}
     if encoding:
         headers["Content-Encoding"] = encoding
@@ -340,9 +346,12 @@ class GribOverlayFrameImageView(HomeAssistantView):
         if coordinator is None:
             return web.Response(status=404)
         frame = coordinator.get_frame(parameter_key, frame_id)
-        if frame is None or not frame.png_path.exists():
+        if frame is None:
             return web.Response(status=404)
-        data = await hass.async_add_executor_job(frame.png_path.read_bytes)
+        try:
+            data = await hass.async_add_executor_job(frame.png_path.read_bytes)
+        except FileNotFoundError:
+            return web.Response(status=404)
         return web.Response(
             body=data,
             content_type="image/png",
@@ -366,7 +375,7 @@ class GribOverlayWindView(HomeAssistantView):
         if coordinator is None:
             return web.Response(status=404)
         frame = coordinator.get_frame(parameter_key, frame_id)
-        if frame is None or frame.wind_path is None or not frame.wind_path.exists():
+        if frame is None or frame.wind_path is None:
             return web.Response(status=404)
         return await _grid_response(hass, request, frame.wind_path)
 
@@ -387,7 +396,7 @@ class GribOverlayFieldView(HomeAssistantView):
         if coordinator is None:
             return web.Response(status=404)
         frame = coordinator.get_frame(parameter_key, frame_id)
-        if frame is None or frame.field_path is None or not frame.field_path.exists():
+        if frame is None or frame.field_path is None:
             return web.Response(status=404)
         return await _grid_response(hass, request, frame.field_path)
 

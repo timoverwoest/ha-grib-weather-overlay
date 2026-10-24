@@ -97,7 +97,7 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
         hass.http.register_view(view())
     www_dir = Path(__file__).parent / "www"
     js_path = www_dir / FRONTEND_JS_FILENAME
-    if not js_path.exists():
+    if not await hass.async_add_executor_job(js_path.exists):
         _LOGGER.warning("Frontend card not found at %s, skipping registration", js_path)
         return
     await hass.async_add_executor_job(_refresh_precompressed, www_dir)

@@ -435,10 +435,13 @@ parameter: current
 
 ### Via HACS (aanbevolen)
 
-1. HACS → Integraties → menu (⋮) → Custom repositories.
-2. Voeg de URL van deze repository toe, categorie "Integration".
-3. Zoek "GRIB Weather Overlay" in HACS en installeer.
-4. Herstart Home Assistant.
+1. Open HACS en zoek "GRIB Weather Overlay".
+2. Installeer de integratie.
+3. Herstart Home Assistant.
+
+Vind je hem (nog) niet? Voeg de repository dan eerst toe als custom
+repository: HACS → menu (⋮) → Custom repositories → de URL van deze repository,
+categorie "Integration". Zoek daarna opnieuw.
 
 ### Handmatig
 
@@ -2093,10 +2096,13 @@ parameter: current
 
 ### Via HACS (recommended)
 
-1. HACS → Integrations → menu (⋮) → Custom repositories.
-2. Add the URL of this repository, category "Integration".
-3. Search for "GRIB Weather Overlay" in HACS and install it.
-4. Restart Home Assistant.
+1. Open HACS and search for "GRIB Weather Overlay".
+2. Install the integration.
+3. Restart Home Assistant.
+
+Not finding it (yet)? Add it as a custom repository first: HACS → menu (⋮) →
+Custom repositories → the URL of this repository, category "Integration". Then
+search again.
 
 ### Manual
 
