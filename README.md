@@ -490,7 +490,7 @@ Het veld **"Eigen kleurschalen"** neemt één parameter per regel:
 
 ```
 wind_10m: 0:#2c7fb8, 8:#7fcdbb, 12:#ffffb2, 16:#fd8d3c, 24:#bd0026
-temperature_2m: -10:#313695, 0:#ffffbf, 35:#a50026
+temperature_2m: -10:#4575b4, 0:#ffffbf, 35:#a50026
 ```
 
 - De **waarden staan in de eigen eenheid van de parameter** (m/s, °C, hPa, mm, m).
@@ -2148,7 +2148,7 @@ The **"Custom colour scales"** field takes one parameter per line:
 
 ```
 wind_10m: 0:#2c7fb8, 8:#7fcdbb, 12:#ffffb2, 16:#fd8d3c, 24:#bd0026
-temperature_2m: -10:#313695, 0:#ffffbf, 35:#a50026
+temperature_2m: -10:#4575b4, 0:#ffffbf, 35:#a50026
 ```
 
 - The **values are in the parameter's own unit** (m/s, °C, hPa, mm, m).

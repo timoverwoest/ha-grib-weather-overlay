@@ -58,3 +58,12 @@ def test_no_link_points_at_a_heading_that_is_not_there() -> None:
         {a for a in re.findall(r"\]\(#([^)]+)\)", README) if a not in available}
     )
     assert broken == []
+
+
+def test_no_colour_reads_as_an_issue_number() -> None:
+    """A colour made of digits only gets rendered as a link to an issue.
+
+    The colour-scale example's #313695 showed up as a link to issue 313695,
+    which does not exist. A colour with a letter in it is left alone.
+    """
+    assert re.findall(r"#[0-9]{3,8}\b", README) == []
