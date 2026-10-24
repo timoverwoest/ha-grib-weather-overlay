@@ -1599,7 +1599,7 @@ Extra's:
 ## Ontwikkelen & testen
 
 ```bash
-python3 -m pip install -r requirements-dev.txt  # numpy, Pillow, paho-mqtt, homeassistant, pytest-homeassistant-custom-component, ruff
+python3 -m pip install -r requirements-dev.txt  # numpy, Pillow, paho-mqtt, homeassistant, pytest-homeassistant-custom-component, home-assistant-frontend, ruff
 python3 -m pytest tests/
 ```
 
@@ -3241,7 +3241,7 @@ Also:
 ## Development & testing
 
 ```bash
-python3 -m pip install -r requirements-dev.txt  # numpy, Pillow, paho-mqtt, homeassistant, pytest-homeassistant-custom-component, ruff
+python3 -m pip install -r requirements-dev.txt  # numpy, Pillow, paho-mqtt, homeassistant, pytest-homeassistant-custom-component, home-assistant-frontend, ruff
 python3 -m pytest tests/
 ```
 

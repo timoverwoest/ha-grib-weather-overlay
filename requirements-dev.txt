@@ -4,6 +4,9 @@ Pillow>=10.0.0
 aiohttp
 homeassistant
 pytest-homeassistant-custom-component
+# The manifest depends on frontend, which Home Assistant only sets up with the
+# built frontend installed; pytest-homeassistant-custom-component leaves it out.
+home-assistant-frontend
 # Lint + format, the same tool Home Assistant core uses. Configured in
 # pyproject.toml; CI runs `ruff check` and `ruff format --check`.
 ruff
