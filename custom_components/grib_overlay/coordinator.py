@@ -784,14 +784,13 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                 unit=parameter.unit,
             )
             wind_path = (
-                run_dir / f"{parameter.key}_{vec.valid_time:%Y%m%dT%H%M}.wind.json"
+                run_dir / f"{parameter.key}_{vec.valid_time:%Y%m%dT%H%M}.wind.json.gz"
             )
-            wind_path.write_text(
-                json.dumps(
-                    velocity.build_velocity_data(
-                        vec.u, vec.v, vec.lats, vec.lons, vec.valid_time
-                    )
-                )
+            field_grid.save_grid(
+                wind_path,
+                velocity.build_velocity_data(
+                    vec.u, vec.v, vec.lats, vec.lons, vec.valid_time
+                ),
             )
         else:
             field = grib_decode.decode_parameter(grib_path, parameter, crop)
@@ -811,9 +810,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         png_path.write_bytes(frame_obj.png_bytes)
 
         # Store a compact scalar grid (in display units) for point sampling.
-        field_path = run_dir / f"{stem}.field.json"
-        field_path.write_text(
-            json.dumps(field_grid.build_field(field.data, field.lats, field.lons))
+        field_path = run_dir / f"{stem}.field.json.gz"
+        field_grid.save_grid(
+            field_path, field_grid.build_field(field.data, field.lats, field.lons)
         )
 
         return Frame(

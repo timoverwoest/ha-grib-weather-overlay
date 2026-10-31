@@ -91,7 +91,7 @@ def _point_payload(
     series = []
     for valid_time, field_path, wind_path in entries:
         try:
-            field = json.loads(field_path.read_text())
+            field = field_grid.load_grid(field_path)
         except (OSError, ValueError):
             continue
         point = {
@@ -100,13 +100,13 @@ def _point_payload(
         }
         if wind_path is not None and wind_path.exists():
             try:
-                wind = json.loads(wind_path.read_text())
+                wind = field_grid.load_grid(wind_path)
             except (OSError, ValueError):
                 wind = None
             point["direction"] = _wind_direction(wind, lat, lon) if wind else None
         elif valid_time in dir_by_time:
             try:
-                dfield = json.loads(dir_by_time[valid_time].read_text())
+                dfield = field_grid.load_grid(dir_by_time[valid_time])
                 point["direction"] = field_grid.sample_field(dfield, lat, lon)
             except (OSError, ValueError):
                 point["direction"] = None
@@ -176,11 +176,16 @@ def _json(request: web.Request, payload, status: int = 200) -> web.Response:
 # The wind and field grids are tens of thousands of numbers written out as
 # text: 210 kB for one wind frame, measured on a real instance, and the biggest
 # thing the card ever downloads. As text they compress about fourfold, but
-# aiohttp does not compress a response by itself. So keep a gzipped copy beside
-# the file -- written the first time it is asked for, thrown away with the run
-# it belongs to -- and hand that over to any browser that takes it.
+# aiohttp does not compress a response by itself. Since 0.47 the grids are
+# written gzipped (field_grid.save_grid) and handed over as they are; a plain
+# grid from an older cache gets a gzipped copy beside it the first time it is
+# asked for, thrown away with the run it belongs to.
 def _read_for_transfer(path, accepts_gzip: bool) -> tuple[bytes, str | None]:
     """Blocking: the file's bytes, gzipped when the caller can take them."""
+    if path.suffix == ".gz":
+        # Written compressed in the first place (since 0.47): nothing to add.
+        raw = path.read_bytes()
+        return (raw, "gzip") if accepts_gzip else (gzip.decompress(raw), None)
     if not accepts_gzip:
         return path.read_bytes(), None
     gz = path.with_name(path.name + ".gz")

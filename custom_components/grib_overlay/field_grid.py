@@ -8,12 +8,33 @@ the click-to-read value and the meteogram time series.
 
 from __future__ import annotations
 
+import gzip
+import json
 import math
+from pathlib import Path
 
 import numpy as np
 
 # Target at most this many points per axis in the stored grid.
 _MAX_POINTS_PER_AXIS = 160
+
+
+def save_grid(path: Path, payload: dict) -> None:
+    """Blocking: write a field or wind grid, gzipped.
+
+    A grid is tens of thousands of numbers as text and compresses four- to
+    fivefold. Writing it compressed, once, is what the browser gets sent
+    anyway -- and a fifth of the bytes for the SSD, for every source.
+    """
+    path.write_bytes(gzip.compress(json.dumps(payload).encode(), 6))
+
+
+def load_grid(path: Path) -> dict:
+    """Blocking: read a grid back; plain JSON is from a cache before 0.47."""
+    raw = path.read_bytes()
+    if path.suffix == ".gz":
+        raw = gzip.decompress(raw)
+    return json.loads(raw)
 
 
 def build_field(data: np.ndarray, lats: np.ndarray, lons: np.ndarray) -> dict:

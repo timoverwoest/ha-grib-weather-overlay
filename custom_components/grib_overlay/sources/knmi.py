@@ -210,6 +210,12 @@ _HARMONIE_NL_PARAMETERS: tuple[GribParameter, ...] = (
     ),
 )
 
+# The session's default caps a request at five minutes in total. A 3.4 GB
+# archive on a modest line takes longer than that, and the download now goes at
+# the pace of whoever unpacks it -- slower still when the cache is on a NAS. So
+# no cap on the whole, only on a connection that stops sending.
+_ARCHIVE_TIMEOUT = aiohttp.ClientTimeout(total=None, sock_connect=30, sock_read=120)
+
 KNOWN_DATASETS: tuple[GribDatasetInfo, ...] = (
     GribDatasetInfo(
         key="harmonie_arome_cy43_p1",
@@ -352,14 +358,16 @@ class KnmiSource(GribSource):
         """Yield one run archive (0.9 to 3.4 GB) a megabyte at a time, as it arrives."""
         download_url = await self.async_get_download_url(dataset, filename)
         try:
-            async with self._session.get(download_url) as resp:
+            async with self._session.get(
+                download_url, timeout=_ARCHIVE_TIMEOUT
+            ) as resp:
                 if resp.status >= 400:
                     raise GribSourceError(
                         f"Downloading {filename} failed with HTTP {resp.status}"
                     )
                 async for chunk in resp.content.iter_chunked(1024 * 1024):
                     yield chunk
-        except aiohttp.ClientError as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             raise GribSourceError(f"Downloading {filename} failed: {err}") from err
 
     async def async_download_file(
