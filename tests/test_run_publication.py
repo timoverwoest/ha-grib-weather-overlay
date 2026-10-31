@@ -98,3 +98,61 @@ async def test_a_genuine_source_error_still_fails(hass) -> None:
     coordinator._current_run_filename = "2026092506"
     with pytest.raises(UpdateFailed, match="HTTP 500"):
         await coordinator._async_update_data()
+
+
+def _runs(*names: str) -> AsyncMock:
+    return AsyncMock(return_value=[SimpleNamespace(filename=n) for n in names])
+
+
+async def test_with_nothing_cached_an_older_complete_run_fills_the_map(hass) -> None:
+    """A cache that just moved (or a first start) need not stay empty for hours."""
+    coordinator = _coordinator(hass)
+    coordinator.source.async_list_files = _runs(
+        "2026092512", "2026092506", "2026092500"
+    )
+    newest_incomplete = GribRunIncompleteError(
+        "not complete yet: +168 h is not published"
+    )
+
+    async def _process(dataset, filename):
+        if filename == "2026092512":
+            raise newest_incomplete
+
+    coordinator._process_new_run = AsyncMock(side_effect=_process)
+
+    data = await coordinator._async_update_data()
+
+    assert data["run_filename"] == "2026092506"
+    assert [c.args[1] for c in coordinator._process_new_run.await_args_list] == [
+        "2026092512",
+        "2026092506",
+    ]
+    _, kwargs = coordinator.source.async_list_files.await_args
+    assert kwargs["max_keys"] == 3
+    coordinator._cleanup_old_runs.assert_called_once()
+
+
+async def test_after_the_fallback_the_newest_run_is_taken_once_complete(hass) -> None:
+    coordinator = _coordinator(hass)
+    coordinator._current_run_filename = "2026092506"  # what the fallback took
+    coordinator.source.async_list_files = _runs("2026092512")
+    coordinator._process_new_run = AsyncMock()
+
+    data = await coordinator._async_update_data()
+
+    assert data["run_filename"] == "2026092512"
+    # With a run cached only the newest is asked for: no extra probes per poll.
+    _, kwargs = coordinator.source.async_list_files.await_args
+    assert kwargs["max_keys"] == 1
+
+
+async def test_when_no_listed_run_is_complete_it_says_why(hass) -> None:
+    coordinator = _coordinator(
+        hass, raises=GribRunIncompleteError("not complete yet: +168 h is not published")
+    )
+    coordinator.source.async_list_files = _runs("2026092512", "2026092506")
+
+    with pytest.raises(UpdateFailed, match="not complete"):
+        await coordinator._async_update_data()
+    assert coordinator._process_new_run.await_count == 2
+    assert coordinator._current_run_filename is None

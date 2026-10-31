@@ -56,6 +56,7 @@ from .const import (
 )
 from .sources.base import (
     GribDatasetInfo,
+    GribFileInfo,
     GribParameter,
     GribRunIncompleteError,
     GribSource,
@@ -65,6 +66,10 @@ from .sources.base import (
 from .sources.registry import get_source_class
 
 _LOGGER = logging.getLogger(__name__)
+
+# How many runs a source is asked for while nothing is cached: the newest, and
+# two older ones to fall back on while it is still being published.
+FIRST_RUN_CANDIDATES = 3
 
 # The entry carries its coordinator in `runtime_data`, so anything that needs
 # one looks it up through the config-entry registry rather than a parallel
@@ -497,8 +502,12 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                 f"Dataset '{self.entry.data[CONF_DATASET]}' not offered by source"
             )
 
+        # With nothing cached yet (a first start, or a cache that just moved),
+        # ask for a few runs: the newest may still be publishing, and an older
+        # complete one beats an empty map until it is done.
+        want = 1 if self._current_run_filename is not None else FIRST_RUN_CANDIDATES
         try:
-            files = await self.source.async_list_files(dataset, max_keys=1)
+            files = await self.source.async_list_files(dataset, max_keys=want)
         except GribSourceAuthError as err:
             raise UpdateFailed(self._auth_failure(err)) from err
         except GribSourceError as err:
@@ -529,24 +538,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                         "New run detected for %s: %s", dataset.key, latest.filename
                     )
                     await self._async_migrate_legacy_storage()
-                    try:
-                        await self._process_new_run(dataset, latest.filename)
-                    except GribRunIncompleteError as err:
-                        # Normal for the first hours of a run's life: the centre
-                        # publishes lead time by lead time. Stay on the run we
-                        # have and look again at the next poll, rather than
-                        # writing an error the user can do nothing about at
-                        # every single run. With no run yet there is nothing to
-                        # stay on, and the entry would sit empty without saying
-                        # why -- so that one case is still reported.
-                        if self._current_run_filename is None:
-                            raise UpdateFailed(str(err)) from err
-                        _LOGGER.debug("%s", err)
-                    except GribSourceError as err:
-                        raise UpdateFailed(str(err)) from err
-                    else:
-                        self._current_run_filename = latest.filename
-                        await self.hass.async_add_executor_job(self._cleanup_old_runs)
+                    await self._async_take_newest_run(dataset, files)
         elif latest.filename != self._current_run_filename:
             _LOGGER.debug(
                 "Backup in progress; deferring new run %s until it finishes",
@@ -554,6 +546,38 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             )
 
         return {"run_filename": self._current_run_filename, "dataset": dataset.key}
+
+    async def _async_take_newest_run(
+        self, dataset: GribDatasetInfo, files: list[GribFileInfo]
+    ) -> None:
+        """Process the newest run; with nothing cached, fall back to an older one.
+
+        A run still publishing is normal for the first hours of its life: the
+        centre puts it out lead time by lead time. With a run in the cache the
+        entry stays on that one and looks again at the next poll, rather than
+        writing an error the user can do nothing about at every run. With
+        nothing cached there is nothing to stay on, so the next older run in
+        ``files`` is tried -- GFS to +168 h is complete only some five hours
+        after its run time, and an empty map for that long is worse than one a
+        run behind. Only when none of them is complete is it reported.
+        """
+        candidates = files if self._current_run_filename is None else files[:1]
+        for index, info in enumerate(candidates):
+            try:
+                await self._process_new_run(dataset, info.filename)
+            except GribRunIncompleteError as err:
+                if self._current_run_filename is not None:
+                    _LOGGER.debug("%s", err)
+                    return
+                if index + 1 == len(candidates):
+                    raise UpdateFailed(str(err)) from err
+                _LOGGER.debug("%s; taking the run before it for now", err)
+                continue
+            except GribSourceError as err:
+                raise UpdateFailed(str(err)) from err
+            self._current_run_filename = info.filename
+            await self.hass.async_add_executor_job(self._cleanup_old_runs)
+            return
 
     async def _process_new_run(self, dataset: GribDatasetInfo, filename: str) -> None:
         enabled_keys = set(enabled_parameter_keys(self.entry))

@@ -556,24 +556,29 @@ class NoaaSource(GribSource):
         order_by: str = "lastModified",
         sorting: str = "desc",
     ) -> list[GribFileInfo]:
-        """The newest run that has reached _PROBE_STEP, newest first.
+        """Up to ``max_keys`` runs that have reached _PROBE_STEP, newest first.
 
         Probed with a single grid cell, which is a couple of hundred bytes --
-        cheap enough to ask NOMADS at every poll.
+        cheap enough to ask NOMADS at every poll. The coordinator asks for one,
+        or for a few when it has nothing cached and may need an older complete
+        run while the newest is still being published.
         """
         model = _MODELS[dataset.key]
         now = datetime.now(UTC)
+        found: list[GribFileInfo] = []
         for back in range(0, _RUN_LOOKBACK_HOURS + 1, _RUN_INTERVAL_HOURS):
             run = _floor_run(now - timedelta(hours=back))
             if await self._has_step(model, run, _PROBE_STEP):
-                return [
+                found.append(
                     GribFileInfo(
                         filename=f"{run:%Y%m%d%H}",
                         size=0,
                         last_modified=run.isoformat(),
                     )
-                ]
-        return []
+                )
+                if len(found) >= max_keys:
+                    break
+        return found
 
     async def _has_step(self, model: _Model, run: datetime, step: int) -> bool:
         """Whether ``step`` of ``run`` is published, asked for one grid cell."""

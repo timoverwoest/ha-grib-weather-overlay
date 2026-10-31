@@ -100,8 +100,11 @@ async def test_the_newest_published_run_is_listed(monkeypatch) -> None:
     _freeze(monkeypatch, datetime(2026, 9, 22, 16, 40, tzinfo=UTC))
     session = _FakeSession({"2026092212": {_PROBE_STEP}, "2026092206": {_PROBE_STEP}})
     files = await NoaaSource(session).async_list_files(GFS)
-    assert [f.filename for f in files] == ["2026092212"]
+    assert [f.filename for f in files] == ["2026092212", "2026092206"]
     assert files[0].last_modified.startswith("2026-09-22T12:00")
+    # A poll with a run cached asks for one, and stops probing there.
+    newest = await NoaaSource(session).async_list_files(GFS, max_keys=1)
+    assert [f.filename for f in newest] == ["2026092212"]
 
 
 @pytest.mark.asyncio
