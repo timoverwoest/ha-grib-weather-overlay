@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
@@ -12,7 +13,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv, selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from . import labels
+from . import labels, storage_paths
 from .const import (
     CONF_ALIAS,
     CONF_API_KEY,
@@ -24,6 +25,7 @@ from .const import (
     CONF_PARAMETERS,
     CONF_RETAIN_RUNS,
     CONF_SOURCE,
+    CONF_STORAGE_APPLY_ALL,
     CONF_STORAGE_PATH,
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_FORECAST_HORIZON_HOURS,
@@ -181,6 +183,31 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
         datasets = await source.async_list_datasets()
         return next((d for d in datasets if d.key == data.get(CONF_DATASET)), None)
 
+    async def _storage_choices(self, current: str) -> list[selector.SelectOptionDict]:
+        """The network storage in Home Assistant, plus a typed-in path in use."""
+        choices = await storage_paths.async_network_storages(self.hass)
+        if current and current not in choices:
+            choices[current] = current
+        return [
+            selector.SelectOptionDict(value=value, label=label)
+            for value, label in choices.items()
+        ]
+
+    def _move_other_entries(self, storage_path: str) -> None:
+        """Give every other source the location chosen here (each then reloads)."""
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if entry.entry_id == self.config_entry.entry_id:
+                continue
+            current = entry.options.get(CONF_STORAGE_PATH) or ""
+            if current == storage_path:
+                continue
+            options = dict(entry.options)
+            if storage_path:
+                options[CONF_STORAGE_PATH] = storage_path
+            else:
+                options.pop(CONF_STORAGE_PATH, None)
+            self.hass.config_entries.async_update_entry(entry, options=options)
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -220,15 +247,26 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 options.pop(CONF_OBSERVATIONS_API_KEY, None)
             # Working-file location: strip, drop when blank so it falls back to
             # the default root outside /config.
+            apply_to_all = options.pop(CONF_STORAGE_APPLY_ALL, False)
             storage_path = (options.get(CONF_STORAGE_PATH) or "").strip()
             if storage_path:
                 options[CONF_STORAGE_PATH] = storage_path
             else:
                 options.pop(CONF_STORAGE_PATH, None)
-            return self.async_create_entry(title="", data=options)
+            if storage_path and not await self.hass.async_add_executor_job(
+                storage_paths.prepare_root, Path(storage_path)
+            ):
+                errors[CONF_STORAGE_PATH] = "storage_not_writable"
+            else:
+                if apply_to_all:
+                    self._move_other_entries(storage_path)
+                return self.async_create_entry(title="", data=options)
 
         options = self.config_entry.options
         data = self.config_entry.data
+        current_storage = options.get(
+            CONF_STORAGE_PATH, data.get(CONF_STORAGE_PATH, "")
+        )
         current_notification_key = options.get(
             CONF_NOTIFICATION_API_KEY, data.get(CONF_NOTIFICATION_API_KEY, "")
         )
@@ -307,15 +345,20 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 ): str,
                 # Where the GRIB working files go. Blank -> the default root
                 # outside every backup folder (/var/tmp/grib_overlay), which is
-                # what keeps Home Assistant backups small and reliable.
+                # what keeps Home Assistant backups small and reliable. The
+                # network storage added in Home Assistant is offered to pick;
+                # any other path can still be typed.
                 vol.Optional(
                     CONF_STORAGE_PATH,
-                    description={
-                        "suggested_value": options.get(
-                            CONF_STORAGE_PATH, data.get(CONF_STORAGE_PATH, "")
-                        )
-                    },
-                ): str,
+                    description={"suggested_value": current_storage},
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=await self._storage_choices(current_storage),
+                        custom_value=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(CONF_STORAGE_APPLY_ALL, default=False): bool,
                 # Optional per-parameter colour scales. One parameter per line:
                 # "<param_key>: <value>:<#hex>, <value>:<#hex>, ..." with values
                 # in the parameter's own unit (m/s, degC, hPa, mm, m).

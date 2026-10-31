@@ -49,6 +49,7 @@
           "observations_api_key": "Observations API key (optional)",
           "alias": "Short alias (optional)",
           "storage_path": "Working files folder (optional)",
+          "storage_apply_all": "Use this folder for all sources",
           "color_scales": "Custom colour scales (optional)"
         },
         "data_description": {
@@ -56,13 +57,15 @@
           "notification_api_key": "Optional: a separate KNMI **Notification Service** key (developer.dataplatform.knmi.nl → Notification Service) for instant push updates of new forecast runs. This is NOT your Open Data key: the broker refuses that with 'Not authorized'. Leave empty to rely on periodic polling — nothing else changes.",
           "observations_api_key": "Optional: a KNMI Open Data key with access to the '10-minute-in-situ-meteorological-observations' dataset, used to download station observations. Your HARMONIE key is often not authorised for it (KNMI returns 403). Leave empty to reuse the HARMONIE key.",
           "alias": "Optional short name shown as this source's compact label in the comparison and meteogram views, e.g. `KNMI NL`. Leave empty to derive it automatically from the source (same-source entries are disambiguated automatically).",
-          "storage_path": "Where the GRIB working files are kept (run archives, decoded members and the rendered cache). Leave empty for the default `/var/tmp/grib_overlay`: outside every folder a Home Assistant backup can include, and emptied when Home Assistant is updated (the runs are then simply downloaded again). Only set this for a reason, and never inside `/config` (or `/share` / `/media` if your backups include them): that makes backups large and can abort them when a working file is removed mid-backup.",
+          "storage_path": "Where the GRIB working files are kept (the GRIB records being decoded and the rendered cache). Pick a network storage you added under Settings → System → Storage (a NAS): the files then go to a `grib_overlay` folder on it, which spares the local SSD the writes and is never part of a backup. Or type a path, or leave empty for the default `/var/tmp/grib_overlay`: outside every backup, and emptied when Home Assistant is updated (the runs are then simply downloaded again). Never use a folder inside `/config` (or `/share` / `/media` if your backups include them). When the folder changes, the cache at the old place is removed and the current run is downloaded again.",
+          "storage_apply_all": "Give every GRIB Weather Overlay source the folder above, not just this one.",
           "color_scales": "One parameter per line, e.g. `wind_10m: 0:#2c7fb8, 8:#7fcdbb, 12:#ffffb2, 16:#fd8d3c, 24:#bd0026`. Values are in the parameter's own unit (m/s, °C, hPa, mm, m). Your parameters: {parameters}. Leave empty to use the built-in colours. Changing this re-renders the current run."
         }
       }
     },
     "error": {
-      "no_parameters_selected": "Select at least one parameter."
+      "no_parameters_selected": "Select at least one parameter.",
+      "storage_not_writable": "This folder cannot be used: it could not be created or is not writable. Check that the network storage is connected under Settings → System → Storage."
     }
   },
   "entity": {

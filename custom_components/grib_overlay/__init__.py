@@ -8,12 +8,14 @@ from pathlib import Path
 
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import IntegrationNotFound, async_get_integration
 
+from . import storage_paths
 from .const import DOMAIN
 from .coordinator import GribOverlayConfigEntry, GribOverlayCoordinator
 from .http import VIEWS
@@ -84,8 +86,27 @@ async def async_unload_entry(
 async def _async_reload_entry(
     hass: HomeAssistant, entry: GribOverlayConfigEntry
 ) -> None:
-    """Reload the entry so an options change takes effect."""
+    """Reload the entry so an options change takes effect.
+
+    When the change moved the working files (to a NAS, say), the cache left at
+    the old place is removed once the entry runs from the new one: nothing reads
+    it any more, and it can be gigabytes.
+    """
+    before = _storage_dir(entry)
     await hass.config_entries.async_reload(entry.entry_id)
+    after = _storage_dir(entry)
+    if before is not None and after is not None and before != after:
+        _LOGGER.info(
+            "%s: working files moved from %s to %s", entry.title, before, after
+        )
+        await hass.async_add_executor_job(storage_paths.drop_entry_dirs, before)
+
+
+def _storage_dir(entry: GribOverlayConfigEntry) -> Path | None:
+    """The folder a loaded entry keeps its runs in; None when it is not loaded."""
+    if entry.state is not ConfigEntryState.LOADED:
+        return None
+    return entry.runtime_data.storage_dir
 
 
 async def _async_register_frontend(hass: HomeAssistant) -> None:

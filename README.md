@@ -1068,7 +1068,8 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 | `notification_api_key` | tekst | (leeg) | **aparte** KNMI Notification Service-sleutel voor push. Niet je Open Data-sleutel: die weigert de broker met `Not authorized`. Leeg = alleen pollen, geen MQTT-poging |
 | `observations_api_key` | tekst | (leeg) | KNMI Open Data-sleutel mét toegang tot `10-minute-in-situ-meteorological-observations`, voor het **downloaden van stationswaarnemingen**. Je HARMONIE-sleutel heeft daar vaak géén toegang toe (KNMI geeft 403). Leeg = HARMONIE-sleutel hergebruiken |
 | `alias` | tekst | (leeg) | **korte naam** voor deze bron, getoond als compact label in de vergelijking en het meteogram (bv. `KNMI NL`). Leeg = automatisch afgeleid uit de bron (bronnen van dezelfde soort worden vanzelf onderscheiden) |
-| `storage_path` | tekst | (leeg) | **map voor de werkbestanden** (de GRIB-berichten die gedecodeerd worden, gerenderde cache). Leeg = `/var/tmp/grib_overlay`: in geen enkele back-up, en geleegd bij een HA-update (daarna wordt alles opnieuw gedownload). Zet dit **nooit** in een map die je back-up meeneemt (zie [Back-ups](#back-ups)) |
+| `storage_path` | keuzelijst of tekst | (leeg) | **map voor de werkbestanden** (de GRIB-berichten die gedecodeerd worden, gerenderde cache). Kies een **netwerkopslag (NAS)** uit Instellingen → Systeem → Opslag (dan in een map `grib_overlay` daarop), of typ een pad. Leeg = `/var/tmp/grib_overlay`: in geen enkele back-up, en geleegd bij een HA-update (daarna wordt alles opnieuw gedownload). Zet dit **nooit** in een map die je back-up meeneemt (zie [Back-ups](#back-ups)) |
+| `storage_apply_all` | vinkje | uit | wordt niet bewaard: geeft **alle** bronnen de map hierboven in één keer |
 | `color_scales` | meerregelige tekst | (leeg) | per regel: `parameter: waarde:#hex, waarde:#hex, …` (waarden in de **eigen eenheid** van de parameter) |
 
 ### Card-instellingen (Lovelace-YAML)
@@ -1487,9 +1488,27 @@ laat de cache staan.
 Waarom niet `/tmp`? Dat is binnen HAOS een *tmpfs* (RAM), en de gerenderde
 cache van een paar bronnen (honderden MB's) hoort niet in je geheugen.
 
-Met de optie **Map voor werkbestanden** kies je desgewenst zelf een pad (cache en
+Met de optie **Map voor werkbestanden** kies je desgewenst zelf een plek (cache en
 werkbestanden komen dan daar). Zet dat nooit binnen `/config`, en ook niet in
 `/share` of `/media` als je back-up die meeneemt.
+
+### Werkbestanden op een NAS
+
+Wil je de lokale SSD van je Home Assistant ontzien, zet de werkbestanden dan op
+een NAS:
+
+1. Voeg de netwerkshare toe onder **Instellingen → Systeem → Opslag →
+   Netwerkopslag toevoegen**, met gebruik *Share* (of *Media*).
+2. Open bij een bron van deze integratie **Configureren** en kies bij **Map voor
+   werkbestanden** je share uit de lijst. De bestanden komen in een map
+   `grib_overlay` op die share, niet los in de root.
+3. Vink **Deze map voor alle bronnen gebruiken** aan om alle bronnen in één keer
+   te verhuizen.
+
+Netwerkopslag gaat nooit mee in een back-up, dus dat blijft veilig. Na de
+verhuizing wordt de cache op de oude plek verwijderd en downloadt elke bron zijn
+huidige run opnieuw. Is de NAS onbereikbaar, dan meldt het formulier dat de map
+niet te gebruiken is.
 
 Extra's:
 
@@ -2728,7 +2747,8 @@ include `swell_direction` too, or the swell rows have no arrows.
 | `notification_api_key` | text | (empty) | **separate** KNMI Notification Service key for push. Not your Open Data key: the broker refuses that with `Not authorized`. Empty = polling only, no MQTT attempt |
 | `observations_api_key` | text | (empty) | KNMI Open Data key with access to `10-minute-in-situ-meteorological-observations`, for **downloading station observations**. Your HARMONIE key is often not authorised for it (KNMI returns 403). Empty = reuse the HARMONIE key |
 | `alias` | text | (empty) | **short name** for this source, shown as the compact label in the comparison and meteogram (e.g. `KNMI NL`). Empty = derived automatically from the source (same-source entries are disambiguated automatically) |
-| `storage_path` | text | (empty) | **folder for the working files** (the GRIB records being decoded, rendered cache). Empty = `/var/tmp/grib_overlay`: in no backup, and emptied by an HA update (everything is then downloaded again). **Never** point this into a folder your backup includes (see [Backups](#backups)) |
+| `storage_path` | list or text | (empty) | **folder for the working files** (the GRIB records being decoded, rendered cache). Pick a **network storage (NAS)** from Settings → System → Storage (then a `grib_overlay` folder on it), or type a path. Empty = `/var/tmp/grib_overlay`: in no backup, and emptied by an HA update (everything is then downloaded again). **Never** point this into a folder your backup includes (see [Backups](#backups)) |
+| `storage_apply_all` | checkbox | off | not stored: gives **every** source the folder above at once |
 | `color_scales` | multi-line text | (empty) | per line: `parameter: value:#hex, value:#hex, …` (values in the parameter's **own unit**) |
 
 ### Card settings (Lovelace YAML)
@@ -3138,9 +3158,24 @@ poll; until then the maps are empty. A normal restart keeps the cache.
 Why not `/tmp`? On HAOS that is a *tmpfs* (RAM), and the rendered cache of a few
 sources (hundreds of MB) does not belong in memory.
 
-The **Working files folder** option lets you pick your own path (cache and
+The **Working files folder** option lets you pick your own place (cache and
 working files then go there). Never point it inside `/config`, nor into `/share`
 or `/media` if your backup includes them.
+
+### Working files on a NAS
+
+To spare the local SSD of your Home Assistant, put the working files on a NAS:
+
+1. Add the network share under **Settings → System → Storage → Add network
+   storage**, with usage *Share* (or *Media*).
+2. On a source of this integration open **Configure** and pick your share from
+   the list under **Working files folder**. The files go into a `grib_overlay`
+   folder on that share, not loose in its root.
+3. Tick **Use this folder for all sources** to move every source at once.
+
+Network storage is never part of a backup, so this stays safe. After the move
+the cache at the old place is removed and every source downloads its current run
+again. If the NAS cannot be reached, the form says the folder cannot be used.
 
 Also:
 

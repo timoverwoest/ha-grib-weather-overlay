@@ -16,12 +16,15 @@ CONF_PARAMETERS = "parameters"
 # source (and disambiguates same-source entries automatically).
 CONF_ALIAS = "alias"
 
-# Optional override for where the GRIB working files (run archives, decoded
-# members, rendered PNG/JSON cache) are kept. Empty -> /var/tmp/grib_overlay,
+# Optional override for where the GRIB working files (the GRIB records being
+# decoded, rendered PNG/JSON cache) are kept. Empty -> /var/tmp/grib_overlay,
 # which no backup includes, else the system temp dir. Never put this inside
 # /config (or /share or /media when those are backed up): this integration's
 # file churn both bloats and breaks the backup's tar.
 CONF_STORAGE_PATH = "storage_path"
+# Not stored: a tick in the options form that gives every source the location
+# chosen there, so 18 sources need not be moved one form at a time.
+CONF_STORAGE_APPLY_ALL = "storage_apply_all"
 
 CONF_RETAIN_RUNS = "retain_runs"
 CONF_FORECAST_HORIZON_HOURS = "forecast_horizon_hours"

@@ -13,7 +13,10 @@ only did harm:
 Supervisor offers no way to exclude a directory (its only folder filter is for
 network mounts), so the lever is location. The root is picked once per entry:
 
-* an explicit ``storage_path`` option, when the user set one;
+* an explicit ``storage_path`` option, when the user set one -- typed in, or
+  picked from the network storage added under Settings > System > Storage, in
+  which case it is a ``grib_overlay`` folder on that share (a NAS spares the
+  local SSD the writes, and Supervisor leaves network storage out of backups);
 * otherwise ``/var/tmp/grib_overlay`` -- real disk inside the Home Assistant
   container, and in none of the folders a backup can include. It is wiped when
   the container is recreated (a core update, say), after which the next poll
@@ -29,11 +32,18 @@ Up to 0.25 the cache lived in ``/config/grib_overlay`` and from 0.26 to 0.34 in
 
 from __future__ import annotations
 
+import logging
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import shutil
 import tempfile
 
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.hassio import is_hassio
+
 from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 # First writable candidate wins.
 DEFAULT_BASES: tuple[str, ...] = ("/var/tmp",)
@@ -88,6 +98,53 @@ def raw_dir_for(entry_directory: Path) -> Path:
     ``storage_dir`` -- as the tests do -- moves the scratch space with it.
     """
     return entry_directory.parent / RAW_DIR_NAME / entry_directory.name
+
+
+def prepare_root(root: Path) -> bool:
+    """Blocking: create ``root`` if needed; whether this integration can write there."""
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError as err:
+        _LOGGER.warning("Cannot use %s for the working files: %s", root, err)
+        return False
+    return _is_writable_dir(root)
+
+
+def drop_entry_dirs(entry_directory: Path) -> None:
+    """Blocking: remove one entry's cache and scratch, after it moved elsewhere.
+
+    Only the two folders named after the entry -- never the root they are in,
+    which may be a share the user keeps other things on.
+    """
+    shutil.rmtree(entry_directory, ignore_errors=True)
+    shutil.rmtree(raw_dir_for(entry_directory), ignore_errors=True)
+
+
+async def async_network_storages(hass: HomeAssistant) -> dict[str, str]:
+    """Network storage that can hold the working files, as {root: label}.
+
+    The shares and media folders added under Settings > System > Storage, each
+    with a ``grib_overlay`` folder on it -- not its root, which the user may
+    keep other files on. Empty without Supervisor, or when it cannot be asked.
+    """
+    if not is_hassio(hass):
+        return {}
+    try:
+        # Imported here: the hassio component only exists on a Supervisor
+        # install, and only a recent Home Assistant has this client.
+        from homeassistant.components.hassio import get_supervisor_client  # noqa: PLC0415
+
+        info = await get_supervisor_client(hass).mounts.info()
+    except Exception as err:  # noqa: BLE001 -- an optional convenience; never fail the form over it
+        _LOGGER.debug("Could not list the network storage: %s", err)
+        return {}
+    return {
+        str(
+            PurePosixPath(mount.user_path) / DOMAIN
+        ): f"{mount.name} ({mount.user_path})"
+        for mount in info.mounts
+        if mount.user_path and mount.usage in ("share", "media") and not mount.read_only
+    }
 
 
 def overlaps(a: Path, b: Path) -> bool:

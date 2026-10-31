@@ -49,6 +49,7 @@
           "observations_api_key": "Observaties API-sleutel (optioneel)",
           "alias": "Korte alias (optioneel)",
           "storage_path": "Map voor werkbestanden (optioneel)",
+          "storage_apply_all": "Deze map voor alle bronnen gebruiken",
           "color_scales": "Eigen kleurschalen (optioneel)"
         },
         "data_description": {
@@ -56,13 +57,15 @@
           "notification_api_key": "Optioneel: een aparte KNMI **Notification Service**-sleutel (developer.dataplatform.knmi.nl → Notification Service) voor directe push-updates van nieuwe runs. Dit is NIET je Open Data-sleutel: die weigert de broker met 'Not authorized'. Leeg laten = periodiek pollen — verder verandert er niets.",
           "observations_api_key": "Optioneel: een KNMI Open Data-sleutel mét toegang tot de dataset '10-minute-in-situ-meteorological-observations', gebruikt om stationswaarnemingen te downloaden. Je HARMONIE-sleutel heeft daar vaak géén toegang toe (KNMI geeft 403). Leeg laten = de HARMONIE-sleutel hergebruiken.",
           "alias": "Optionele korte naam die als compact label van deze bron wordt getoond in de vergelijking en het meteogram, bv. `KNMI NL`. Leeg laten = automatisch afgeleid uit de bron (bronnen van dezelfde soort worden automatisch onderscheiden).",
-          "storage_path": "Waar de GRIB-werkbestanden staan (run-archieven, uitgepakte bestanden en de gerenderde cache). Laat leeg voor de standaard `/var/tmp/grib_overlay`: buiten elke map die een Home Assistant-back-up kan meenemen, en geleegd bij een update van Home Assistant (de runs worden dan gewoon opnieuw gedownload). Stel dit alleen in met een reden, en nooit binnen `/config` (of `/share` / `/media` als je back-ups die meenemen): dat maakt back-ups groot en kan ze laten mislukken als er tijdens de back-up een werkbestand verdwijnt.",
+          "storage_path": "Waar de GRIB-werkbestanden staan (de GRIB-berichten die gedecodeerd worden en de gerenderde cache). Kies een netwerkopslag die je hebt toegevoegd onder Instellingen → Systeem → Opslag (een NAS): de bestanden komen dan in een map `grib_overlay` daarop. Dat spaart de lokale SSD het schrijfwerk, en netwerkopslag gaat nooit mee in een back-up. Of typ zelf een pad, of laat leeg voor de standaard `/var/tmp/grib_overlay`: buiten elke back-up, en geleegd bij een update van Home Assistant (de runs worden dan gewoon opnieuw gedownload). Gebruik nooit een map binnen `/config` (of `/share` / `/media` als je back-ups die meenemen). Als de map verandert, wordt de cache op de oude plek verwijderd en de huidige run opnieuw gedownload.",
+          "storage_apply_all": "Geef elke bron van GRIB Weather Overlay de map hierboven, niet alleen deze.",
           "color_scales": "Eén parameter per regel, bv. `wind_10m: 0:#2c7fb8, 8:#7fcdbb, 12:#ffffb2, 16:#fd8d3c, 24:#bd0026`. Waarden staan in de eigen eenheid van de parameter (m/s, °C, hPa, mm, m). Jouw parameters: {parameters}. Leeg laten = de ingebouwde kleuren. Wijzigen rendert de huidige run opnieuw."
         }
       }
     },
     "error": {
-      "no_parameters_selected": "Kies minstens één parameter."
+      "no_parameters_selected": "Kies minstens één parameter.",
+      "storage_not_writable": "Deze map is niet te gebruiken: hij kon niet worden aangemaakt of is niet schrijfbaar. Controleer onder Instellingen → Systeem → Opslag of de netwerkopslag verbonden is."
     }
   },
   "entity": {
