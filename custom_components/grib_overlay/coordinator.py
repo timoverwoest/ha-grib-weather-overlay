@@ -20,7 +20,7 @@ import asyncio
 from collections.abc import Callable
 import contextlib
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 import json
 import logging
 from pathlib import Path
@@ -43,6 +43,7 @@ from .const import (
     CONF_COLOR_SCALES,
     CONF_DATASET,
     CONF_FORECAST_HORIZON_HOURS,
+    CONF_MIN_RUN_INTERVAL_HOURS,
     CONF_NOTIFICATION_API_KEY,
     CONF_PARAMETERS,
     CONF_RETAIN_RUNS,
@@ -50,6 +51,7 @@ from .const import (
     CONF_STORAGE_PATH,
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_FORECAST_HORIZON_HOURS,
+    DEFAULT_MIN_RUN_INTERVAL_HOURS,
     DEFAULT_RETAIN_RUNS,
     DEFAULT_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
@@ -246,6 +248,9 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         # in-flight run to finish its file churn before the archive is walked.
         self._process_lock = asyncio.Lock()
         self._current_run_filename: str | None = None
+        # When the run shown was taken (processed, or the cache it came from
+        # written), for the minimum time between runs.
+        self._run_taken_at: datetime | None = None
         # A rejected key fails every poll, so the warning is logged once and
         # re-armed after the next success rather than repeated every interval.
         self._auth_warned = False
@@ -521,6 +526,14 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             raise UpdateFailed("Source returned no files for this dataset")
 
         latest = files[0]
+        if latest.filename != self._current_run_filename and self._too_soon_for_a_run():
+            _LOGGER.debug(
+                "%s: run %s skipped, the one shown is younger than the minimum "
+                "time between runs",
+                self.entry.title,
+                latest.filename,
+            )
+            return {"run_filename": self._current_run_filename, "dataset": dataset.key}
         if self.hass.is_stopping:
             # A run takes minutes; starting one now just gets cancelled halfway
             # and leaves a scratch dir behind for the next start to clean up.
@@ -598,8 +611,32 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             except GribSourceError as err:
                 raise UpdateFailed(str(err)) from err
             self._current_run_filename = info.filename
+            self._run_taken_at = datetime.now(UTC)
             await self.hass.async_add_executor_job(self._cleanup_old_runs)
             return
+
+    def _too_soon_for_a_run(self) -> bool:
+        """Whether the run shown is younger than the minimum time between runs.
+
+        Never with nothing shown, and never with the option at 0. A poll lands
+        up to one interval after a run appears, so the wait is cut by half an
+        interval: three hours stays three hours rather than creeping to three
+        and a half, run after run.
+        """
+        hours = float(
+            self.entry.options.get(
+                CONF_MIN_RUN_INTERVAL_HOURS, DEFAULT_MIN_RUN_INTERVAL_HOURS
+            )
+            or 0
+        )
+        if (
+            not hours
+            or self._current_run_filename is None
+            or self._run_taken_at is None
+        ):
+            return False
+        due = self._run_taken_at + timedelta(hours=hours) - self.poll_interval / 2
+        return datetime.now(UTC) < due
 
     async def _process_new_run(self, dataset: GribDatasetInfo, filename: str) -> None:
         enabled_keys = set(enabled_parameter_keys(self.entry))
@@ -938,6 +975,14 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         """Blocking: restore the newest usable run and note what the cache costs."""
         restored = self._load_cached_frames()
         self.cache_bytes = self._measure_cache()
+        if restored[0]:
+            # The manifest is written last when a run is taken, so its age is
+            # the age of the run shown -- which a restart must not reset.
+            manifest = self.storage_dir / Path(restored[0]).stem / self.MANIFEST_NAME
+            with contextlib.suppress(OSError):
+                self._run_taken_at = datetime.fromtimestamp(
+                    manifest.stat().st_mtime, UTC
+                )
         return restored
 
     def _load_cached_frames(self) -> tuple[str | None, dict[str, list[Frame]]]:

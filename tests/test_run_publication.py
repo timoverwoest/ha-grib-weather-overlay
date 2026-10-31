@@ -10,6 +10,8 @@ already has and looks again at the next poll.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -19,8 +21,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.grib_overlay.const import (
     CONF_API_KEY,
     CONF_DATASET,
+    CONF_FORECAST_HORIZON_HOURS,
+    CONF_MIN_RUN_INTERVAL_HOURS,
     CONF_PARAMETERS,
+    CONF_RETAIN_RUNS,
     CONF_SOURCE,
+    CONF_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
 )
 from custom_components.grib_overlay.coordinator import GribOverlayCoordinator
@@ -156,3 +162,106 @@ async def test_when_no_listed_run_is_complete_it_says_why(hass) -> None:
         await coordinator._async_update_data()
     assert coordinator._process_new_run.await_count == 2
     assert coordinator._current_run_filename is None
+
+
+# -- the minimum time between runs ------------------------------------------
+# HARMONIE puts out a run every hour, 3.4 GB of it for Europe. With a minimum
+# of three hours only every third one is downloaded at all.
+
+
+def _with_minimum(hass, hours: int, *, taken_ago: timedelta | None):
+    coordinator = _coordinator(hass)
+    hass.config_entries.async_update_entry(
+        coordinator.entry, options={CONF_MIN_RUN_INTERVAL_HOURS: hours}
+    )
+    coordinator._process_new_run = AsyncMock()
+    coordinator._current_run_filename = "2026092506"
+    coordinator._run_taken_at = (
+        None if taken_ago is None else datetime.now(UTC) - taken_ago
+    )
+    return coordinator
+
+
+async def test_a_run_inside_the_minimum_is_not_even_downloaded(hass) -> None:
+    coordinator = _with_minimum(hass, 3, taken_ago=timedelta(hours=1))
+
+    data = await coordinator._async_update_data()
+
+    assert data["run_filename"] == "2026092506"
+    coordinator._process_new_run.assert_not_called()
+
+
+async def test_once_the_minimum_has_passed_the_newest_run_is_taken(hass) -> None:
+    # Half a poll interval early still counts: polls land up to one interval
+    # after a run appears, and three hours must not creep to three and a half.
+    coordinator = _with_minimum(
+        hass, 3, taken_ago=timedelta(hours=3) - timedelta(minutes=10)
+    )
+
+    data = await coordinator._async_update_data()
+
+    assert data["run_filename"] == "2026092512"
+    assert datetime.now(UTC) - coordinator._run_taken_at < timedelta(minutes=1)
+
+
+async def test_zero_takes_every_run(hass) -> None:
+    coordinator = _with_minimum(hass, 0, taken_ago=timedelta(minutes=5))
+
+    data = await coordinator._async_update_data()
+
+    assert data["run_filename"] == "2026092512"
+
+
+async def test_with_nothing_shown_no_run_is_skipped(hass) -> None:
+    coordinator = _with_minimum(hass, 3, taken_ago=timedelta(minutes=5))
+    coordinator._current_run_filename = None
+
+    data = await coordinator._async_update_data()
+
+    assert data["run_filename"] == "2026092512"
+
+
+async def test_a_restart_remembers_when_the_run_was_taken(hass, tmp_path) -> None:
+    coordinator = _coordinator(hass)
+    coordinator.storage_dir = tmp_path
+    manifest = tmp_path / "2026092506" / coordinator.MANIFEST_NAME
+    taken = datetime(2026, 9, 25, 7, 30, tzinfo=UTC)
+
+    def _make() -> None:
+        manifest.parent.mkdir()
+        manifest.write_text("{}")
+        os.utime(manifest, (taken.timestamp(), taken.timestamp()))
+
+    await hass.async_add_executor_job(_make)
+    coordinator._load_cached_frames = MagicMock(return_value=("2026092506", {}))
+
+    await hass.async_add_executor_job(coordinator._restore_from_disk)
+
+    assert coordinator._run_taken_at == taken
+
+
+async def test_the_minimum_is_set_in_the_options(hass) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_SOURCE: "knmi",
+            CONF_API_KEY: "k",
+            CONF_DATASET: "harmonie_arome_cy43_p3",
+            CONF_PARAMETERS: ["wind_10m"],
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_FORECAST_HORIZON_HOURS: 24,
+            CONF_RETAIN_RUNS: 2,
+            CONF_UPDATE_INTERVAL_MINUTES: 30,
+            CONF_MIN_RUN_INTERVAL_HOURS: 3,
+        },
+    )
+
+    assert result["type"] == "create_entry"
+    assert result["data"][CONF_MIN_RUN_INTERVAL_HOURS] == 3

@@ -29,6 +29,10 @@ CONF_STORAGE_APPLY_ALL = "storage_apply_all"
 CONF_RETAIN_RUNS = "retain_runs"
 CONF_FORECAST_HORIZON_HOURS = "forecast_horizon_hours"
 CONF_UPDATE_INTERVAL_MINUTES = "update_interval_minutes"
+# Take a new run only when the one shown was taken at least this many hours
+# ago; 0 takes every run. HARMONIE publishes one every hour (3.4 GB for Europe),
+# so 3 here downloads a third of that, with maps at most three hours older.
+CONF_MIN_RUN_INTERVAL_HOURS = "min_run_interval_hours"
 # Optional per-parameter custom colour scales, entered as text (one parameter per
 # line): "<param_key>: <value>:<#hex>, <value>:<#hex>, ...". Values are in the
 # parameter's own source unit (m/s, degC, hPa, mm, m). Baked into the PNG at
@@ -42,6 +46,7 @@ DEFAULT_FORECAST_HORIZON_HOURS = 24
 # and uses this when the source could not be listed to ask.
 MAX_FORECAST_HORIZON_HOURS = 384
 DEFAULT_UPDATE_INTERVAL_MINUTES = 30
+DEFAULT_MIN_RUN_INTERVAL_HOURS = 0
 
 HTTP_ENTRIES_PATH = "/api/grib_overlay/entries"
 HTTP_FRAMES_PATH = "/api/grib_overlay/frames"

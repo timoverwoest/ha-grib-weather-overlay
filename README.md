@@ -1065,6 +1065,7 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 | `forecast_horizon_hours` | getal (uren) | `24` | Van 1 tot wat de dataset zelf reikt (60 bij HARMONIE, 78 bij EWAM, 174 bij GWAM, 384 bij GFS). Maak je hem langer, dan wordt de huidige run direct opnieuw verwerkt; korter knipt de al verwerkte run in |
 | `retain_runs` | geheel getal | `2` | 1–10 |
 | `update_interval_minutes` | geheel getal (min) | `30` | 5–180 |
+| `min_run_interval_hours` | geheel getal (uur) | `0` | 0–24. Neem een nieuwe run pas als de getoonde minstens zoveel uur oud is; `0` = elke run. Bijvoorbeeld `3` bij HARMONIE (elk uur een run, Europa 3,4 GB): dan wordt maar elke derde run gedownload, met kaarten die hooguit drie uur ouder zijn |
 | `notification_api_key` | tekst | (leeg) | **aparte** KNMI Notification Service-sleutel voor push. Niet je Open Data-sleutel: die weigert de broker met `Not authorized`. Leeg = alleen pollen, geen MQTT-poging |
 | `observations_api_key` | tekst | (leeg) | KNMI Open Data-sleutel mét toegang tot `10-minute-in-situ-meteorological-observations`, voor het **downloaden van stationswaarnemingen**. Je HARMONIE-sleutel heeft daar vaak géén toegang toe (KNMI geeft 403). Leeg = HARMONIE-sleutel hergebruiken |
 | `alias` | tekst | (leeg) | **korte naam** voor deze bron, getoond als compact label in de vergelijking en het meteogram (bv. `KNMI NL`). Leeg = automatisch afgeleid uit de bron (bronnen van dezelfde soort worden vanzelf onderscheiden) |
@@ -2750,6 +2751,7 @@ include `swell_direction` too, or the swell rows have no arrows.
 | `forecast_horizon_hours` | number (hours) | `24` | From 1 to however far the dataset itself reaches (60 for HARMONIE, 78 for EWAM, 174 for GWAM, 384 for GFS). Making it longer processes the current run again right away; shorter cuts the run already processed |
 | `retain_runs` | integer | `2` | 1–10 |
 | `update_interval_minutes` | integer (min) | `30` | 5–180 |
+| `min_run_interval_hours` | integer (hours) | `0` | 0–24. Take a new run only once the one shown is at least this many hours old; `0` = every run. For example `3` for HARMONIE (a run every hour, 3.4 GB for Europe): only every third run is then downloaded, with maps at most three hours older |
 | `notification_api_key` | text | (empty) | **separate** KNMI Notification Service key for push. Not your Open Data key: the broker refuses that with `Not authorized`. Empty = polling only, no MQTT attempt |
 | `observations_api_key` | text | (empty) | KNMI Open Data key with access to `10-minute-in-situ-meteorological-observations`, for **downloading station observations**. Your HARMONIE key is often not authorised for it (KNMI returns 403). Empty = reuse the HARMONIE key |
 | `alias` | text | (empty) | **short name** for this source, shown as the compact label in the comparison and meteogram (e.g. `KNMI NL`). Empty = derived automatically from the source (same-source entries are disambiguated automatically) |

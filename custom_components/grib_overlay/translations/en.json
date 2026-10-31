@@ -45,6 +45,7 @@
           "forecast_horizon_hours": "Forecast horizon (hours)",
           "retain_runs": "Number of forecast runs to keep cached",
           "update_interval_minutes": "Polling interval (minutes)",
+          "min_run_interval_hours": "Minimum time between runs (hours)",
           "notification_api_key": "Notification Service API key (optional)",
           "observations_api_key": "Observations API key (optional)",
           "alias": "Short alias (optional)",
@@ -59,7 +60,8 @@
           "alias": "Optional short name shown as this source's compact label in the comparison and meteogram views, e.g. `KNMI NL`. Leave empty to derive it automatically from the source (same-source entries are disambiguated automatically).",
           "storage_path": "Where the GRIB working files are kept (the GRIB records being decoded and the rendered cache). Pick a network storage you added under Settings → System → Storage (a NAS): the files then go to a `grib_overlay` folder on it, which spares the local SSD the writes and is never part of a backup. Or type a path, or leave empty for the default `/var/tmp/grib_overlay`: outside every backup, and emptied when Home Assistant is updated (the runs are then simply downloaded again). Never use a folder inside `/config` (or `/share` / `/media` if your backups include them). When the folder changes, the cache at the old place is removed and the current run is downloaded again.",
           "storage_apply_all": "Give every GRIB Weather Overlay source the folder above, not just this one.",
-          "color_scales": "One parameter per line, e.g. `wind_10m: 0:#2c7fb8, 8:#7fcdbb, 12:#ffffb2, 16:#fd8d3c, 24:#bd0026`. Values are in the parameter's own unit (m/s, °C, hPa, mm, m). Your parameters: {parameters}. Leave empty to use the built-in colours. Changing this re-renders the current run."
+          "color_scales": "One parameter per line, e.g. `wind_10m: 0:#2c7fb8, 8:#7fcdbb, 12:#ffffb2, 16:#fd8d3c, 24:#bd0026`. Values are in the parameter's own unit (m/s, °C, hPa, mm, m). Your parameters: {parameters}. Leave empty to use the built-in colours. Changing this re-renders the current run.",
+          "min_run_interval_hours": "0 = take every new run. For example 3 for HARMONIE, which publishes a run every hour: only every third run is then downloaded, so about a third of the internet traffic and disk writes, with maps at most three hours older. A run is never skipped while nothing is shown yet."
         }
       }
     },

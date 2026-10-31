@@ -20,6 +20,7 @@ from .const import (
     CONF_COLOR_SCALES,
     CONF_DATASET,
     CONF_FORECAST_HORIZON_HOURS,
+    CONF_MIN_RUN_INTERVAL_HOURS,
     CONF_NOTIFICATION_API_KEY,
     CONF_OBSERVATIONS_API_KEY,
     CONF_PARAMETERS,
@@ -29,6 +30,7 @@ from .const import (
     CONF_STORAGE_PATH,
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_FORECAST_HORIZON_HOURS,
+    DEFAULT_MIN_RUN_INTERVAL_HOURS,
     DEFAULT_RETAIN_RUNS,
     DEFAULT_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
@@ -333,6 +335,12 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                         CONF_UPDATE_INTERVAL_MINUTES, DEFAULT_UPDATE_INTERVAL_MINUTES
                     ),
                 ): vol.All(vol.Coerce(int), vol.Range(min=5, max=180)),
+                vol.Required(
+                    CONF_MIN_RUN_INTERVAL_HOURS,
+                    default=options.get(
+                        CONF_MIN_RUN_INTERVAL_HOURS, DEFAULT_MIN_RUN_INTERVAL_HOURS
+                    ),
+                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=24)),
                 vol.Optional(
                     CONF_NOTIFICATION_API_KEY, default=current_notification_key
                 ): str,
