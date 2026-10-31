@@ -30,6 +30,18 @@ from custom_components.grib_overlay.const import (
     DOMAIN,
 )
 from custom_components.grib_overlay.coordinator import GribOverlayCoordinator
+from custom_components.grib_overlay.sources.knmi import KNOWN_DATASETS
+
+from .test_archive_stream import _archive
+
+DATASET = KNOWN_DATASETS[0]
+
+
+def _streams(data: bytes):
+    async def _iter(dataset, filename):
+        yield data
+
+    return _iter
 
 
 @pytest.fixture(autouse=True)
@@ -146,69 +158,41 @@ async def test_working_files_stay_out_of_the_config_folder(hass) -> None:
     assert coordinator.storage_dir not in coordinator._scratch_root.parents
 
 
-async def test_run_archive_is_downloaded_into_the_scratch_dir(hass, tmp_path) -> None:
-    """The ~850MB archive must land in scratch, never in /config or a run dir."""
+async def test_run_archive_is_unpacked_into_the_scratch_dir(hass, tmp_path) -> None:
+    """What reaches the disk of a run archive lands in scratch, never in /config."""
     entry = _make_entry(hass)
     hass.config_entries.async_update_entry(
         entry, options={CONF_STORAGE_PATH: str(tmp_path)}
     )
     coordinator = GribOverlayCoordinator(hass, entry)
-
-    destinations = []
-
-    async def _capture(dataset, filename, destination):
-        destinations.append(destination)
-        return destination
-
-    coordinator.source.async_download_file = _capture
-    coordinator._extract_archive = MagicMock(return_value=[])
+    coordinator.source.async_iter_file = _streams(_archive(3))
     coordinator._decode_members = MagicMock(return_value={"wind_10m": []})
 
-    dataset = SimpleNamespace(
-        key=entry.data[CONF_DATASET],
-        parameters=[SimpleNamespace(key="wind_10m")],
-        crop=None,
-    )
-    await coordinator._process_new_run(dataset, "HARM43_V1_P1_2026090219.tar")
+    await coordinator._process_new_run(DATASET, "HARM43_V1_P1_2026090219.tar")
 
-    (tar_path,) = destinations
-    assert coordinator._scratch_root in tar_path.parents
-    assert not str(tar_path).startswith(hass.config.path())
-    # And the members are extracted into scratch, not into the run directory.
-    _, extract_target = coordinator._extract_archive.call_args[0]
-    assert coordinator._scratch_root in extract_target.parents
+    member_paths = coordinator._decode_members.call_args[0][0]
+    assert member_paths
+    for path in member_paths:
+        assert coordinator._scratch_root in path.parents
+        assert not str(path).startswith(hass.config.path())
 
 
 async def test_scratch_dir_is_cleaned_up_even_when_decoding_fails(
     hass, tmp_path
 ) -> None:
-    """A leaked archive would cost ~850MB on real disk until the next restart."""
+    """Whatever a failed run left in scratch must not stay on disk until a restart."""
     entry = _make_entry(hass)
     hass.config_entries.async_update_entry(
         entry, options={CONF_STORAGE_PATH: str(tmp_path)}
     )
     coordinator = GribOverlayCoordinator(hass, entry)
-
-    raw_dir = coordinator._scratch_root / "run-A"
-
-    async def _download(dataset, filename, destination):
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(b"archive")
-        return destination
-
-    coordinator.source.async_download_file = _download
-    coordinator._extract_archive = MagicMock(return_value=[])
+    coordinator.source.async_iter_file = _streams(_archive(3))
     coordinator._decode_members = MagicMock(side_effect=OSError("corrupt member"))
 
-    dataset = SimpleNamespace(
-        key=entry.data[CONF_DATASET],
-        parameters=[SimpleNamespace(key="wind_10m")],
-        crop=None,
-    )
     with pytest.raises(OSError, match="corrupt member"):
-        await coordinator._process_new_run(dataset, "run-A.tar")
+        await coordinator._process_new_run(DATASET, "run-A.tar")
 
-    assert not raw_dir.exists()
+    assert not (coordinator._scratch_root / "run-A").exists()
 
 
 async def test_stale_scratch_is_dropped_on_setup(hass, tmp_path) -> None:

@@ -2,12 +2,12 @@
 
 On each poll: ask the source for the latest run's filename. If it changed
 since last time, download the run (a single archive containing one GRIB file
-per lead time for KNMI), extract only the lead times inside the configured
-forecast horizon, decode+render the enabled parameters for each of those,
-cache the resulting PNGs on disk, and drop everything else (the archive
-itself, members outside the horizon, and older runs beyond the retention
-count) to keep bandwidth/disk bounded -- a HARMONIE run archive is roughly
-850MB for ~49 lead times, far more than a home server should keep around.
+per lead time for KNMI), decode+render the enabled parameters for each lead
+time inside the configured forecast horizon, cache the resulting PNGs on disk,
+and drop older runs beyond the retention count. A HARMONIE archive is 0.9 GB
+(Netherlands) to 3.4 GB (Europe) every hour, so it is unpacked while it
+downloads and only the records that get decoded are ever written (see
+archive_stream).
 
 None of that lives in /config: Home Assistant tars the config folder for every
 backup, and this file churn both bloated and broke those backups. See
@@ -25,7 +25,6 @@ import json
 import logging
 from pathlib import Path
 import shutil
-import tarfile
 import threading
 import time
 import zlib
@@ -38,7 +37,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from . import field_grid, grib_decode, render, storage_paths, velocity
+from . import archive_stream, field_grid, grib_decode, render, storage_paths, velocity
 from .const import (
     CONF_API_KEY,
     CONF_COLOR_SCALES,
@@ -366,8 +365,8 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
 
         _process_new_run cleans its scratch dir in a finally, but a shutdown
         cancels that await too -- a restart in the middle of a download (or a
-        crash, or a power cut) therefore strands up to a full run archive on
-        disk. Nothing is in flight for this entry at setup, so the whole scratch
+        crash, or a power cut) therefore strands a run's worth of GRIB records
+        on disk. Nothing is in flight for this entry at setup, so the whole scratch
         tree can go.
         """
         await self.hass.async_add_executor_job(shutil.rmtree, self._scratch_root, True)
@@ -569,22 +568,22 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             CONF_FORECAST_HORIZON_HOURS, DEFAULT_FORECAST_HORIZON_HOURS
         )
         run_dir = self.storage_dir / Path(filename).stem
-        # Every raw byte -- the run archive and the GRIB members extracted from
-        # it -- is created and deleted inside this scratch dir, kept apart from
+        # Every raw byte -- the GRIB records kept from the run's members -- is
+        # created and deleted inside this scratch dir, kept apart from
         # the run directories (and well away from /config) so no backup can ever
         # trip over a file we are in the middle of removing.
         raw_dir = self._scratch_root / Path(filename).stem
 
         if getattr(self.source, "provides_archive", True):
-            # KNMI: one .tar archive (~850 MB) holds every lead-time member.
-            tar_path = raw_dir / filename
-            await self.source.async_download_file(dataset, filename, tar_path)
+            # KNMI: one .tar archive (0.9 to 3.4 GB) holds every lead-time
+            # member; only the records worth decoding reach the disk.
             try:
-                member_paths = await self.hass.async_add_executor_job(
-                    self._extract_archive, tar_path, raw_dir
+                member_paths = await self._async_stream_archive(
+                    dataset, filename, raw_dir, parameters, horizon_hours
                 )
-            finally:
-                await self.hass.async_add_executor_job(tar_path.unlink, True)
+            except BaseException:
+                await self.hass.async_add_executor_job(shutil.rmtree, raw_dir, True)
+                raise
         else:
             # DWD/BSH: individual per-parameter/per-lead-time GRIB files.
             try:
@@ -627,24 +626,43 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                 await self.hass.async_add_executor_job(shutil.rmtree, run_dir, True)
         finally:
             # Always drop the scratch copy, including when decoding blew up: it
-            # now sits on real disk (not a tmpfs that a reboot clears), so a
-            # leaked run archive would cost ~850MB until the next restart.
+            # sits on real disk (not a tmpfs that a reboot clears), so a leaked
+            # run would cost hundreds of MB until the next restart.
             # ignore_errors: a member may already be gone.
             await self.hass.async_add_executor_job(shutil.rmtree, raw_dir, True)
 
-    def _extract_archive(self, tar_path: Path, raw_dir: Path) -> list[Path]:
-        """Blocking: extract every regular member of a run archive into raw_dir."""
-        raw_dir.mkdir(parents=True, exist_ok=True)
-        member_paths: list[Path] = []
-        with tarfile.open(tar_path, "r") as tar:
-            for member in tar.getmembers():
-                if not member.isfile():
+    async def _async_stream_archive(
+        self,
+        dataset: GribDatasetInfo,
+        filename: str,
+        raw_dir: Path,
+        parameters: list[GribParameter],
+        horizon_hours: float,
+    ) -> list[Path]:
+        """Unpack a run archive while it downloads; see archive_stream.py."""
+        pipe = archive_stream.ChunkPipe()
+        reader = self.hass.async_add_executor_job(
+            archive_stream.unpack,
+            pipe,
+            raw_dir,
+            archive_stream.filters_for(parameters),
+            horizon_hours,
+        )
+        try:
+            async for chunk in self.source.async_iter_file(dataset, filename):
+                if pipe.try_feed(chunk):
                     continue
-                extracted_path = raw_dir / Path(member.name).name
-                with tar.extractfile(member) as src, extracted_path.open("wb") as dst:
-                    shutil.copyfileobj(src, dst)
-                member_paths.append(extracted_path)
-        return member_paths
+                if not await self.hass.async_add_executor_job(pipe.feed, chunk):
+                    break  # the reader stopped; awaiting it below says why
+            await self.hass.async_add_executor_job(pipe.end)
+        except BaseException:
+            # A failed or cancelled download: wake the reader, let it finish,
+            # and report the download's error rather than its truncated tar.
+            pipe.stopped.set()
+            with contextlib.suppress(Exception):
+                await reader
+            raise
+        return await reader
 
     def _decode_members(
         self,

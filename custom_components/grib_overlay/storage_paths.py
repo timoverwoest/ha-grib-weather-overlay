@@ -2,7 +2,7 @@
 
 Home Assistant backs up by tarring ``/config`` and, if the user asks, the
 ``share`` and ``media`` folders. This integration churns a lot of large files --
-run archives, extracted members and a rendered cache of a gigabyte or two once a
+the GRIB records being decoded and a rendered cache of a gigabyte or two once a
 few sources are configured -- and all of it can be fetched again. In a backup it
 only did harm:
 
@@ -21,7 +21,7 @@ network mounts), so the lever is location. The root is picked once per entry:
 * otherwise the system temp dir (other platforms, and tests).
 
 ``/tmp`` itself is a *tmpfs* (RAM) in the Home Assistant OS container, which is
-why it is not the default: an 850MB run archive does not belong in RAM.
+why it is not the default: a rendered cache of that size does not belong in RAM.
 
 Up to 0.25 the cache lived in ``/config/grib_overlay`` and from 0.26 to 0.34 in
 ``/share/grib_overlay``; the coordinator clears both on upgrade.
@@ -41,7 +41,7 @@ DEFAULT_BASES: tuple[str, ...] = ("/var/tmp",)
 # The default root of 0.26-0.34, cleared on upgrade (see the coordinator).
 LEGACY_SHARE_ROOT = Path("/share") / DOMAIN
 
-# Transient downloads (run archives, extracted GRIB members) live beside the
+# Transient downloads (the GRIB records being decoded) live beside the
 # per-entry directories rather than inside one, so the run-retention cleanup --
 # which walks the entry directory -- can never touch an in-flight download.
 RAW_DIR_NAME = ".raw"

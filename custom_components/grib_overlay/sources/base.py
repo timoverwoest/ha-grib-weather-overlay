@@ -9,7 +9,7 @@ projection, ...).
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 import re
@@ -151,7 +151,7 @@ class GribSource(ABC):
         """List available files (forecast runs) for a dataset, most recent first by default."""
 
     # True when async_list_files returns a single archive per run (KNMI .tar,
-    # downloaded via async_download_file and extracted by the coordinator).
+    # streamed via async_iter_file and unpacked on the fly by the coordinator).
     # False when the source instead delivers individual per-parameter GRIB files
     # for a run, materialised by async_download_run (DWD).
     provides_archive: bool = True
@@ -164,6 +164,16 @@ class GribSource(ABC):
 
         Only meaningful for archive sources (``provides_archive`` True).
         """
+
+    def async_iter_file(
+        self, dataset: GribDatasetInfo, filename: str
+    ) -> AsyncIterator[bytes]:
+        """Yield one archive's bytes as they arrive, without writing them anywhere.
+
+        Required for archive sources (``provides_archive`` True): this is how
+        the coordinator reads a run.
+        """
+        raise NotImplementedError
 
     async def async_download_run(
         self,

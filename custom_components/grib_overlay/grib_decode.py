@@ -131,10 +131,14 @@ def peek_valid_time(path: Path) -> tuple[datetime, datetime]:
     the configured forecast horizon before spending time decoding every
     configured parameter out of it.
     """
-    buf = path.read_bytes()
+    return times_of(path.read_bytes(), str(path))
+
+
+def times_of(buf: bytes, name: str = "member") -> tuple[datetime, datetime]:
+    """(valid_time, run_time) of a member already in memory; see peek_valid_time."""
     for message in _iter_messages(buf):
         return _message_times(message)
-    raise GribDecodeError(f"{path} contains no GRIB messages")
+    raise GribDecodeError(f"{name} contains no GRIB messages")
 
 
 def _empty_interval(message) -> bool:

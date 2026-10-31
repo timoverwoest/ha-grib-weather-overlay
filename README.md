@@ -276,9 +276,11 @@ gratis Open Data-sleutel aan op het
   de wind naar echt noord/oost. Groter gebied, dus meer download en meer
   rekentijd dan Nederland.
 
-Eén run is een tar-archief van ~850 MB, ook als je maar één parameter aanzet:
-er is geen API om losse lead times op te halen. Houd de voorspellingshorizon
-daarom niet hoger dan je nodig hebt.
+Eén run is een tar-archief van ~0,9 GB (Nederland) of ~3,4 GB (Europa), ook als
+je maar één parameter aanzet: er is geen API om losse lead times op te halen.
+Het archief wordt tijdens het downloaden uitgepakt; alleen de berichten van de
+ingeschakelde parameters binnen de voorspellingshorizon komen op schijf. Elke
+parameter en elk uur horizon minder scheelt dus schrijfwerk op je SSD.
 
 ```yaml
 type: custom:grib-overlay-card
@@ -1066,7 +1068,7 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 | `notification_api_key` | tekst | (leeg) | **aparte** KNMI Notification Service-sleutel voor push. Niet je Open Data-sleutel: die weigert de broker met `Not authorized`. Leeg = alleen pollen, geen MQTT-poging |
 | `observations_api_key` | tekst | (leeg) | KNMI Open Data-sleutel mét toegang tot `10-minute-in-situ-meteorological-observations`, voor het **downloaden van stationswaarnemingen**. Je HARMONIE-sleutel heeft daar vaak géén toegang toe (KNMI geeft 403). Leeg = HARMONIE-sleutel hergebruiken |
 | `alias` | tekst | (leeg) | **korte naam** voor deze bron, getoond als compact label in de vergelijking en het meteogram (bv. `KNMI NL`). Leeg = automatisch afgeleid uit de bron (bronnen van dezelfde soort worden vanzelf onderscheiden) |
-| `storage_path` | tekst | (leeg) | **map voor de werkbestanden** (run-archief, uitgepakte bestanden, gerenderde cache). Leeg = `/var/tmp/grib_overlay`: in geen enkele back-up, en geleegd bij een HA-update (daarna wordt alles opnieuw gedownload). Zet dit **nooit** in een map die je back-up meeneemt (zie [Back-ups](#back-ups)) |
+| `storage_path` | tekst | (leeg) | **map voor de werkbestanden** (de GRIB-berichten die gedecodeerd worden, gerenderde cache). Leeg = `/var/tmp/grib_overlay`: in geen enkele back-up, en geleegd bij een HA-update (daarna wordt alles opnieuw gedownload). Zet dit **nooit** in een map die je back-up meeneemt (zie [Back-ups](#back-ups)) |
 | `color_scales` | meerregelige tekst | (leeg) | per regel: `parameter: waarde:#hex, waarde:#hex, …` (waarden in de **eigen eenheid** van de parameter) |
 
 ### Card-instellingen (Lovelace-YAML)
@@ -1455,7 +1457,7 @@ Een taal toevoegen betekent: een blok bijzetten in `GRIB_TEXT`,
 ## Back-ups
 
 **De integratie schrijft niets meer in een map die een back-up kan meenemen.**
-Alle werkbestanden — run-archieven, uitgepakte GRIB-bestanden en de gerenderde
+Alle werkbestanden — de GRIB-berichten die gedecodeerd worden en de gerenderde
 PNG/JSON-cache — zijn opnieuw te downloaden en horen niet in een back-up:
 
 | Wat | Standaardlocatie |
@@ -1482,8 +1484,8 @@ aangemaakt en is `/var/tmp` leeg. De integratie downloadt dan bij de volgende
 poll gewoon alles opnieuw; tot die tijd zijn de kaarten leeg. Een gewone herstart
 laat de cache staan.
 
-Waarom niet `/tmp`? Dat is binnen HAOS een *tmpfs* (RAM), en een archief van
-~850 MB hoort niet in je geheugen.
+Waarom niet `/tmp`? Dat is binnen HAOS een *tmpfs* (RAM), en de gerenderde
+cache van een paar bronnen (honderden MB's) hoort niet in je geheugen.
 
 Met de optie **Map voor werkbestanden** kies je desgewenst zelf een pad (cache en
 werkbestanden komen dan daar). Zet dat nooit binnen `/config`, en ook niet in
@@ -1497,7 +1499,7 @@ Extra's:
   back-up loopt — en is je volgende back-up direct kleiner. Zie het `WARNING` in
   het logboek. Een map die je zelf als **Map voor werkbestanden** hebt ingesteld,
   blijft staan.
-- **Ruwe downloads apart.** Het archief en de uitgepakte bestanden staan naast de
+- **Ruwe downloads apart.** De GRIB-berichten die gedecodeerd worden staan naast de
   run-mappen, zodat het opruimen van oude runs nooit een lopende download raakt.
 - **Pauze tijdens de back-up.** Via HA's back-up-platform pauzeert de integratie
   het verwerken en opruimen van runs zolang een back-up loopt: een vangnet voor het
@@ -1505,11 +1507,13 @@ Extra's:
 
 ## Bekende beperkingen
 
-- Eén HARMONIE-forecast-run bij KNMI is een tar-archief van ~850MB (alle
-  lead times samen). Er is geen API om losse lead times te downloaden, dus
-  een **nieuwe** run kost die volledige download (een paar minuten); alleen de
-  lead times binnen de ingestelde voorspellingshorizon worden gedecodeerd en
-  als PNG bewaard, de rest wordt direct weer verwijderd. Zet de horizon niet
+- Eén HARMONIE-forecast-run bij KNMI is een tar-archief van ~0,9 GB (Nederland)
+  tot ~3,4 GB (Europa), alle lead times samen. Er is geen API om losse lead
+  times te downloaden, dus een **nieuwe** run kost die volledige download (een
+  paar minuten). Het archief zelf komt niet op schijf: het wordt tijdens het
+  downloaden uitgepakt, en alleen de ingeschakelde parameters van de lead times
+  binnen de voorspellingshorizon worden weggeschreven, gedecodeerd en als PNG
+  bewaard. Zet de horizon niet
   hoger dan nodig. Bij een **herstart** wordt de al-verwerkte run van schijf
   hergebruikt (geen nieuwe download), en de eventuele download van een nieuwere
   run gebeurt op de achtergrond — de integratie is meteen na de start
@@ -1941,9 +1945,11 @@ Data key at the
   geographic one while decoding — including turning the wind back to true
   north/east. A bigger area, so more download and more work than the Dutch one.
 
-One run is a ~850 MB tar archive even if you enable a single parameter: there is
-no API for individual lead times. Keep the forecast horizon no higher than you
-need.
+One run is a tar archive of ~0.9 GB (Netherlands) or ~3.4 GB (Europe) even if
+you enable a single parameter: there is no API for individual lead times. The
+archive is unpacked while it downloads; only the records of the enabled
+parameters within the forecast horizon reach the disk. Every parameter and every
+hour of horizon less saves writes on your SSD.
 
 ```yaml
 type: custom:grib-overlay-card
@@ -2722,7 +2728,7 @@ include `swell_direction` too, or the swell rows have no arrows.
 | `notification_api_key` | text | (empty) | **separate** KNMI Notification Service key for push. Not your Open Data key: the broker refuses that with `Not authorized`. Empty = polling only, no MQTT attempt |
 | `observations_api_key` | text | (empty) | KNMI Open Data key with access to `10-minute-in-situ-meteorological-observations`, for **downloading station observations**. Your HARMONIE key is often not authorised for it (KNMI returns 403). Empty = reuse the HARMONIE key |
 | `alias` | text | (empty) | **short name** for this source, shown as the compact label in the comparison and meteogram (e.g. `KNMI NL`). Empty = derived automatically from the source (same-source entries are disambiguated automatically) |
-| `storage_path` | text | (empty) | **folder for the working files** (run archive, extracted files, rendered cache). Empty = `/var/tmp/grib_overlay`: in no backup, and emptied by an HA update (everything is then downloaded again). **Never** point this into a folder your backup includes (see [Backups](#backups)) |
+| `storage_path` | text | (empty) | **folder for the working files** (the GRIB records being decoded, rendered cache). Empty = `/var/tmp/grib_overlay`: in no backup, and emptied by an HA update (everything is then downloaded again). **Never** point this into a folder your backup includes (see [Backups](#backups)) |
 | `color_scales` | multi-line text | (empty) | per line: `parameter: value:#hex, value:#hex, …` (values in the parameter's **own unit**) |
 
 ### Card settings (Lovelace YAML)
@@ -3103,7 +3109,7 @@ Adding a language means: a block in `GRIB_TEXT`, `GRIB_PARAM_NAMES`,
 ## Backups
 
 **The integration writes nothing into a folder a backup can include.** All
-working files — run archives, extracted GRIB files and the rendered PNG/JSON
+working files — the GRIB records being decoded and the rendered PNG/JSON
 cache — can be downloaded again and don't belong in a backup:
 
 | What | Default location |
@@ -3129,8 +3135,8 @@ and it is in no backup folder.
 `/var/tmp`. The integration then simply downloads everything again on the next
 poll; until then the maps are empty. A normal restart keeps the cache.
 
-Why not `/tmp`? On HAOS that is a *tmpfs* (RAM), and a ~850MB archive does not
-belong in memory.
+Why not `/tmp`? On HAOS that is a *tmpfs* (RAM), and the rendered cache of a few
+sources (hundreds of MB) does not belong in memory.
 
 The **Working files folder** option lets you pick your own path (cache and
 working files then go there). Never point it inside `/config`, nor into `/share`
@@ -3144,7 +3150,7 @@ Also:
   backup is running — and your next backup is smaller straight away. Look for the
   `WARNING` in the log. A folder you set yourself as **Working files folder**
   stays.
-- **Raw downloads kept apart.** The archive and the extracted files live beside
+- **Raw downloads kept apart.** The GRIB records being decoded live beside
   the run directories, so cleaning up old runs never touches an in-flight
   download.
 - **Pause during the backup.** Via HA's backup platform the integration pauses
@@ -3154,11 +3160,12 @@ Also:
 
 ## Known limitations
 
-- One HARMONIE forecast run from KNMI is a tar archive of ~850MB (all lead times
-  together). There is no API to download individual lead times, so a **new** run
-  costs that full download (a few minutes); only the lead times within the
-  configured forecast horizon are decoded and kept as PNG, the rest is deleted
-  again immediately. Do not set the horizon higher than needed. On a **restart**
+- One HARMONIE forecast run from KNMI is a tar archive of ~0.9 GB (Netherlands)
+  to ~3.4 GB (Europe), all lead times together. There is no API to download
+  individual lead times, so a **new** run costs that full download (a few
+  minutes). The archive itself never reaches the disk: it is unpacked while it
+  downloads, and only the enabled parameters of the lead times within the
+  forecast horizon are written, decoded and kept as PNG. Do not set the horizon higher than needed. On a **restart**
   the already-processed run is reused from disk (no new download), and any download
   of a newer run happens in the background — the integration is available
   immediately after start with the already-cached images.

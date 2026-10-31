@@ -39,7 +39,7 @@ log it once.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 import functools
 import json
 import logging
@@ -346,33 +346,43 @@ class KnmiSource(GribSource):
         data = await self._request(url)
         return data["temporaryDownloadUrl"]
 
-    async def async_download_file(
-        self, dataset: GribDatasetInfo, filename: str, destination: Path
-    ) -> Path:
-        """Download one run archive (a ~850 MB .tar) to ``destination``."""
+    async def async_iter_file(
+        self, dataset: GribDatasetInfo, filename: str
+    ) -> AsyncIterator[bytes]:
+        """Yield one run archive (0.9 to 3.4 GB) a megabyte at a time, as it arrives."""
         download_url = await self.async_get_download_url(dataset, filename)
-        loop = asyncio.get_running_loop()
-        # A HARMONIE run is ~850MB; the streaming download is async, but the
-        # filesystem writes are blocking, so run mkdir/open/write/close in the
-        # executor to keep them off the event loop.
-        await loop.run_in_executor(
-            None,
-            functools.partial(destination.parent.mkdir, parents=True, exist_ok=True),
-        )
         try:
             async with self._session.get(download_url) as resp:
                 if resp.status >= 400:
                     raise GribSourceError(
                         f"Downloading {filename} failed with HTTP {resp.status}"
                     )
-                fh = await loop.run_in_executor(None, destination.open, "wb")
-                try:
-                    async for chunk in resp.content.iter_chunked(1024 * 1024):
-                        await loop.run_in_executor(None, fh.write, chunk)
-                finally:
-                    await loop.run_in_executor(None, fh.close)
+                async for chunk in resp.content.iter_chunked(1024 * 1024):
+                    yield chunk
         except aiohttp.ClientError as err:
             raise GribSourceError(f"Downloading {filename} failed: {err}") from err
+
+    async def async_download_file(
+        self, dataset: GribDatasetInfo, filename: str, destination: Path
+    ) -> Path:
+        """Download one run archive whole to ``destination`` (dev tools only).
+
+        The coordinator streams the archive instead (archive_stream.py), so the
+        integration itself never writes one to disk.
+        """
+        loop = asyncio.get_running_loop()
+        # The download is async, but the filesystem writes are blocking, so
+        # run mkdir/open/write/close in the executor to keep them off the loop.
+        await loop.run_in_executor(
+            None,
+            functools.partial(destination.parent.mkdir, parents=True, exist_ok=True),
+        )
+        fh = await loop.run_in_executor(None, destination.open, "wb")
+        try:
+            async for chunk in self.async_iter_file(dataset, filename):
+                await loop.run_in_executor(None, fh.write, chunk)
+        finally:
+            await loop.run_in_executor(None, fh.close)
         return destination
 
     async def async_start_notifications(

@@ -98,14 +98,14 @@ class Grib1Message:
         Keys are the raw GRIB1 numeric field names used by sources/knmi.py:
         indicatorOfParameter / indicatorOfTypeOfLevel / level.
         """
-        mapping = {
-            "indicatorOfParameter": self.indicator_of_parameter,
-            "indicatorOfTypeOfLevel": self.indicator_of_type_of_level,
-            "level": self.level,
-            "table2Version": self.table2_version,
-            "centre": self.centre,
-        }
-        return all(mapping.get(key) == expected for key, expected in filt.items())
+        keys = _filter_keys(
+            self.table2_version,
+            self.centre,
+            self.indicator_of_parameter,
+            self.indicator_of_type_of_level,
+            self.level,
+        )
+        return _matches(keys, filt)
 
 
 def _u(b: bytes) -> int:
@@ -177,6 +177,48 @@ def iter_records(buf: bytes):
         data_time = pds[15] * 100 + pds[16]
         yield msg, data_date, data_time
         pos = idx + total_len
+
+
+def select_records(buf: bytes, filters: list[dict]) -> bytes:
+    """The GRIB1 records in ``buf`` that match any of ``filters``, concatenated.
+
+    Matched on the PDS alone, nothing unpacked: a KNMI lead-time member holds
+    every parameter of the model, and this cuts it down to the few a user
+    switched on before any of it is written to disk.
+    """
+    kept = []
+    pos = 0
+    while True:
+        idx = buf.find(b"GRIB", pos)
+        if idx < 0:
+            break
+        total_len = _u(buf[idx + 4 : idx + 7])
+        edition = buf[idx + 7]
+        if edition != 1 or total_len <= 0 or idx + total_len > len(buf):
+            break
+        pds = buf[idx + 8 : idx + 8 + _u(buf[idx + 8 : idx + 11])]
+        keys = _filter_keys(pds[3], pds[4], pds[8], pds[9], _u(pds[10:12]))
+        if any(_matches(keys, filt) for filt in filters):
+            kept.append(buf[idx : idx + total_len])
+        pos = idx + total_len
+    return b"".join(kept)
+
+
+def _filter_keys(
+    table2_version: int, centre: int, parameter: int, type_of_level: int, level: int
+) -> dict[str, int]:
+    """The PDS fields a source's grib_filter can name, under the names it uses."""
+    return {
+        "indicatorOfParameter": parameter,
+        "indicatorOfTypeOfLevel": type_of_level,
+        "level": level,
+        "table2Version": table2_version,
+        "centre": centre,
+    }
+
+
+def _matches(keys: dict[str, int], filt: dict) -> bool:
+    return all(keys.get(key) == expected for key, expected in filt.items())
 
 
 def _parse_message(msg: bytes) -> Grib1Message:
