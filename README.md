@@ -1065,7 +1065,7 @@ dan ook `swell_direction` mee, anders hebben de deining-rijen geen pijlen.
 | `forecast_horizon_hours` | getal (uren) | `24` | Van 1 tot wat de dataset zelf reikt (60 bij HARMONIE, 78 bij EWAM, 174 bij GWAM, 384 bij GFS). Maak je hem langer, dan wordt de huidige run direct opnieuw verwerkt; korter knipt de al verwerkte run in |
 | `retain_runs` | geheel getal | `2` | 1–10 |
 | `update_interval_minutes` | geheel getal (min) | `30` | 5–180 |
-| `min_run_interval_hours` | geheel getal (uur) | `0` | 0–24. Neem een nieuwe run pas als de getoonde minstens zoveel uur oud is; `0` = elke run. Bijvoorbeeld `3` bij HARMONIE (elk uur een run, Europa 3,4 GB): dan wordt maar elke derde run gedownload, met kaarten die hooguit drie uur ouder zijn |
+| `min_run_interval_hours` | geheel getal (uur) | `0` | 0–24. Neem een nieuwe run pas als de getoonde minstens zoveel uur oud is; `0` = elke run. Bijvoorbeeld `3` bij HARMONIE (elk uur een run, Europa 3,4 GB): dan wordt maar elke derde run gedownload. **Minder nauwkeurig voor de komende uren**, en de kaarten reiken tot drie uur minder ver vooruit; zie [Belasting van je Home Assistant beperken](#belasting-van-je-home-assistant-beperken) |
 | `notification_api_key` | tekst | (leeg) | **aparte** KNMI Notification Service-sleutel voor push. Niet je Open Data-sleutel: die weigert de broker met `Not authorized`. Leeg = alleen pollen, geen MQTT-poging |
 | `observations_api_key` | tekst | (leeg) | KNMI Open Data-sleutel mét toegang tot `10-minute-in-situ-meteorological-observations`, voor het **downloaden van stationswaarnemingen**. Je HARMONIE-sleutel heeft daar vaak géén toegang toe (KNMI geeft 403). Leeg = HARMONIE-sleutel hergebruiken |
 | `alias` | tekst | (leeg) | **korte naam** voor deze bron, getoond als compact label in de vergelijking en het meteogram (bv. `KNMI NL`). Leeg = automatisch afgeleid uit de bron (bronnen van dezelfde soort worden vanzelf onderscheiden) |
@@ -1492,6 +1492,31 @@ cache van een paar bronnen (honderden MB's) hoort niet in je geheugen.
 Met de optie **Map voor werkbestanden** kies je desgewenst zelf een plek (cache en
 werkbestanden komen dan daar). Zet dat nooit binnen `/config`, en ook niet in
 `/share` of `/media` als je back-up die meeneemt.
+
+### Belasting van je Home Assistant beperken
+
+Elke bron downloadt, decodeert en rendert zijn runs, en met een handvol bronnen
+tikt dat aan. Dit zijn de knoppen, met wat ze kosten:
+
+| Maatregel | Wat het scheelt | Wat het kost |
+| --- | --- | --- |
+| **Minder parameters** aanzetten | Schrijfwerk, rekentijd en cache, evenredig | Niets, voor wat je toch niet bekijkt |
+| **Kortere voorspellingshorizon** | Schrijfwerk, rekentijd en cache; bij KNMI niet de download (het archief is altijd compleet) | Minder ver vooruit kunnen kijken |
+| **Werkbestanden op een NAS** (zie hieronder) | Vrijwel al het schrijfwerk op de SSD van je Home Assistant | Niets aan de kaarten; wel netwerkverkeer naar de NAS |
+| **Minimale tijd tussen runs** | Download, schrijfwerk en rekentijd: met `3` bij HARMONIE een derde (Europa ~80 → ~27 GB per dag) | **Nauwkeurigheid voor de komende uren** |
+
+Over die laatste: met `3` toont de kaart een verwachting die tot drie uur ouder
+is. Voor de komende uren kan zo'n run een bui, een windomslag of de timing van een
+front een uur verkeerd hebben; juist daarvoor draait HARMONIE elk uur. Verder
+vooruit, vanaf zo'n zes uur, is het verschil klein. De horizon telt vanaf de
+runtijd, dus de kaarten reiken dan ook tot drie uur minder ver vooruit: verhoog de
+horizon met evenveel om hetzelfde bereik te houden.
+
+Gebruik je een bron vooral voor de komende uren (bijvoorbeeld HARMONIE Nederland
+op het water), laat die dan op `0`. Een bron voor de grote lijnen en verder
+vooruit (bijvoorbeeld HARMONIE Europa, de grootste download) kan op `3` zonder dat
+je er veel van merkt. Bronnen die maar een paar keer per dag een run publiceren
+(GFS, DWD, DMI, RWS, MET Norway) hebben weinig aan deze optie.
 
 ### Werkbestanden op een NAS
 
@@ -2751,7 +2776,7 @@ include `swell_direction` too, or the swell rows have no arrows.
 | `forecast_horizon_hours` | number (hours) | `24` | From 1 to however far the dataset itself reaches (60 for HARMONIE, 78 for EWAM, 174 for GWAM, 384 for GFS). Making it longer processes the current run again right away; shorter cuts the run already processed |
 | `retain_runs` | integer | `2` | 1–10 |
 | `update_interval_minutes` | integer (min) | `30` | 5–180 |
-| `min_run_interval_hours` | integer (hours) | `0` | 0–24. Take a new run only once the one shown is at least this many hours old; `0` = every run. For example `3` for HARMONIE (a run every hour, 3.4 GB for Europe): only every third run is then downloaded, with maps at most three hours older |
+| `min_run_interval_hours` | integer (hours) | `0` | 0–24. Take a new run only once the one shown is at least this many hours old; `0` = every run. For example `3` for HARMONIE (a run every hour, 3.4 GB for Europe): only every third run is then downloaded. **Less accurate for the coming hours**, and the maps reach up to three hours less far ahead; see [Keeping the load on Home Assistant down](#keeping-the-load-on-home-assistant-down) |
 | `notification_api_key` | text | (empty) | **separate** KNMI Notification Service key for push. Not your Open Data key: the broker refuses that with `Not authorized`. Empty = polling only, no MQTT attempt |
 | `observations_api_key` | text | (empty) | KNMI Open Data key with access to `10-minute-in-situ-meteorological-observations`, for **downloading station observations**. Your HARMONIE key is often not authorised for it (KNMI returns 403). Empty = reuse the HARMONIE key |
 | `alias` | text | (empty) | **short name** for this source, shown as the compact label in the comparison and meteogram (e.g. `KNMI NL`). Empty = derived automatically from the source (same-source entries are disambiguated automatically) |
@@ -3169,6 +3194,31 @@ sources (hundreds of MB) does not belong in memory.
 The **Working files folder** option lets you pick your own place (cache and
 working files then go there). Never point it inside `/config`, nor into `/share`
 or `/media` if your backup includes them.
+
+### Keeping the load on Home Assistant down
+
+Every source downloads, decodes and renders its runs, and with a handful of
+sources that adds up. These are the levers, with what they cost:
+
+| Measure | What it saves | What it costs |
+| --- | --- | --- |
+| **Fewer parameters** enabled | Writes, processing time and cache, in proportion | Nothing, for what you don't look at anyway |
+| **Shorter forecast horizon** | Writes, processing time and cache; for KNMI not the download (the archive is always complete) | Seeing less far ahead |
+| **Working files on a NAS** (see below) | Nearly all writes on your Home Assistant's SSD | Nothing on the maps; network traffic to the NAS instead |
+| **Minimum time between runs** | Download, writes and processing time: with `3` for HARMONIE a third (Europe ~80 → ~27 GB a day) | **Accuracy for the coming hours** |
+
+About that last one: with `3` the map shows a forecast up to three hours older.
+For the coming hours such a run can have a shower, a wind shift or the timing of a
+front off by about an hour; that is exactly why HARMONIE runs every hour. Further
+ahead, from roughly six hours, the difference is small. The horizon counts from
+the run time, so the maps then also reach up to three hours less far ahead: raise
+the horizon by that much to keep the same reach.
+
+If you use a source mainly for the coming hours (HARMONIE Netherlands on the
+water, say), keep it at `0`. A source for the bigger picture and further ahead
+(HARMONIE Europe, say, the largest download) can be set to `3` without much
+difference. Sources that publish only a few runs a day (GFS, DWD, DMI, RWS, MET
+Norway) gain little from this option.
 
 ### Working files on a NAS
 
