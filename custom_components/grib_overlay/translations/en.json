@@ -65,7 +65,8 @@
     },
     "error": {
       "no_parameters_selected": "Select at least one parameter.",
-      "storage_not_writable": "This folder cannot be used: it could not be created or is not writable. Check that the network storage is connected under Settings → System → Storage."
+      "storage_not_writable": "This folder cannot be used: it could not be created or is not writable. Check that the network storage is connected under Settings → System → Storage.",
+      "storage_not_mounted": "This network storage is not connected right now, so the files would end up on the local disk instead. Check it under Settings → System → Storage and try again."
     }
   },
   "entity": {

@@ -1507,8 +1507,14 @@ een NAS:
 
 Netwerkopslag gaat nooit mee in een back-up, dus dat blijft veilig. Na de
 verhuizing wordt de cache op de oude plek verwijderd en downloadt elke bron zijn
-huidige run opnieuw. Is de NAS onbereikbaar, dan meldt het formulier dat de map
-niet te gebruiken is.
+huidige run opnieuw.
+
+Staat de NAS uit, is hij aan het updaten of valt de koppeling weg, dan blijft er
+op `/share/<naam>` een gewone lege map op de lokale schijf achter, en die neemt
+alles aan. Daarom downloadt de integratie dan niets: de bron meldt dat de
+netwerkopslag niet gekoppeld is, de kaarten houden de run die ze hebben, en zodra
+de NAS terug is gaat het vanzelf verder. Het formulier weigert om dezelfde reden
+een share die op dat moment niet gekoppeld is.
 
 Extra's:
 
@@ -3175,7 +3181,14 @@ To spare the local SSD of your Home Assistant, put the working files on a NAS:
 
 Network storage is never part of a backup, so this stays safe. After the move
 the cache at the old place is removed and every source downloads its current run
-again. If the NAS cannot be reached, the form says the folder cannot be used.
+again.
+
+When the NAS is off, updating or loses its connection, what is left at
+`/share/<name>` is an ordinary empty folder on the local disk, and it takes
+everything. So the integration downloads nothing then: the source reports that
+the network storage is not connected, the cards keep the run they have, and it
+carries on by itself once the NAS is back. For the same reason the form refuses a
+share that is not connected at that moment.
 
 Also:
 

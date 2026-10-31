@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import gzip
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.grib_overlay import (
@@ -31,9 +32,11 @@ from custom_components.grib_overlay.const import (
     CONF_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
 )
+from custom_components.grib_overlay.coordinator import GribOverlayCoordinator
 from custom_components.grib_overlay.http import _read_for_transfer
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 NAS = {"/share/nas_data/grib_overlay": "nas_data (/share/nas_data)"}
 FORM = {
@@ -143,12 +146,20 @@ async def test_a_folder_that_cannot_be_written_is_refused(
     assert CONF_STORAGE_PATH not in entry.options
 
 
-def _mount(name: str, usage: str, *, read_only: bool = False, path: str | None = ""):
+def _mount(
+    name: str,
+    usage: str,
+    *,
+    read_only: bool = False,
+    path: str | None = "",
+    state: str = "active",
+):
     return SimpleNamespace(
         name=name,
         usage=usage,
         read_only=read_only,
         user_path=f"/{usage}/{name}" if path == "" else path,
+        state=state,
     )
 
 
@@ -266,3 +277,150 @@ def test_a_gzipped_grid_goes_out_as_it_is(tmp_path: Path) -> None:
     assert (json.loads(body), encoding) == ({"nx": 1}, None)
     # And nothing extra was written beside it.
     assert sorted(p.name for p in tmp_path.iterdir()) == ["f.field.json.gz"]
+
+
+# -- a NAS that is not there -------------------------------------------------
+# When the NAS is off, updating or shutting down, what is left at
+# /share/<name> is an empty folder on the local disk that takes every write.
+# Writing there would put the gigabytes back on the SSD, in a backed-up folder.
+
+NAS_MOUNT = storage_paths.NetworkMount(
+    name="nas_data",
+    path=PurePosixPath("/share/nas_data"),
+    usage="share",
+    read_only=False,
+    active=True,
+)
+
+
+def _supervisor_with(*mounts):
+    client = MagicMock()
+    client.mounts.info = AsyncMock(return_value=SimpleNamespace(mounts=list(mounts)))
+    return (
+        patch.object(storage_paths, "is_hassio", return_value=True),
+        patch(
+            "homeassistant.components.hassio.get_supervisor_client",
+            return_value=client,
+        ),
+    )
+
+
+async def test_the_mount_holding_a_folder_is_found(hass: HomeAssistant) -> None:
+    hassio, client = _supervisor_with(
+        _mount("nas_data", "share", state="failed"), _mount("films", "media")
+    )
+    with hassio, client:
+        mount = await storage_paths.async_mount_holding(
+            hass, Path("/share/nas_data/grib_overlay/01ENTRY")
+        )
+        local = await storage_paths.async_mount_holding(
+            hass, Path("/var/tmp/grib_overlay/01ENTRY")
+        )
+        lookalike = await storage_paths.async_mount_holding(
+            hass, Path("/share/nas_data_old/grib_overlay")
+        )
+
+    assert (mount.name, mount.active) == ("nas_data", False)
+    assert local is None
+    assert lookalike is None
+
+
+def test_a_mount_counts_only_when_supervisor_and_the_disk_agree(tmp_path) -> None:
+    def at(path, *, active=True):
+        return storage_paths.NetworkMount(
+            name="x",
+            path=PurePosixPath(path),
+            usage="share",
+            read_only=False,
+            active=active,
+        )
+
+    # A plain folder where the share should be: the NAS is gone.
+    assert not storage_paths.mount_is_live(at(tmp_path))
+    # Supervisor already reports it failed.
+    assert not storage_paths.mount_is_live(at("/", active=False))
+    # A real mount point that Supervisor calls active.
+    assert storage_paths.mount_is_live(at("/"))
+
+
+def _knmi_coordinator(hass: HomeAssistant, tmp_path):
+    entry = _entry(hass, **{CONF_STORAGE_PATH: str(tmp_path / "grib_overlay")})
+    coordinator = GribOverlayCoordinator(hass, entry)
+    dataset = SimpleNamespace(key="harmonie_arome_cy43_p1", parameters=[])
+    coordinator.source.async_list_datasets = AsyncMock(return_value=[dataset])
+    coordinator.source.async_list_files = AsyncMock(
+        return_value=[SimpleNamespace(filename="HARM43_V1_P1_2026103110.tar")]
+    )
+    coordinator._process_new_run = AsyncMock()
+    coordinator._cleanup_old_runs = MagicMock()
+    return coordinator
+
+
+async def test_nothing_is_downloaded_while_the_nas_is_gone(
+    hass: HomeAssistant, tmp_path
+) -> None:
+    coordinator = _knmi_coordinator(hass, tmp_path)
+    mount = storage_paths.NetworkMount(
+        name="nas_data",
+        path=PurePosixPath(tmp_path),
+        usage="share",
+        read_only=False,
+        active=True,
+    )
+    with (
+        patch.object(
+            storage_paths, "async_mount_holding", AsyncMock(return_value=mount)
+        ),
+        patch.object(storage_paths, "mount_is_live", return_value=False),
+        pytest.raises(UpdateFailed, match="not connected right now"),
+    ):
+        await coordinator._async_update_data()
+
+    coordinator._process_new_run.assert_not_called()
+
+
+async def test_the_run_is_downloaded_once_the_nas_is_back(
+    hass: HomeAssistant, tmp_path
+) -> None:
+    coordinator = _knmi_coordinator(hass, tmp_path)
+    with (
+        patch.object(
+            storage_paths, "async_mount_holding", AsyncMock(return_value=NAS_MOUNT)
+        ),
+        patch.object(storage_paths, "mount_is_live", return_value=True),
+    ):
+        data = await coordinator._async_update_data()
+
+    assert data["run_filename"] == "HARM43_V1_P1_2026103110.tar"
+
+
+async def test_local_storage_needs_no_mount(hass: HomeAssistant, tmp_path) -> None:
+    coordinator = _knmi_coordinator(hass, tmp_path)
+    with patch.object(storage_paths, "mount_is_live") as live:
+        data = await coordinator._async_update_data()
+
+    assert data["run_filename"] == "HARM43_V1_P1_2026103110.tar"
+    live.assert_not_called()
+
+
+async def test_the_form_refuses_a_nas_that_is_not_connected(
+    hass: HomeAssistant,
+) -> None:
+    entry = _entry(hass)
+    with (
+        patch.object(
+            storage_paths, "async_mount_holding", AsyncMock(return_value=NAS_MOUNT)
+        ),
+        patch.object(storage_paths, "mount_is_live", return_value=False),
+        patch.object(storage_paths, "prepare_root") as prepare,
+    ):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {**FORM, CONF_STORAGE_PATH: "/share/nas_data/grib_overlay"},
+        )
+
+    assert result["errors"] == {CONF_STORAGE_PATH: "storage_not_mounted"}
+    # Not even the folder is made: it would be made on the local disk.
+    prepare.assert_not_called()
+    assert CONF_STORAGE_PATH not in entry.options

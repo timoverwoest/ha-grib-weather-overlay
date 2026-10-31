@@ -65,7 +65,8 @@
     },
     "error": {
       "no_parameters_selected": "Kies minstens één parameter.",
-      "storage_not_writable": "Deze map is niet te gebruiken: hij kon niet worden aangemaakt of is niet schrijfbaar. Controleer onder Instellingen → Systeem → Opslag of de netwerkopslag verbonden is."
+      "storage_not_writable": "Deze map is niet te gebruiken: hij kon niet worden aangemaakt of is niet schrijfbaar. Controleer onder Instellingen → Systeem → Opslag of de netwerkopslag verbonden is.",
+      "storage_not_mounted": "Deze netwerkopslag is nu niet gekoppeld; de bestanden zouden dan op de lokale schijf terechtkomen. Controleer hem onder Instellingen → Systeem → Opslag en probeer het opnieuw."
     }
   },
   "entity": {

@@ -32,6 +32,7 @@ Up to 0.25 the cache lived in ``/config/grib_overlay`` and from 0.26 to 0.34 in
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 import os
 from pathlib import Path, PurePosixPath
@@ -120,6 +121,43 @@ def drop_entry_dirs(entry_directory: Path) -> None:
     shutil.rmtree(raw_dir_for(entry_directory), ignore_errors=True)
 
 
+@dataclass(frozen=True)
+class NetworkMount:
+    """One network storage added under Settings > System > Storage."""
+
+    name: str
+    path: PurePosixPath  # where Home Assistant sees it, e.g. /share/<name>
+    usage: str
+    read_only: bool
+    active: bool  # what Supervisor reports; see mount_is_live for the disk side
+
+
+async def _async_mounts(hass: HomeAssistant) -> list[NetworkMount] | None:
+    """Every network storage Supervisor knows; None when it cannot be asked."""
+    if not is_hassio(hass):
+        return []
+    try:
+        # Imported here: the hassio component only exists on a Supervisor
+        # install, and only a recent Home Assistant has this client.
+        from homeassistant.components.hassio import get_supervisor_client  # noqa: PLC0415
+
+        info = await get_supervisor_client(hass).mounts.info()
+    except Exception as err:  # noqa: BLE001 -- Supervisor is optional here; callers decide
+        _LOGGER.debug("Could not list the network storage: %s", err)
+        return None
+    return [
+        NetworkMount(
+            name=mount.name,
+            path=PurePosixPath(mount.user_path),
+            usage=str(mount.usage),
+            read_only=bool(mount.read_only),
+            active=str(mount.state) == "active",
+        )
+        for mount in info.mounts
+        if mount.user_path
+    ]
+
+
 async def async_network_storages(hass: HomeAssistant) -> dict[str, str]:
     """Network storage that can hold the working files, as {root: label}.
 
@@ -127,24 +165,30 @@ async def async_network_storages(hass: HomeAssistant) -> dict[str, str]:
     with a ``grib_overlay`` folder on it -- not its root, which the user may
     keep other files on. Empty without Supervisor, or when it cannot be asked.
     """
-    if not is_hassio(hass):
-        return {}
-    try:
-        # Imported here: the hassio component only exists on a Supervisor
-        # install, and only a recent Home Assistant has this client.
-        from homeassistant.components.hassio import get_supervisor_client  # noqa: PLC0415
-
-        info = await get_supervisor_client(hass).mounts.info()
-    except Exception as err:  # noqa: BLE001 -- an optional convenience; never fail the form over it
-        _LOGGER.debug("Could not list the network storage: %s", err)
-        return {}
     return {
-        str(
-            PurePosixPath(mount.user_path) / DOMAIN
-        ): f"{mount.name} ({mount.user_path})"
-        for mount in info.mounts
-        if mount.user_path and mount.usage in ("share", "media") and not mount.read_only
+        str(mount.path / DOMAIN): f"{mount.name} ({mount.path})"
+        for mount in await _async_mounts(hass) or []
+        if mount.usage in ("share", "media") and not mount.read_only
     }
+
+
+async def async_mount_holding(hass: HomeAssistant, path: Path) -> NetworkMount | None:
+    """The network storage ``path`` lies on; None for local disk or no Supervisor."""
+    for mount in await _async_mounts(hass) or []:
+        if Path(mount.path) == path or Path(mount.path) in path.parents:
+            return mount
+    return None
+
+
+def mount_is_live(mount: NetworkMount) -> bool:
+    """Blocking: whether the share is really mounted at its path right now.
+
+    When a NAS is off or unreachable, Supervisor's mount goes away and what is
+    left at ``/share/<name>`` is an ordinary empty folder on the local disk --
+    one that takes every write without complaint. Writing there would put the
+    gigabytes back on the SSD, and into a folder backups include.
+    """
+    return mount.active and os.path.ismount(mount.path)
 
 
 def overlaps(a: Path, b: Path) -> bool:

@@ -537,6 +537,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                     _LOGGER.debug(
                         "New run detected for %s: %s", dataset.key, latest.filename
                     )
+                    await self._async_require_live_storage()
                     await self._async_migrate_legacy_storage()
                     await self._async_take_newest_run(dataset, files)
         elif latest.filename != self._current_run_filename:
@@ -546,6 +547,27 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             )
 
         return {"run_filename": self._current_run_filename, "dataset": dataset.key}
+
+    async def _async_require_live_storage(self) -> None:
+        """Refuse to download while the network storage holding the cache is gone.
+
+        A NAS that is off, updating or shutting down leaves an empty local
+        folder where its share was mounted, and that folder takes every write.
+        A run downloaded then would land on the local SSD -- and in a folder
+        backups include. So nothing is fetched until the share is back; the
+        cards keep the run they have meanwhile.
+        """
+        mount = await storage_paths.async_mount_holding(self.hass, self.storage_dir)
+        if mount is None or await self.hass.async_add_executor_job(
+            storage_paths.mount_is_live, mount
+        ):
+            return
+        raise UpdateFailed(
+            f"The working files are on network storage '{mount.name}' "
+            f"({mount.path}), which is not connected right now. Nothing is "
+            "downloaded until it is back, so nothing lands on the local disk "
+            "instead."
+        )
 
     async def _async_take_newest_run(
         self, dataset: GribDatasetInfo, files: list[GribFileInfo]

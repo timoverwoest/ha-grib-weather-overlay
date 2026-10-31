@@ -193,6 +193,23 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
             for value, label in choices.items()
         ]
 
+    async def _storage_error(self, storage_path: str) -> str | None:
+        """Why a chosen folder cannot hold the working files, or None if it can.
+
+        Checked before anything is created: a share that is not mounted right
+        now is an empty local folder, and creating ours in it would quietly put
+        the files on the local disk instead of the NAS.
+        """
+        root = Path(storage_path)
+        mount = await storage_paths.async_mount_holding(self.hass, root)
+        if mount is not None and not await self.hass.async_add_executor_job(
+            storage_paths.mount_is_live, mount
+        ):
+            return "storage_not_mounted"
+        if not await self.hass.async_add_executor_job(storage_paths.prepare_root, root):
+            return "storage_not_writable"
+        return None
+
     def _move_other_entries(self, storage_path: str) -> None:
         """Give every other source the location chosen here (each then reloads)."""
         for entry in self.hass.config_entries.async_entries(DOMAIN):
@@ -253,10 +270,8 @@ class GribOverlayOptionsFlow(config_entries.OptionsFlow):
                 options[CONF_STORAGE_PATH] = storage_path
             else:
                 options.pop(CONF_STORAGE_PATH, None)
-            if storage_path and not await self.hass.async_add_executor_job(
-                storage_paths.prepare_root, Path(storage_path)
-            ):
-                errors[CONF_STORAGE_PATH] = "storage_not_writable"
+            if storage_path and (error := await self._storage_error(storage_path)):
+                errors[CONF_STORAGE_PATH] = error
             else:
                 if apply_to_all:
                     self._move_other_entries(storage_path)
