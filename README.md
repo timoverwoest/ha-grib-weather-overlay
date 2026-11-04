@@ -429,26 +429,57 @@ parameter: current
   gelezen, dus er is géén `eccodes`/`cfgrib`
   binaire library nodig (die heeft niet voor elke Python-versie/CPU een wheel
   en brak eerder de installatie).
+- Home Assistant 2024.11 of nieuwer. Installeren via de Marketplace kan vanaf
+  2026.11; op oudere versies via HACS.
 - Een gratis API-sleutel van het
   [KNMI Developer Portal](https://developer.dataplatform.knmi.nl/) voor de
   Open Data API.
 
 ## Installatie
 
-### Via HACS (aanbevolen)
+### Via de Marketplace (aanbevolen)
+
+GRIB Weather Overlay staat in de **Marketplace** van Home Assistant: de opvolger
+van HACS, sinds Home Assistant 2026.11 ingebouwd onder Instellingen.
+
+[![Open je Home Assistant en toon deze repository in de Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=timoverwoest&repository=ha-grib-weather-overlay&category=integration)
+
+1. Klik op de knop hierboven, of ga naar **Instellingen → Marketplace** en zoek op
+   "GRIB Weather Overlay".
+2. Kies **Installeren**. De eerste keer vraagt de Marketplace je te bevestigen
+   dat community-projecten niet door het Home Assistant-project worden
+   gecontroleerd.
+3. Na de installatie opent de instelwizard vanzelf: ga verder bij
+   [Configuratie](#configuratie). Sluit je die, dan voeg je de integratie later
+   toe onder **Instellingen → Apparaten & diensten**. Meldt een reparatie onder
+   **Instellingen → Systeem → Reparaties** dat er eerst herstart moet worden,
+   doe dat dan.
+
+**Updates** verschijnen onder **Instellingen → Updates**, naast die van Home
+Assistant zelf. Na een update is een herstart nodig; een reparatiemelding
+herinnert je daaraan en kan Home Assistant voor je herstarten.
+
+**Kom je van HACS?** Dan hoef je niets te doen. Home Assistant zet HACS bij de
+eerste start na de update naar 2026.11 om naar de Marketplace; de integratie
+blijft geïnstalleerd, met je instellingen, en krijgt gewoon updates. Had je deze
+repository als custom repository toegevoegd, dan merkt de Marketplace vanzelf dat
+hij inmiddels in de catalogus staat.
+
+### Via HACS (Home Assistant ouder dan 2026.11)
 
 1. Open HACS en zoek "GRIB Weather Overlay".
-2. Installeer de integratie.
-3. Herstart Home Assistant.
-
-Vind je hem (nog) niet? Voeg de repository dan eerst toe als custom
-repository: HACS → menu (⋮) → Custom repositories → de URL van deze repository,
-categorie "Integration". Zoek daarna opnieuw.
+2. Installeer de integratie en herstart Home Assistant.
+3. Voeg de integratie toe onder **Instellingen → Apparaten & diensten** (zie
+   [Configuratie](#configuratie)).
 
 ### Handmatig
 
-1. Kopieer `custom_components/grib_overlay` naar `/config/custom_components/`.
-2. Herstart Home Assistant.
+1. Download de nieuwste [release](https://github.com/timoverwoest/ha-grib-weather-overlay/releases/latest)
+   en kopieer `custom_components/grib_overlay` naar `/config/custom_components/`.
+2. Herstart Home Assistant en voeg de integratie toe onder **Instellingen →
+   Apparaten & diensten**.
+
+Een handmatige installatie krijgt geen updates; die herhaal je zelf.
 
 ## Configuratie
 
@@ -2145,26 +2176,55 @@ parameter: current
   and ICON-D2, simple packing) are read by a bundled custom decoder, so **no** `eccodes`/`cfgrib`
   binary library is needed (that one does not have a wheel for every Python
   version/CPU and previously broke installation).
+- Home Assistant 2024.11 or newer. Installing from the Marketplace works from
+  2026.11; on older versions through HACS.
 - A free API key from the
   [KNMI Developer Portal](https://developer.dataplatform.knmi.nl/) for the Open
   Data API.
 
 ## Installation
 
-### Via HACS (recommended)
+### Via the Marketplace (recommended)
+
+GRIB Weather Overlay is in the Home Assistant **Marketplace**: the successor to
+HACS, built into Home Assistant under Settings since 2026.11.
+
+[![Open your Home Assistant instance and show this repository in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=timoverwoest&repository=ha-grib-weather-overlay&category=integration)
+
+1. Select the button above, or go to **Settings → Marketplace** and search for
+   "GRIB Weather Overlay".
+2. Select **Install**. The first time, the Marketplace asks you to confirm that
+   community projects are not reviewed by the Home Assistant project.
+3. After the installation the setup flow opens by itself: continue with
+   [Configuration](#configuration). If you close it, add the integration later
+   under **Settings → Devices & services**. If a repair under **Settings →
+   System → Repairs** says a restart is needed first, restart.
+
+**Updates** show up under **Settings → Updates**, next to those of Home Assistant
+itself. An update needs a restart; a repair reminds you and can restart Home
+Assistant for you.
+
+**Coming from HACS?** There is nothing to do. Home Assistant moves HACS over to
+the Marketplace when it first starts after the update to 2026.11; the integration
+stays installed, with your settings, and keeps getting updates. If you had added
+this repository as a custom repository, the Marketplace notices by itself that it
+is in the catalog now.
+
+### Via HACS (Home Assistant older than 2026.11)
 
 1. Open HACS and search for "GRIB Weather Overlay".
-2. Install the integration.
-3. Restart Home Assistant.
-
-Not finding it (yet)? Add it as a custom repository first: HACS → menu (⋮) →
-Custom repositories → the URL of this repository, category "Integration". Then
-search again.
+2. Install the integration and restart Home Assistant.
+3. Add the integration under **Settings → Devices & services** (see
+   [Configuration](#configuration)).
 
 ### Manual
 
-1. Copy `custom_components/grib_overlay` to `/config/custom_components/`.
-2. Restart Home Assistant.
+1. Download the latest [release](https://github.com/timoverwoest/ha-grib-weather-overlay/releases/latest)
+   and copy `custom_components/grib_overlay` to `/config/custom_components/`.
+2. Restart Home Assistant and add the integration under **Settings → Devices &
+   services**.
+
+A manual installation gets no updates; you repeat it yourself.
 
 ## Configuration
 
