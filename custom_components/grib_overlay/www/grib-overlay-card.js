@@ -4677,22 +4677,19 @@ class GribOverlayCard extends HTMLElement {
       if (this._detailLatlng) {
         gribSetMeasurement(this._detailLatlng.lat, this._detailLatlng.lng, this._detailCmpParam, key, val === "" ? null : Number(val));
       }
-      refreshCompareMeasure(this._detailModal.querySelector(".grib-detail-scroll"), {
-        models: this._detailShownModels || [],
-        config: this._config,
-        res: this._detailResolution,
-        unitLabel: this._detailShownUnit || "",
-        measureMap: this._detailMeasure,
-        corrMode: this._detailCorrMode,
-        corrSources: this._detailCorrSources,
-        rerender: () => this._rerenderDetail(),
-      });
+      refreshCompareMeasure(this._detailModal.querySelector(".grib-detail-scroll"), this._detailSpec());
     });
     this._detailEsc = (ev) => {
       if (ev.key === "Escape") this._closeDetailMeteogram();
     };
     document.addEventListener("keydown", this._detailEsc);
     wireChartHovers(backdrop.querySelector(".grib-detail-scroll"));
+    if (window.ResizeObserver) {
+      // The comparison chart is drawn at its box's width; redraw it when the
+      // window (and with it this full-screen view) changes size.
+      this._detailChartObserver = new ResizeObserver(() => this._fitDetailChart());
+      this._detailChartObserver.observe(backdrop.querySelector(".grib-detail-scroll"));
+    }
     this.shadowRoot.appendChild(backdrop);
     this._detailModal = backdrop;
   }
@@ -4963,9 +4960,33 @@ class GribOverlayCard extends HTMLElement {
     if (!this._detailModal) return;
     const scroll = this._detailModal.querySelector(".grib-detail-scroll");
     if (scroll) scroll.innerHTML = html;
+    this._fitDetailChart();
+  }
+
+  // What refreshCompareMeasure needs to redraw the chart and the table cells.
+  _detailSpec() {
+    return {
+      models: this._detailShownModels || [],
+      config: this._config,
+      res: this._detailResolution,
+      unitLabel: this._detailShownUnit || "",
+      measureMap: this._detailMeasure,
+      corrMode: this._detailCorrMode,
+      corrSources: this._detailCorrSources,
+      rerender: () => this._rerenderDetail(),
+    };
+  }
+
+  _fitDetailChart() {
+    if (!this._detailModal || this._detailMode !== "compare") return;
+    fitCompareChart(this._detailModal.querySelector(".grib-detail-scroll"), this._detailSpec());
   }
 
   _closeDetailMeteogram() {
+    if (this._detailChartObserver) {
+      this._detailChartObserver.disconnect();
+      this._detailChartObserver = null;
+    }
     if (this._detailEsc) {
       document.removeEventListener("keydown", this._detailEsc);
       this._detailEsc = null;
@@ -5624,10 +5645,33 @@ function buildColumnHeader(columns, res) {
   return { groupRow, colRow, cls };
 }
 
+// Narrower than this the chart is drawn at this width and scaled down instead.
+const COMPARE_CHART_MIN_WIDTH = 280;
+
+// Redraw the comparison chart in ``root`` when its box is no longer the width
+// it was drawn at (the window or the dashboard column changed size).
+function fitCompareChart(root, spec) {
+  const box = root && root.querySelector(".grib-cmp-chart-box");
+  const svg = box && box.querySelector("svg");
+  const width = compareChartWidth(box);
+  if (!svg || !width) return;
+  const want = Math.max(COMPARE_CHART_MIN_WIDTH, Math.round(width));
+  if (Math.abs(want - Number(svg.getAttribute("width"))) < 4) return;
+  refreshCompareMeasure(root, spec);
+}
+
+// The width the chart itself gets: its box, less the margins of the chart div
+// (which differ between the full-screen meteogram and the compare card).
+function compareChartWidth(box) {
+  if (!box) return 0;
+  const chart = box.querySelector(".grib-cmp-chart");
+  return chart ? chart.clientWidth : box.clientWidth;
+}
+
 // Overlaid multi-model line chart for one parameter. Values are converted to the
 // configured display unit; a dashed vertical "now" line is drawn when in range.
 // `corrections` (optional) adds a dashed corrected ("gecorreleerde") line per source.
-function compareChartSvg(models, config, unitLabel, measurePts, corrections) {
+function compareChartSvg(models, config, unitLabel, measurePts, corrections, width) {
   const factorFor = (u) => {
     const c = conversionFor(config, u);
     return c ? c.factor : 1;
@@ -5689,7 +5733,13 @@ function compareChartSvg(models, config, unitLabel, measurePts, corrections) {
   const yStep = niceStep((vMax - vMin) / 4) || 1;
   const y0 = Math.floor(vMin / yStep) * yStep;
   const y1 = Math.ceil(vMax / yStep) * yStep;
-  const W = 640, H = 230, m = { l: 46, r: 12, t: 10, b: 26 };
+  // Drawn 1:1 at the width of its box (see fitCompareChart): a fixed viewBox
+  // stretched to the box made the labels and the height grow with the window,
+  // to 28 px text and a chart taller than the screen in a wide browser. The
+  // height grows with the width only up to a point.
+  const W = Math.max(COMPARE_CHART_MIN_WIDTH, Math.round(width || 640));
+  const H = Math.round(Math.min(320, Math.max(220, W * 0.32)));
+  const m = { l: 46, r: 12, t: 10, b: 26 };
   const px0 = m.l, px1 = W - m.r, py0 = m.t, py1 = H - m.b;
   const sx = (t) => px0 + ((t - tMin) / (tMax - tMin)) * (px1 - px0);
   const sy = (v) => py1 - ((v - y0) / (y1 - y0)) * (py1 - py0);
@@ -5701,9 +5751,11 @@ function compareChartSvg(models, config, unitLabel, measurePts, corrections) {
   }
   const spanH = (tMax - tMin) / 3600000 || 1;
   const cand = [1, 2, 3, 6, 12, 24, 48];
+  // One time label per ~70 px: a wider chart gets more of them, not bigger ones.
+  const maxLabels = Math.max(4, Math.floor((px1 - px0) / 70));
   let step = cand[cand.length - 1];
   for (const cc of cand) {
-    if (spanH / cc <= 8) {
+    if (spanH / cc <= maxLabels) {
       step = cc;
       break;
     }
@@ -5776,7 +5828,7 @@ function compareChartSvg(models, config, unitLabel, measurePts, corrections) {
   return (
     `<div class="grib-cmp-chart">` +
     `<div class="grib-cmp-unit">${unitLabel || ""}</div>` +
-    `<svg class="grib-hover-chart" viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${parts.join("")}</svg>` +
+    `<svg class="grib-hover-chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="display:block;max-width:100%;height:auto">${parts.join("")}</svg>` +
     `<div class="grib-cmp-legend">${legend}</div></div>`
   );
 }
@@ -6063,7 +6115,7 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
     active.length || showMeasure
       ? `<table class="grib-detail-table grib-cmp-table"><thead><tr>${groupRow}</tr><tr>${colRow}</tr></thead><tbody>${rows.join("")}</tbody></table>`
       : "";
-  const chart = compareChartSvg(active, config, unitLabel, showMeasure ? measurePtsFromMap(measureMap) : [], corrections);
+  const chart = compareChartSvg(active, config, unitLabel, showMeasure ? measurePtsFromMap(measureMap) : [], corrections, opts && opts.chartWidth);
   const summary = showMeasure ? compareSummaryHtml(active, columns, measureMap, config, res) : "";
   // "Wis alle meetdata" wipes every saved point at once: on a phone (Home
   // Assistant companion app) points can only be dropped by moving to another
@@ -6185,7 +6237,7 @@ function refreshCompareMeasure(root, spec) {
   if (sum) sum.innerHTML = compareSummaryHtml(active, columns, spec.measureMap, spec.config, spec.res);
   const chartBox = root.querySelector(".grib-cmp-chart-box");
   if (chartBox) {
-    chartBox.innerHTML = compareChartSvg(active, spec.config, spec.unitLabel, measurePtsFromMap(spec.measureMap), corrections);
+    chartBox.innerHTML = compareChartSvg(active, spec.config, spec.unitLabel, measurePtsFromMap(spec.measureMap), corrections, compareChartWidth(chartBox));
   }
 }
 
@@ -6376,6 +6428,10 @@ class GribCompareCard extends HTMLElement {
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
+    }
+    if (this._chartObserver) {
+      this._chartObserver.disconnect();
+      this._chartObserver = null;
     }
     if (this._visibilityObserver) {
       this._visibilityObserver.disconnect();
@@ -6664,16 +6720,7 @@ class GribCompareCard extends HTMLElement {
       if (this._point) {
         gribSetMeasurement(this._point.lat, this._point.lng, this._els.paramSelect.value, key, val === "" ? null : Number(val));
       }
-      refreshCompareMeasure(this._els.cmpview, {
-        models: this._shownModels || [],
-        config: this._config,
-        res: this._resolution,
-        unitLabel: this._shownUnit || "",
-        measureMap: this._measure,
-        corrMode: this._corrMode,
-        corrSources: this._corrSources,
-        rerender: () => this._renderComparison(),
-      });
+      refreshCompareMeasure(this._els.cmpview, this._compareSpec());
     });
     // Correction mode / per-source toggles (delegated on the view).
     this._els.cmpview.addEventListener("change", (ev) => {
@@ -7011,6 +7058,28 @@ class GribCompareCard extends HTMLElement {
     this._renderComparison();
   }
 
+  // What refreshCompareMeasure needs to redraw the chart and the table cells.
+  _compareSpec() {
+    return {
+      models: this._shownModels || [],
+      config: this._config,
+      res: this._resolution,
+      unitLabel: this._shownUnit || "",
+      measureMap: this._measure,
+      corrMode: this._corrMode,
+      corrSources: this._corrSources,
+      rerender: () => this._renderComparison(),
+    };
+  }
+
+  // Redraw the chart at its new width when the card is resized. Set up on the
+  // first comparison, and again after the card was taken off the page.
+  _watchChartWidth() {
+    if (this._chartObserver || !window.ResizeObserver) return;
+    this._chartObserver = new ResizeObserver(() => fitCompareChart(this._els.cmpview, this._compareSpec()));
+    this._chartObserver.observe(this._els.cmpview);
+  }
+
   _renderComparison() {
     const models = this._models || [];
     // Split into those with data here vs those out of range / empty.
@@ -7039,8 +7108,10 @@ class GribCompareCard extends HTMLElement {
         : null;
       this._els.cmpview.innerHTML = compareViewHtml(
         shown, this._config, this._resolution, unit, this._measure, this._showMeasure,
-        { stations, radiusKm: this._radius, station, corrMode: this._corrMode, corrSources: this._corrSources }
+        { stations, radiusKm: this._radius, station, corrMode: this._corrMode, corrSources: this._corrSources, chartWidth: this._els.cmpview.clientWidth }
       );
+      this._watchChartWidth();
+      fitCompareChart(this._els.cmpview, this._compareSpec());
     }
     this._els.note.innerHTML = dropped.length
       ? `<div class="grib-cmp-note">${gribT("notShownNoData", { items: dropped.map((m) => m.name).join("; ") })}</div>`
