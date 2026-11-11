@@ -32,12 +32,14 @@ Up to 0.25 the cache lived in ``/config/grib_overlay`` and from 0.26 to 0.34 in
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 import logging
 import os
 from pathlib import Path, PurePosixPath
 import shutil
 import tempfile
+import time
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.hassio import is_hassio
@@ -189,6 +191,76 @@ def mount_is_live(mount: NetworkMount) -> bool:
     gigabytes back on the SSD, and into a folder backups include.
     """
     return mount.active and os.path.ismount(mount.path)
+
+
+# What a probe of the storage root can come back with.
+PROBE_OK = "ok"
+PROBE_UNMOUNTED = "unmounted"  # the network storage is not there (see mount_is_live)
+PROBE_ERROR = "error"  # the storage answered with an I/O error
+PROBE_UNRESPONSIVE = "unresponsive"  # the storage did not answer in time
+
+# How long one probe may take before the share counts as hung, and how long an
+# answer is believed. Every entry asks at start-up, so they share one answer
+# instead of each putting a thread on the same dead share.
+PROBE_TIMEOUT = 5.0
+PROBE_TTL = 30.0
+_PROBES_KEY = f"{DOMAIN}_storage_probes"
+
+
+def _probe_root(root: Path, mount: NetworkMount | None) -> str:
+    """Blocking, and the one call that may hang on a dead share: touch the root once.
+
+    A folder that does not exist yet is fine -- it is made on first use. Only a
+    share that is gone, or answers with an error, is a problem.
+    """
+    if mount is not None and not mount_is_live(mount):
+        return PROBE_UNMOUNTED
+    try:
+        with os.scandir(root):
+            pass
+    except FileNotFoundError:
+        pass
+    except OSError:
+        return PROBE_ERROR
+    return PROBE_OK
+
+
+async def async_probe_root(
+    hass: HomeAssistant,
+    root: Path,
+    mount: NetworkMount | None = None,
+    timeout: float | None = None,
+) -> str:
+    """Ask whether the storage root answers, without ever waiting on it for long.
+
+    A call into a hung CIFS share cannot be interrupted: the executor thread
+    stays blocked, and Home Assistant cannot finish stopping while it is. So
+    nothing waits on the share directly. One probe runs per root, every caller
+    shares it, and while it has not come back no second thread is sent after
+    it -- a dead share costs one stuck thread, not one per entry per poll.
+    """
+    if timeout is None:
+        timeout = PROBE_TIMEOUT
+    probes: dict[Path, tuple[float, asyncio.Future[str]]] = hass.data.setdefault(
+        _PROBES_KEY, {}
+    )
+    now = time.monotonic()
+    started, future = probes.get(root, (0.0, None))
+    if future is not None and future.done() and now - started >= PROBE_TTL:
+        future = None  # an old answer: ask again
+    if future is None:
+        started = now
+        future = hass.async_add_executor_job(_probe_root, root, mount)
+        probes[root] = (started, future)
+    remaining = timeout - (now - started)
+    if not future.done() and remaining <= 0:
+        return PROBE_UNRESPONSIVE  # still stuck on an earlier attempt
+    try:
+        return await asyncio.wait_for(asyncio.shield(future), max(remaining, 0.05))
+    except TimeoutError:
+        return PROBE_UNRESPONSIVE
+    except OSError:
+        return PROBE_ERROR
 
 
 def overlaps(a: Path, b: Path) -> bool:

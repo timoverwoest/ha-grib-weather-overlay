@@ -1573,6 +1573,16 @@ netwerkopslag niet gekoppeld is, de kaarten houden de run die ze hebben, en zodr
 de NAS terug is gaat het vanzelf verder. Het formulier weigert om dezelfde reden
 een share die op dat moment niet gekoppeld is.
 
+Reageert de NAS wél als gekoppeld, maar is hij vastgelopen of traag, dan houdt
+dat Home Assistant niet meer op: de cache wordt pas ná het opstarten, op de
+achtergrond, teruggezet. Eerst vraagt de integratie (met een korte timeout, één
+keer voor alle bronnen samen) of de map antwoordt. Doet hij dat niet, dan staat
+er één waarschuwing in het log, blijft de kaart leeg en wordt er niets gedownload
+tot de NAS antwoordt; elke twee minuten wordt het opnieuw geprobeerd. De grootte
+van de cache (de sensor) wordt pas enkele minuten na de start gemeten. Een
+aanroep naar een vastgelopen share kan niet worden afgebroken; dit beperkt het
+tot één wachtende thread in plaats van een per bron.
+
 Extra's:
 
 - **Automatische opruiming bij het updaten.** Oudere versies bewaarden de cache in
@@ -3301,6 +3311,15 @@ everything. So the integration downloads nothing then: the source reports that
 the network storage is not connected, the cards keep the run they have, and it
 carries on by itself once the NAS is back. For the same reason the form refuses a
 share that is not connected at that moment.
+
+If the NAS is connected but hung or slow, it no longer holds up Home Assistant:
+the cache is restored after start-up, in the background. First the integration
+asks (with a short timeout, once for all sources together) whether the folder
+answers. If it does not, there is one warning in the log, the map stays empty and
+nothing is downloaded until the NAS answers; it tries again every two minutes.
+The size of the cache (the sensor) is measured a few minutes after start. A call
+into a hung share cannot be aborted; this limits it to one waiting thread
+instead of one per source.
 
 Also:
 

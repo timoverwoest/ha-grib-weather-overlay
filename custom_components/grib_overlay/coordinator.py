@@ -76,6 +76,23 @@ FIRST_RUN_CANDIDATES = 3
 # The entry carries its coordinator in `runtime_data`, so anything that needs
 # one looks it up through the config-entry registry rather than a parallel
 # dict in hass.data that has to be kept in step with setup and unload.
+# Everything that touches the cache folder runs off the event loop and behind a
+# deadline, because that folder may be on a NAS share: a hung CIFS call cannot
+# be interrupted, and a stuck executor thread keeps Home Assistant from stopping.
+# Setup therefore never waits for the cache; it is restored in the background.
+#
+# How long a refresh waits for the cache to be restored before it gives up and
+# tries again later (it must know what is cached before it decides to download).
+STORAGE_WAIT_SECONDS = 20.0
+# Until the cache is reachable, look again this often.
+STORAGE_RETRY_SECONDS = 120.0
+# The size of the cache is a nicety, so it is measured late, one entry at a time,
+# and given up on when the share is slow.
+CACHE_MEASURE_DELAY_SECONDS = 180.0
+CACHE_MEASURE_BUDGET_SECONDS = 30.0
+_MEASURE_LOCK_KEY = f"{DOMAIN}_measure_lock"
+_WARNED_KEY = f"{DOMAIN}_storage_warned"
+
 type GribOverlayConfigEntry = ConfigEntry[GribOverlayCoordinator]
 
 
@@ -238,6 +255,17 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             if not storage_paths.overlaps(legacy, self.storage_dir)
         ]
         self._legacy_migrated = False
+        # The cache is restored by a background task, not by setup (see
+        # async_setup): `_storage_ready` says it has been, `_prepare_task` is the
+        # attempt in flight.
+        self._storage_ready = False
+        self.cache_bytes: int | None = None
+        # Set by async_setup: only an entry that is really set up arms the retry
+        # and measurement timers (a coordinator driven by hand does not).
+        self._timers_armed = False
+        self._prepare_task: asyncio.Task[None] | None = None
+        self._unsub_storage_retry: Callable[[], None] | None = None
+        self._unsub_measure: Callable[[], None] | None = None
         # Optional per-parameter custom colour scales (baked into the PNG at
         # render time). Parsed once; the coordinator is recreated on an options
         # change, and a change invalidates cached runs so they re-render.
@@ -382,26 +410,22 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         await self.hass.async_add_executor_job(shutil.rmtree, self._scratch_root, True)
 
     async def async_setup(self) -> None:
-        """Fast setup (does not download): restore cached frames, start push, poll timer.
+        """Fast setup (does not download, does not touch the cache folder).
 
-        The heavy download/decode is deliberately NOT done here -- __init__.py
-        kicks off the first refresh as a background task so entry setup returns
-        immediately. On a restart the cached frames from a previous run are
-        loaded from disk so the card has data straight away.
+        The cache folder may live on a NAS share, and a share that is slow or
+        hung must never hold up Home Assistant's start: entry setup here only
+        arms the timers. Restoring the cached frames, the clean-ups and the
+        cache-size measurement all run in a background task, behind a probe and
+        a deadline (see _async_prepare_storage), so the card shows "no data"
+        for a moment after a restart and fills in when the share has answered.
+
+        The heavy download/decode is deliberately NOT done here either --
+        __init__.py kicks off the first refresh as a background task, which
+        waits for the restore before it decides what to download.
         """
-        await self._async_migrate_legacy_storage()
-        await self._async_drop_stale_scratch()
-        run_filename, frames = await self.hass.async_add_executor_job(
-            self._restore_from_disk
-        )
-        if run_filename:
-            self._current_run_filename = run_filename
-            self.frames = frames
-            _LOGGER.debug(
-                "Restored cached frames for run %s (%d parameters) from disk",
-                run_filename,
-                len(frames),
-            )
+        self._timers_armed = True
+        self.entry.async_on_unload(self._cancel_storage_timers)
+        self._ensure_prepare_task()
 
         await self._async_start_notifications()
 
@@ -420,6 +444,184 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
             )
         else:
             self._start_polling()
+
+    def _ensure_prepare_task(self) -> asyncio.Task[None]:
+        """Return the task restoring the cache, starting one if none is running."""
+        task = self._prepare_task
+        if task is None or task.done():
+            task = self.entry.async_create_background_task(
+                self.hass,
+                self._async_prepare_storage(),
+                f"{DOMAIN}-restore-{self.entry.entry_id}",
+            )
+            self._prepare_task = task
+        return task
+
+    async def _async_ensure_storage_ready(self) -> bool:
+        """Wait, briefly, for the cache to be restored; False when it is not.
+
+        A refresh needs to know which run is cached before it decides to
+        download one, so it waits here -- but only for a moment, and never on
+        the share itself: the restore runs in its own task and a slow one is
+        simply tried again later.
+        """
+        if self._storage_ready:
+            return True
+        task = self._ensure_prepare_task()
+        try:
+            await asyncio.wait_for(asyncio.shield(task), STORAGE_WAIT_SECONDS)
+        except TimeoutError:
+            return False
+        return self._storage_ready
+
+    async def _async_probe_storage(self) -> str:
+        """Ask, with a short timeout, whether the folder holding the cache answers.
+
+        The answer is a storage_paths PROBE_* value; a problem is warned about
+        once per share however many entries use it.
+        """
+        root = self.storage_dir.parent
+        mount = await storage_paths.async_mount_holding(self.hass, self.storage_dir)
+        status = await storage_paths.async_probe_root(self.hass, root, mount)
+        warned: set[tuple[Path, str]] = self.hass.data.setdefault(_WARNED_KEY, set())
+        if status == storage_paths.PROBE_OK:
+            if any(r == root for r, _ in warned):
+                _LOGGER.warning("The storage %s answers again.", root)
+                warned -= {w for w in warned if w[0] == root}
+        elif (root, status) not in warned:
+            warned.add((root, status))
+            _LOGGER.warning(
+                "The storage %s is %s, so cached frames are not restored and "
+                "nothing is downloaded until it answers. Home Assistant itself "
+                "keeps starting; this is tried again every %d seconds.",
+                root,
+                {
+                    storage_paths.PROBE_UNMOUNTED: "not connected",
+                    storage_paths.PROBE_ERROR: "returning I/O errors",
+                }.get(status, "not answering"),
+                STORAGE_RETRY_SECONDS,
+            )
+        return status
+
+    async def _async_prepare_storage(self) -> None:
+        """Restore the cache and tidy up, once the share has proved it answers.
+
+        In this order: probe, move/drop the caches of earlier versions, drop the
+        scratch of an interrupted run, restore the newest run, and only then
+        schedule the (late, slow) measurement of the cache size. The order
+        matters for the scratch: nothing may be processed before it is cleared,
+        which is why a refresh waits for this task. When the share does not
+        answer, nothing is attempted and a retry is scheduled -- no thread is
+        sent after a share that has not answered the probe.
+        """
+        if self.hass.is_stopping:
+            return
+        if await self._async_probe_storage() != storage_paths.PROBE_OK:
+            self._schedule_storage_retry()
+            return
+        try:
+            await self._async_migrate_legacy_storage()
+            if self.hass.is_stopping:
+                return
+            await self._async_drop_stale_scratch()
+            if self.hass.is_stopping:
+                return
+            run_filename, frames = await self.hass.async_add_executor_job(
+                self._restore_from_disk
+            )
+        except OSError as err:
+            _LOGGER.warning(
+                "%s: the cache in %s could not be read (%s); trying again later",
+                self.entry.title,
+                self.storage_dir,
+                err,
+            )
+            self._schedule_storage_retry()
+            return
+        if run_filename and self._current_run_filename is None:
+            self._current_run_filename = run_filename
+            self.frames = frames
+            _LOGGER.debug(
+                "Restored cached frames for run %s (%d parameters) from disk",
+                run_filename,
+                len(frames),
+            )
+        self._storage_ready = True
+        self.async_update_listeners()
+        self._schedule_cache_measurement()
+
+    @callback
+    def _schedule_storage_retry(self) -> None:
+        """Look at the share again later (one timer per entry)."""
+        if (
+            not self._timers_armed
+            or self._unsub_storage_retry is not None
+            or self.hass.is_stopping
+        ):
+            return
+        self._unsub_storage_retry = async_call_later(
+            self.hass, STORAGE_RETRY_SECONDS, self._retry_storage
+        )
+
+    @callback
+    def _retry_storage(self, _now=None) -> None:
+        self._unsub_storage_retry = None
+        if not self._storage_ready and not self.hass.is_stopping:
+            self._ensure_prepare_task()
+
+    @callback
+    def _schedule_cache_measurement(self) -> None:
+        """Measure the cache size a while after start-up, not during it."""
+        if (
+            not self._timers_armed
+            or self.cache_bytes is not None
+            or self._unsub_measure is not None
+        ):
+            return
+        self._unsub_measure = async_call_later(
+            self.hass, CACHE_MEASURE_DELAY_SECONDS, self._start_cache_measurement
+        )
+
+    @callback
+    def _start_cache_measurement(self, _now=None) -> None:
+        self._unsub_measure = None
+        if not self.hass.is_stopping:
+            self.entry.async_create_background_task(
+                self.hass,
+                self._async_measure_cache_in_background(),
+                f"{DOMAIN}-measure-{self.entry.entry_id}",
+            )
+
+    async def _async_measure_cache_in_background(self) -> None:
+        """Measure the cache, one entry at a time and only on a share that answers."""
+        lock: asyncio.Lock = self.hass.data.setdefault(
+            _MEASURE_LOCK_KEY, asyncio.Lock()
+        )
+        async with lock:
+            if self.hass.is_stopping or self.cache_bytes is not None:
+                return
+            if await self._async_probe_storage() != storage_paths.PROBE_OK:
+                return
+            job = self.hass.async_add_executor_job(self._measure_cache)
+            try:
+                size = await asyncio.wait_for(
+                    asyncio.shield(job), CACHE_MEASURE_BUDGET_SECONDS + 5
+                )
+            except TimeoutError:
+                return
+            if size is not None:
+                self.cache_bytes = size
+                self.async_update_listeners()
+
+    @callback
+    def _cancel_storage_timers(self) -> None:
+        for name in ("_unsub_storage_retry", "_unsub_measure"):
+            unsub = getattr(self, name)
+            if unsub is not None:
+                unsub()
+                setattr(self, name, None)
+        if self._prepare_task is not None and not self._prepare_task.done():
+            self._prepare_task.cancel()
 
     @callback
     def _start_polling(self, _now=None) -> None:
@@ -525,6 +727,17 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         if not files:
             raise UpdateFailed("Source returned no files for this dataset")
 
+        # What is cached decides what to download, and the scratch of an
+        # interrupted run must be cleared before a new one starts -- so wait for
+        # the restore, briefly. A share that does not answer is not waited for.
+        if not await self._async_ensure_storage_ready():
+            await self._async_require_live_storage()  # says so when the NAS is gone
+            raise UpdateFailed(
+                "The cache folder is not ready yet (the storage is slow or not "
+                "answering); nothing is downloaded until it is, and this is "
+                "tried again shortly."
+            )
+
         latest = files[0]
         if latest.filename != self._current_run_filename and self._too_soon_for_a_run():
             _LOGGER.debug(
@@ -571,9 +784,12 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         cards keep the run they have meanwhile.
         """
         mount = await storage_paths.async_mount_holding(self.hass, self.storage_dir)
-        if mount is None or await self.hass.async_add_executor_job(
-            storage_paths.mount_is_live, mount
-        ):
+        if mount is None:
+            return
+        status = await storage_paths.async_probe_root(
+            self.hass, self.storage_dir.parent, mount
+        )
+        if status == storage_paths.PROBE_OK:
             return
         raise UpdateFailed(
             f"The working files are on network storage '{mount.name}' "
@@ -972,9 +1188,12 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         (run_dir / self.MANIFEST_NAME).write_text(json.dumps(manifest))
 
     def _restore_from_disk(self) -> tuple[str | None, dict[str, list[Frame]]]:
-        """Blocking: restore the newest usable run and note what the cache costs."""
+        """Blocking: restore the newest usable run.
+
+        What the cache weighs is measured later, in the background: walking the
+        whole folder is the slowest thing to do on a share.
+        """
         restored = self._load_cached_frames()
-        self.cache_bytes = self._measure_cache()
         if restored[0]:
             # The manifest is written last when a run is taken, so its age is
             # the age of the run shown -- which a restart must not reset.
@@ -1082,10 +1301,18 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
         """Blocking: the total size of this entry's run directories, in bytes."""
         if not self.storage_dir.exists():
             return None
+        deadline = time.monotonic() + CACHE_MEASURE_BUDGET_SECONDS
+        total = 0
         try:
-            return sum(
-                f.stat().st_size for f in self.storage_dir.rglob("*") if f.is_file()
-            )
+            for f in self.storage_dir.rglob("*"):
+                if time.monotonic() > deadline:
+                    _LOGGER.debug(
+                        "Measuring %s took too long; skipped", self.storage_dir
+                    )
+                    return None
+                if f.is_file():
+                    total += f.stat().st_size
+            return total
         except OSError as err:
             # A file removed between the listing and the stat; the next run
             # measures again.
