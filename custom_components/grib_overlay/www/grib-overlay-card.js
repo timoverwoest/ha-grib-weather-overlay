@@ -3091,7 +3091,7 @@ class GribOverlayCard extends HTMLElement {
       </div>
       <div class="map-container"><div class="map"></div><div class="readout hidden"></div></div>
       <div class="time-controls single-controls">
-        <input type="range" class="time-slider" min="0" max="0" value="0" step="1" />
+        <input type="range" class="time-slider" min="0" max="0" value="0" step="1" data-i18n-title="singleTime" title="${gribT("singleTime")}" aria-label="${gribT("singleTime")}" />
         <span class="time-label"></span>
       </div>
       <div class="time-controls animate-controls hidden">
@@ -3100,7 +3100,7 @@ class GribOverlayCard extends HTMLElement {
         <select class="end-select"></select>
         <select class="step-select"></select>
         <button class="play-pause" type="button" data-i18n-aria-label="play" aria-label="${gribT("play")}">▶</button>
-        <span class="speed-control" data-i18n-title="playbackSpeed" title="${gribT("playbackSpeed")}">🐢<input type="range" class="speed-slider" min="150" max="2000" value="1450" step="50" aria-label="${gribT("playbackSpeed")}" />🐇</span>
+        <span class="speed-control" data-i18n-title="playbackSpeed" title="${gribT("playbackSpeed")}">🐢<input type="range" class="speed-slider" min="150" max="2000" value="1450" step="50" data-i18n-aria-label="playbackSpeed" aria-label="${gribT("playbackSpeed")}" />🐇</span>
         <span class="time-label"></span>
         <input type="range" class="progress-slider" min="0" max="0" value="0" step="1" data-i18n-title="animationPosition" title="${gribT("animationPosition")}" aria-label="${gribT("animationPosition")}" />
       </div>
