@@ -364,8 +364,10 @@ def test_a_map_is_never_rebuilt_into_a_container_with_no_size() -> None:
         "  async _ensureTiles() {",
     ):
         body = JS.split(method, 1)[1].split("\n  }\n", 1)[0]
-        assert _flat("offsetWidth || !this._els.mapDiv.offsetHeight) return;") in _flat(
-            body
+        # With or without braces: ESLint adds them once Prettier wraps the line.
+        assert re.search(
+            r"offsetWidth\s*\|\|\s*!this\._els\.mapDiv\.offsetHeight\)\s*\{?\s*return;",
+            body,
         ), method
 
 

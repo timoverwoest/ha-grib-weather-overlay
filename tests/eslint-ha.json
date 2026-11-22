@@ -1,0 +1,120 @@
+{
+  "//": "The extra core rules of the Home Assistant frontend (its eslint.config.mjs, November 2026) on top of @eslint/js recommended. Read by eslint.config.mjs (CI) and the local JavaScriptCore runner.",
+  "rules": {
+    "array-callback-return": [
+      "error",
+      {
+        "allowImplicit": true
+      }
+    ],
+    "block-scoped-var": "error",
+    "consistent-return": "error",
+    "curly": [
+      "error",
+      "multi-line"
+    ],
+    "default-case-last": "error",
+    "eqeqeq": [
+      "error",
+      "always",
+      {
+        "null": "ignore"
+      }
+    ],
+    "guard-for-in": "error",
+    "no-await-in-loop": "error",
+    "no-caller": "error",
+    "no-constructor-return": "error",
+    "no-eval": "error",
+    "no-extend-native": "error",
+    "no-implied-eval": "error",
+    "no-iterator": "error",
+    "no-new-func": "error",
+    "no-new-wrappers": "error",
+    "no-octal-escape": "error",
+    "no-promise-executor-return": "error",
+    "no-return-assign": [
+      "error",
+      "always"
+    ],
+    "no-script-url": "error",
+    "no-self-compare": "error",
+    "no-sequences": "error",
+    "no-template-curly-in-string": "error",
+    "no-unreachable-loop": "error",
+    "no-else-return": [
+      "error",
+      {
+        "allowElseIf": false
+      }
+    ],
+    "no-lonely-if": "error",
+    "no-unneeded-ternary": [
+      "error",
+      {
+        "defaultAssignment": false
+      }
+    ],
+    "no-useless-computed-key": "error",
+    "no-useless-concat": "error",
+    "no-useless-rename": "error",
+    "no-useless-return": "error",
+    "one-var": [
+      "error",
+      "never"
+    ],
+    "operator-assignment": [
+      "error",
+      "always"
+    ],
+    "prefer-arrow-callback": "error",
+    "prefer-exponentiation-operator": "error",
+    "prefer-object-spread": "error",
+    "prefer-regex-literals": [
+      "error",
+      {
+        "disallowRedundantWrapping": true
+      }
+    ],
+    "symbol-description": "error",
+    "yoda": "error",
+    "no-useless-assignment": "error",
+    "no-bitwise": "error",
+    "no-console": "error",
+    "no-restricted-globals": [
+      "error",
+      "event"
+    ],
+    "no-restricted-syntax": [
+      "error",
+      "LabeledStatement",
+      "WithStatement"
+    ]
+  },
+  "globals": {
+    "card": {
+      "window": "readonly",
+      "document": "readonly",
+      "navigator": "readonly",
+      "customElements": "readonly",
+      "HTMLElement": "readonly",
+      "CustomEvent": "readonly",
+      "Event": "readonly",
+      "ResizeObserver": "readonly",
+      "IntersectionObserver": "readonly",
+      "setTimeout": "readonly",
+      "clearTimeout": "readonly",
+      "setInterval": "readonly",
+      "clearInterval": "readonly",
+      "requestAnimationFrame": "readonly",
+      "URL": "readonly",
+      "URLSearchParams": "readonly",
+      "Image": "readonly",
+      "performance": "readonly",
+      "location": "readonly",
+      "localStorage": "readonly",
+      "sessionStorage": "readonly",
+      "console": "readonly"
+    }
+  }
+}
