@@ -10,6 +10,7 @@ it again when they are resized.
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 JS = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(
     encoding="utf-8"
@@ -21,6 +22,11 @@ COMPARE_CARD = JS.split("class GribCompareCard extends HTMLElement", 1)[1].split
 MAIN_CARD = JS.split("class GribOverlayCard extends HTMLElement", 1)[1].split(
     "class GribCompareCard extends HTMLElement", 1
 )[0]
+
+
+def _flat(text: str) -> str:
+    """The text without any whitespace, so a check does not depend on how Prettier wrapped it."""
+    return re.sub(r"\s+", "", text)
 
 
 def test_the_chart_is_drawn_one_to_one() -> None:
@@ -42,13 +48,13 @@ def test_the_compare_card_redraws_it_when_resized() -> None:
     render = COMPARE_CARD.split("  _renderComparison() {", 1)[1]
     assert "this._watchChartWidth();" in render
     assert "fitCompareChart(this._els.cmpview, this._compareSpec());" in render
-    assert "new ResizeObserver(() => fitCompareChart(" in COMPARE_CARD
+    assert _flat("new ResizeObserver(() => fitCompareChart(") in _flat(COMPARE_CARD)
     # Released when the card leaves the page, set up again on the next render.
     assert "this._chartObserver.disconnect();" in COMPARE_CARD
 
 
 def test_the_full_screen_meteogram_redraws_it_too() -> None:
-    assert "new ResizeObserver(() => this._fitDetailChart())" in MAIN_CARD
+    assert _flat("new ResizeObserver(() => this._fitDetailChart())") in _flat(MAIN_CARD)
     assert "this._detailChartObserver.disconnect();" in MAIN_CARD
     body = MAIN_CARD.split("  _setDetailBody(html) {", 1)[1].split("\n  }\n", 1)[0]
     assert "this._fitDetailChart();" in body

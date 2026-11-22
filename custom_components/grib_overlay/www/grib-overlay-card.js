@@ -27,12 +27,18 @@ const GRIB_ASSET_URL = (() => {
 
 const GRIB_ASSET_VERSION = (() => {
   try {
-    return (GRIB_ASSET_URL && new URL(GRIB_ASSET_URL, location.href).searchParams.get("v")) || "";
+    return (
+      (GRIB_ASSET_URL &&
+        new URL(GRIB_ASSET_URL, location.href).searchParams.get("v")) ||
+      ""
+    );
   } catch {
     return "";
   }
 })();
-const GRIB_ASSET_QUERY = GRIB_ASSET_VERSION ? `?v=${encodeURIComponent(GRIB_ASSET_VERSION)}` : "";
+const GRIB_ASSET_QUERY = GRIB_ASSET_VERSION
+  ? `?v=${encodeURIComponent(GRIB_ASSET_VERSION)}`
+  : "";
 
 const LEAFLET_JS_URL = `/grib_overlay_static/vendor/leaflet/leaflet.js${GRIB_ASSET_QUERY}`;
 const LEAFLET_CSS_URL = `/grib_overlay_static/vendor/leaflet/leaflet.css${GRIB_ASSET_QUERY}`;
@@ -67,15 +73,25 @@ const RENDER_MODES = ["raster", "particles", "vectors", "wavevectors"];
 const GRIB_LANG_DEFAULT = "en";
 
 function gribNormalizeLang(raw) {
-  return String(raw || "").toLowerCase().startsWith("nl") ? "nl" : GRIB_LANG_DEFAULT;
+  return String(raw || "")
+    .toLowerCase()
+    .startsWith("nl")
+    ? "nl"
+    : GRIB_LANG_DEFAULT;
 }
 
 function gribDetectLang(hass) {
-  const fromHass = hass && ((hass.locale && hass.locale.language) || hass.language);
+  const fromHass =
+    hass && ((hass.locale && hass.locale.language) || hass.language);
   if (fromHass) return gribNormalizeLang(fromHass);
-  const doc = typeof document !== "undefined" && document.documentElement && document.documentElement.lang;
+  const doc =
+    typeof document !== "undefined" &&
+    document.documentElement &&
+    document.documentElement.lang;
   if (doc) return gribNormalizeLang(doc);
-  return gribNormalizeLang(typeof navigator !== "undefined" ? navigator.language : "");
+  return gribNormalizeLang(
+    typeof navigator !== "undefined" ? navigator.language : ""
+  );
 }
 
 let gribLang = gribDetectLang(null);
@@ -146,7 +162,8 @@ function gribDefineCard(tag, cls) {
   const existing = customElements.get(tag);
   GRIB_DEFINED.set(tag, cls);
   if (existing) {
-    gribLog("warn",
+    gribLog(
+      "warn",
 
       `grib-overlay-card: ${tag} was already defined by another copy of this ` +
         `file; this one (${GRIB_ASSET_VERSION || "dev"}) is not taking over. ` +
@@ -186,15 +203,22 @@ function gribTeachRegistry() {
     registry.get = (tag) => get(tag) || GRIB_DEFINED.get(tag);
     // Home Assistant waits on this before it rebuilds a card it gave up on.
     registry.whenDefined = (tag) =>
-      GRIB_DEFINED.has(tag) ? Promise.resolve(GRIB_DEFINED.get(tag)) : whenDefined(tag);
-    gribLog("info",
+      GRIB_DEFINED.has(tag)
+        ? Promise.resolve(GRIB_DEFINED.get(tag))
+        : whenDefined(tag);
+    gribLog(
+      "info",
 
       "grib-overlay-card: this page replaced its custom element registry after the " +
         "cards had registered; the new one has been told about them."
     );
     return true;
   } catch (err) {
-    gribLog("warn", "grib-overlay-card: could not tell the new registry about the cards", err);
+    gribLog(
+      "warn",
+      "grib-overlay-card: could not tell the new registry about the cards",
+      err
+    );
     return false;
   }
 }
@@ -207,7 +231,9 @@ function gribRebuildErrorCards(found) {
   for (const record of found.ours) {
     const inner = record.node && record.node._element;
     if (!inner || !inner.isConnected) continue;
-    inner.dispatchEvent(new CustomEvent("ll-rebuild", { bubbles: true, composed: true }));
+    inner.dispatchEvent(
+      new CustomEvent("ll-rebuild", { bubbles: true, composed: true })
+    );
     rebuilt += 1;
   }
   return rebuilt;
@@ -295,7 +321,8 @@ function gribHassForReport() {
   if (gribReportHass) return gribReportHass;
   try {
     const root = document.querySelector("home-assistant");
-    if (root && root.hass && typeof root.hass.callApi === "function") return root.hass;
+    if (root && root.hass && typeof root.hass.callApi === "function")
+      return root.hass;
   } catch {
     /* not running inside Home Assistant */
   }
@@ -308,7 +335,10 @@ function gribHassForReport() {
 // an older copy of this file.
 function gribElementState(el) {
   const tag = String(el.tagName || "").toLowerCase();
-  const proto = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el) || {}, "hass");
+  const proto = Object.getOwnPropertyDescriptor(
+    Object.getPrototypeOf(el) || {},
+    "hass"
+  );
   const own = Object.getOwnPropertyDescriptor(el, "hass");
   return {
     tag,
@@ -323,7 +353,11 @@ function gribElementState(el) {
         : proto.get
           ? "getter without a setter"
           : "a plain value",
-    own_hass: !own ? "none" : own.writable === false ? "read-only value" : "a value",
+    own_hass: !own
+      ? "none"
+      : own.writable === false
+        ? "read-only value"
+        : "a value",
   };
 }
 
@@ -340,7 +374,8 @@ function gribCardStates() {
 }
 
 function gribReportCardError(card, err, kind) {
-  if (gribReportsSent >= GRIB_REPORT_MAX || gribReportQueue.length >= 10) return;
+  if (gribReportsSent >= GRIB_REPORT_MAX || gribReportQueue.length >= 10)
+    return;
   gribReportQueue.push({
     kind: kind || "card",
     card: String(card || ""),
@@ -392,7 +427,11 @@ async function gribSendReport() {
     });
   } catch (err) {
     // console.warn, not error: our own hook watches console.error.
-    gribLog("warn", "grib-overlay-card: could not report the card error to Home Assistant", err);
+    gribLog(
+      "warn",
+      "grib-overlay-card: could not report the card error to Home Assistant",
+      err
+    );
   }
 }
 
@@ -410,7 +449,10 @@ function gribWatchForCardErrors() {
   console.error = function (...args) {
     try {
       const first = args[0];
-      if (typeof first === "string" && first.startsWith("custom:grib-overlay-")) {
+      if (
+        typeof first === "string" &&
+        first.startsWith("custom:grib-overlay-")
+      ) {
         gribReportCardError(first, args[1]);
       }
     } catch {
@@ -423,7 +465,10 @@ function gribWatchForCardErrors() {
   // handler -- but it does reach here.
   window.addEventListener("error", (event) => {
     if (String(event.filename || "").includes("grib-overlay-card.js")) {
-      gribReportCardError("grib-overlay-card.js", event.error || { message: event.message });
+      gribReportCardError(
+        "grib-overlay-card.js",
+        event.error || { message: event.message }
+      );
     }
   });
 }
@@ -454,7 +499,9 @@ function gribErrorCardRecord(node) {
         node: host,
         type,
         ours: type.startsWith("custom:grib-overlay-"),
-        message: String((node._config && node._config.error) || node._config.message || ""),
+        message: String(
+          (node._config && node._config.error) || node._config.message || ""
+        ),
       };
     }
     const inner = node._element;
@@ -466,7 +513,9 @@ function gribErrorCardRecord(node) {
       ours: type.startsWith("custom:grib-overlay-"),
       // Older builds carry the text as `error`, newer ones as `message`; both
       // are empty when Home Assistant dropped the card without a reason.
-      message: String((inner._config && (inner._config.error || inner._config.message)) || ""),
+      message: String(
+        (inner._config && (inner._config.error || inner._config.message)) || ""
+      ),
     };
   } catch {
     return null; // another Home Assistant version keeps these elsewhere
@@ -486,14 +535,20 @@ function gribScanForErrorCards() {
       const record = gribErrorCardRecord(node);
       if (record) (record.ours ? ours : others).push(record);
     }
-    if (node.shadowRoot) for (const child of node.shadowRoot.children) queue.push(child);
+    if (node.shadowRoot)
+      for (const child of node.shadowRoot.children) queue.push(child);
     for (const child of node.children) queue.push(child);
   }
   return { ours, others, nodes: seen };
 }
 
 function gribScanOnce() {
-  if (gribErrorCardsReported || typeof document === "undefined" || !document.body) return;
+  if (
+    gribErrorCardsReported ||
+    typeof document === "undefined" ||
+    !document.body
+  )
+    return;
   gribTeachRegistry();
   let found = gribScanForErrorCards();
   // Other cards failing is their business -- worth naming only as company for
@@ -507,7 +562,10 @@ function gribScanOnce() {
   }
   gribErrorCardsReported = true;
   const dropped = found.ours
-    .map((r) => `${r.type}${r.message ? ": " + r.message : " (no message under it)"}`)
+    .map(
+      (r) =>
+        `${r.type}${r.message ? ": " + r.message : " (no message under it)"}`
+    )
     .join("; ");
   const company = found.others.length
     ? `; other cards on the page are showing one too: ${[
@@ -566,7 +624,10 @@ function gribFetchEntries(hass) {
   }
   // Each card gets its own array to filter and sort; the entries inside are
   // read-only as far as every card is concerned.
-  return gribEntriesRequest.then((data) => ({ ...data, entries: (data.entries || []).slice() }));
+  return gribEntriesRequest.then((data) => ({
+    ...data,
+    entries: (data.entries || []).slice(),
+  }));
 }
 
 function gribFixMapPosition(mapDiv) {
@@ -607,10 +668,14 @@ function gribApplyLanguage(root) {
   for (const el of root.querySelectorAll("[data-i18n-title]")) {
     el.title = gribT(el.getAttribute("data-i18n-title"));
     // A select or slider has no text of its own: its tooltip is also its name.
-    if (el.matches("select, input[type=range]")) el.setAttribute("aria-label", el.title);
+    if (el.matches("select, input[type=range]"))
+      el.setAttribute("aria-label", el.title);
   }
   for (const el of root.querySelectorAll("[data-i18n-aria-label]")) {
-    el.setAttribute("aria-label", gribT(el.getAttribute("data-i18n-aria-label")));
+    el.setAttribute(
+      "aria-label",
+      gribT(el.getAttribute("data-i18n-aria-label"))
+    );
   }
 }
 
@@ -701,7 +766,8 @@ const GRIB_TEXT = {
     savedMeasurement: "Opgeslagen meting — klik om te openen",
     busy: "Bezig…",
     downloadStation: "Meetstation downloaden",
-    downloadStationTitle: "Download het dichtstbijzijnde meetstation voor deze parameter",
+    downloadStationTitle:
+      "Download het dichtstbijzijnde meetstation voor deze parameter",
     stationNoData: "Geen data — station verborgen",
     noOverlap: "Geen overlap",
     noOverlapTitle:
@@ -747,7 +813,8 @@ const GRIB_TEXT = {
     compareCardDescription:
       "Vergelijk wat verschillende GRIB-bronnen op één punt voorspellen (lijngrafiek + tabel).",
     wmCardName: "GRIB Weather Overlay — KNMI-weerkaart",
-    wmCardDescription: "De KNMI-weerkaart met fronten: analyse en verwachting tot 48 uur.",
+    wmCardDescription:
+      "De KNMI-weerkaart met fronten: analyse en verwachting tot 48 uur.",
     wmTitle: "KNMI-weerkaart",
     wmAnalysis: "Analyse",
     wmForecast: "Verwachting",
@@ -755,7 +822,8 @@ const GRIB_TEXT = {
     wmNext: "Volgende kaart",
     wmLoading: "Weerkaarten laden…",
     wmNone: "Geen weerkaarten beschikbaar.",
-    wmNoKnmi: "De weerkaart gebruikt de sleutel van een KNMI-integratie; voeg die eerst toe.",
+    wmNoKnmi:
+      "De weerkaart gebruikt de sleutel van een KNMI-integratie; voeg die eerst toe.",
     wmError: "Weerkaart niet beschikbaar: {msg}",
     wmIssued: "uitgegeven {time}",
     // map layers
@@ -843,7 +911,8 @@ const GRIB_TEXT = {
     savedMeasurement: "Saved measurement — click to open",
     busy: "Working…",
     downloadStation: "Download station",
-    downloadStationTitle: "Download the nearest measurement station for this parameter",
+    downloadStationTitle:
+      "Download the nearest measurement station for this parameter",
     stationNoData: "No data — station hidden",
     noOverlap: "No overlap",
     noOverlapTitle:
@@ -854,7 +923,8 @@ const GRIB_TEXT = {
       "Station “{name}” returned {n} observation(s), but none of them overlap the forecast columns (observations are in the past, the forecast is in the future).",
     stationHiddenNote: "No data for {what}{detail} — station hidden.",
     aStation: "station",
-    loadedAsMeasurement: "{n} value(s) from “{name}” loaded as the measurement.",
+    loadedAsMeasurement:
+      "{n} value(s) from “{name}” loaded as the measurement.",
     clearMeasurement: "Clear measurement",
     clearAll: "Clear all measurement data",
     clearAllTitle: "Remove every saved measurement from every point",
@@ -863,7 +933,8 @@ const GRIB_TEXT = {
     points: "points",
     stationsWithin: "Stations within {r} km:",
     none: "none",
-    downloadStationAsMeasurement: "Download {name} and show it as the measurement",
+    downloadStationAsMeasurement:
+      "Download {name} and show it as the measurement",
     stationMarkerTitle: "{name} · {km} km — click to download",
     measurementFrom: "Measurement from {name}",
     measurementManual: "Manually entered measurement",
@@ -887,7 +958,8 @@ const GRIB_TEXT = {
     compareCardDescription:
       "Compare what different GRIB sources predict at one point (line chart + table).",
     wmCardName: "GRIB Weather Overlay — KNMI weather map",
-    wmCardDescription: "KNMI's weather chart with fronts: analysis and forecast up to 48 hours.",
+    wmCardDescription:
+      "KNMI's weather chart with fronts: analysis and forecast up to 48 hours.",
     wmTitle: "KNMI weather map",
     wmAnalysis: "Analysis",
     wmForecast: "Forecast",
@@ -895,7 +967,8 @@ const GRIB_TEXT = {
     wmNext: "Next chart",
     wmLoading: "Loading weather charts…",
     wmNone: "No weather charts available.",
-    wmNoKnmi: "The weather map uses the key of a KNMI integration; add one first.",
+    wmNoKnmi:
+      "The weather map uses the key of a KNMI integration; add one first.",
     wmError: "Weather map unavailable: {msg}",
     wmIssued: "issued {time}",
     // map layers
@@ -978,19 +1051,25 @@ const GRIB_PARAM_NAMES = {
 // language, and an unknown dataset keeps whatever the backend sent.
 const GRIB_DATASET_NAMES = {
   en: {
-    harmonie_arome_cy43_p1: "HARMONIE-AROME Cy43 - Netherlands, near-surface parameters",
-    harmonie_arome_cy43_p3: "HARMONIE-AROME Cy43 - Europe (DINI), near-surface parameters",
+    harmonie_arome_cy43_p1:
+      "HARMONIE-AROME Cy43 - Netherlands, near-surface parameters",
+    harmonie_arome_cy43_p3:
+      "HARMONIE-AROME Cy43 - Europe (DINI), near-surface parameters",
     ewam: "DWD EWAM - European waves (North Sea, Atlantic Ocean, Mediterranean)",
-    icon_d2: "DWD ICON-D2 - weather model 2.2 km (Germany, Benelux, southern North Sea)",
+    icon_d2:
+      "DWD ICON-D2 - weather model 2.2 km (Germany, Benelux, southern North Sea)",
     gwam: "DWD GWAM - global waves (Atlantic approaches, to +174 h)",
     gfs: "NOAA GFS - global model 0.25° (to +384 h)",
     gfs_wave: "NOAA GFS-Wave - global waves 0.25° (to +384 h)",
     bsh_current_northsea: "BSH - North Sea currents (NL/BE/FR coast)",
     dmi_wam_nsb: "DMI WAM - waves North Sea and Baltic (~5 km)",
     dmi_wam_natlant: "DMI WAM - waves North Atlantic (0.25°)",
-    dmi_dkss_nsbs: "DMI DKSS - currents and water level North Sea and Baltic (~5 km)",
-    rws_dcsm: "RWS DCSM - currents and water level (Norwegian coast to northern Spain)",
-    rws_dcsm_zuno: "RWS DCSM-ZUNO - currents and water level southern North Sea (fine)",
+    dmi_dkss_nsbs:
+      "DMI DKSS - currents and water level North Sea and Baltic (~5 km)",
+    rws_dcsm:
+      "RWS DCSM - currents and water level (Norwegian coast to northern Spain)",
+    rws_dcsm_zuno:
+      "RWS DCSM-ZUNO - currents and water level southern North Sea (fine)",
     rws_swan_dcsm: "RWS SWAN - waves North Sea",
     rws_swan_kuststrook: "RWS SWAN - waves Dutch coast (fine)",
     metno_oslofjord: "MET Norway - Oslofjord: weather, waves and currents",
@@ -1002,7 +1081,11 @@ const GRIB_DATASET_NAMES = {
 // `dataset` is a backend dataset object ({key, name}).
 function gribDatasetName(dataset) {
   if (!dataset) return "";
-  return (GRIB_DATASET_NAMES[gribLang] || {})[dataset.key] || dataset.name || dataset.key;
+  return (
+    (GRIB_DATASET_NAMES[gribLang] || {})[dataset.key] ||
+    dataset.name ||
+    dataset.key
+  );
 }
 
 // The direction parameter of a wave-type family: swell_height / swell_period ->
@@ -1061,13 +1144,17 @@ function loadScript(url, isReady) {
 // referrerPolicy overrides that per tile and sends just the origin.
 const OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const HA_MAP_TILES_URL = "/api/map_tiles/raster/{z}/{x}/{y}.png?token={token}";
-const OPENSEAMAP_TILE_URL = "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png";
-const OPENSEAMAP_SPORT_URL = "https://tiles.openseamap.org/sport/{z}/{x}/{y}.png";
+const OPENSEAMAP_TILE_URL =
+  "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png";
+const OPENSEAMAP_SPORT_URL =
+  "https://tiles.openseamap.org/sport/{z}/{x}/{y}.png";
 // Crowd-sourced soundings and the contours derived from them (beta, sparse).
-const OPENSEAMAP_DEPTH_WMS = "https://depth.openseamap.org/geoserver/openseamap/wms";
+const OPENSEAMAP_DEPTH_WMS =
+  "https://depth.openseamap.org/geoserver/openseamap/wms";
 // GEBCO 2021 through OpenSeaMap's GeoWebCache: it only answers requests on its
 // tile grid, which Leaflet's 256 px Web-Mercator tiles are.
-const OPENSEAMAP_GEBCO_WMS = "https://geoserver.openseamap.org/geoserver/gwc/service/wms";
+const OPENSEAMAP_GEBCO_WMS =
+  "https://geoserver.openseamap.org/geoserver/gwc/service/wms";
 const EMODNET_TILE_URL =
   "https://tiles.emodnet-bathymetry.eu/2020/baselayer/web_mercator/{z}/{x}/{y}.png";
 const TILE_REFERRER_POLICY = "strict-origin-when-cross-origin";
@@ -1131,7 +1218,8 @@ function gribWatchProxyLayer(layer) {
     for (const ref of [...gribProxyLayers]) {
       const alive = ref.deref();
       if (!alive) gribProxyLayers.delete(ref);
-      else if (Date.now() - alive._gribTokenAt >= MAP_TILES_TOKEN_MAX_AGE_MS) gribRenewToken(alive, false);
+      else if (Date.now() - alive._gribTokenAt >= MAP_TILES_TOKEN_MAX_AGE_MS)
+        gribRenewToken(alive, false);
     }
     if (!gribProxyLayers.size) {
       clearInterval(gribTokenTimer);
@@ -1148,7 +1236,9 @@ async function gribFillOsmBase(group, cfg, getHass) {
   if (cfg.tile_url) {
     group.addLayer(
       L.tileLayer(String(cfg.tile_url), {
-        attribution: cfg.tile_attribution ? String(cfg.tile_attribution) : OSM_ATTRIBUTION,
+        attribution: cfg.tile_attribution
+          ? String(cfg.tile_attribution)
+          : OSM_ATTRIBUTION,
         maxZoom: 19,
         zIndex: 1,
         referrerPolicy: TILE_REFERRER_POLICY,
@@ -1164,7 +1254,8 @@ async function gribFillOsmBase(group, cfg, getHass) {
     try {
       // Absolute, for a dashboard served from another host (Cast). Not
       // hassUrl(template): URL() would percent-encode the {z}/{x}/{y} placeholders.
-      if (typeof hass.hassUrl === "function") base = hass.hassUrl("").replace(/\/+$/, "");
+      if (typeof hass.hassUrl === "function")
+        base = hass.hassUrl("").replace(/\/+$/, "");
     } catch {
       base = ""; // same origin, which is where dashboards normally live
     }
@@ -1219,17 +1310,27 @@ const MAP_OVERLAYS = [
     key: "soundings",
     label: "layerSoundings",
     make: () =>
-      gribWms(OPENSEAMAP_DEPTH_WMS, "openseamap:tracks_10m", OPENSEAMAP_ATTRIBUTION, {
-        version: "1.1.0",
-      }),
+      gribWms(
+        OPENSEAMAP_DEPTH_WMS,
+        "openseamap:tracks_10m",
+        OPENSEAMAP_ATTRIBUTION,
+        {
+          version: "1.1.0",
+        }
+      ),
   },
   {
     key: "depth",
     label: "layerDepth",
     make: () =>
-      gribWms(OPENSEAMAP_DEPTH_WMS, "openseamap:contour2,openseamap:contour", OPENSEAMAP_ATTRIBUTION, {
-        version: "1.1.0",
-      }),
+      gribWms(
+        OPENSEAMAP_DEPTH_WMS,
+        "openseamap:contour2,openseamap:contour",
+        OPENSEAMAP_ATTRIBUTION,
+        {
+          version: "1.1.0",
+        }
+      ),
   },
   {
     key: "sport",
@@ -1257,16 +1358,26 @@ const MAP_LAYERS_KEY = "grib-overlay-map-layers";
 
 // A list in YAML, or a comma/space separated string; unknown ids dropped.
 function gribLayerList(value) {
-  const raw = Array.isArray(value) ? value : String(value || "").split(/[\s,]+/);
+  const raw = Array.isArray(value)
+    ? value
+    : String(value || "").split(/[\s,]+/);
   const known = new Set(MAP_OVERLAYS.map((d) => d.key));
-  return raw.map((v) => String(v).trim().toLowerCase()).filter((v) => known.has(v));
+  return raw
+    .map((v) => String(v).trim().toLowerCase())
+    .filter((v) => known.has(v));
 }
 
 // The layer choice the viewer made last (on either card), if any.
 function gribReadMapLayers() {
   try {
-    const stored = JSON.parse(window.localStorage.getItem(MAP_LAYERS_KEY) || "null");
-    if (stored && MAP_BASES.includes(stored.base) && Array.isArray(stored.overlays)) {
+    const stored = JSON.parse(
+      window.localStorage.getItem(MAP_LAYERS_KEY) || "null"
+    );
+    if (
+      stored &&
+      MAP_BASES.includes(stored.base) &&
+      Array.isArray(stored.overlays)
+    ) {
       return { base: stored.base, overlays: gribLayerList(stored.overlays) };
     }
   } catch {
@@ -1287,10 +1398,15 @@ function gribWriteMapLayers(choice) {
 function gribInitialMapLayers(cfg) {
   const stored = gribReadMapLayers();
   if (stored) return stored;
-  const base = String(cfg.base_map || "osm").trim().toLowerCase();
+  const base = String(cfg.base_map || "osm")
+    .trim()
+    .toLowerCase();
   return {
     base: MAP_BASES.includes(base) ? base : "osm",
-    overlays: cfg.map_layers == null ? MAP_LAYERS_DEFAULT : gribLayerList(cfg.map_layers),
+    overlays:
+      cfg.map_layers == null
+        ? MAP_LAYERS_DEFAULT
+        : gribLayerList(cfg.map_layers),
   };
 }
 
@@ -1314,8 +1430,12 @@ function addBaseLayers(map, config, getHass) {
   };
   const overlays = {};
   // autoZIndex off: the zIndex values set here are the stacking order.
-  const control = L.control.layers(null, null, { position: "topright", autoZIndex: false });
-  for (const key of MAP_BASES) control.addBaseLayer(bases[key], baseLabels[key]);
+  const control = L.control.layers(null, null, {
+    position: "topright",
+    autoZIndex: false,
+  });
+  for (const key of MAP_BASES)
+    control.addBaseLayer(bases[key], baseLabels[key]);
   MAP_OVERLAYS.forEach((def, i) => {
     overlays[def.key] = def.make().setZIndex(2 + i);
     control.addOverlay(overlays[def.key], gribT(def.label));
@@ -1329,7 +1449,9 @@ function addBaseLayers(map, config, getHass) {
   map.on("baselayerchange overlayadd overlayremove", () =>
     gribWriteMapLayers({
       base: MAP_BASES.find((key) => map.hasLayer(bases[key])) || "osm",
-      overlays: MAP_OVERLAYS.map((d) => d.key).filter((key) => map.hasLayer(overlays[key])),
+      overlays: MAP_OVERLAYS.map((d) => d.key).filter((key) =>
+        map.hasLayer(overlays[key])
+      ),
     })
   );
 
@@ -1352,7 +1474,9 @@ const MAP_CONTROL_CSS = `
 let leafletLoadingPromise = null;
 function loadLeaflet() {
   if (!leafletLoadingPromise) {
-    leafletLoadingPromise = loadScript(LEAFLET_JS_URL, () => !!window.L).then(() => window.L);
+    leafletLoadingPromise = loadScript(LEAFLET_JS_URL, () => !!window.L).then(
+      () => window.L
+    );
   }
   return leafletLoadingPromise;
 }
@@ -1406,15 +1530,19 @@ const GRIB_COMPASS = {
 };
 function compass(deg) {
   const points = GRIB_COMPASS[gribLang] || GRIB_COMPASS.en;
-  return points[Math.round(((deg % 360) / 45)) % 8];
+  return points[Math.round((deg % 360) / 45) % 8];
 }
 
 // Parse a "#rrggbb" (or "#rgb") legend colour into an [r, g, b] triplet.
 function hexToRgb(hex) {
-  let h = String(hex || "").trim().replace(/^#/, "");
+  let h = String(hex || "")
+    .trim()
+    .replace(/^#/, "");
   if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
   const n = parseInt(h, 16);
-  return Number.isFinite(n) ? [(n >> 16) & 255, (n >> 8) & 255, n & 255] : [128, 128, 128];
+  return Number.isFinite(n)
+    ? [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+    : [128, 128, 128];
 }
 
 // Separable Gaussian smoothing of a north-first scalar grid (the field_grid
@@ -1428,7 +1556,9 @@ function smoothField(field, sigmaKm) {
   const KM_PER_DEG = 111.32;
   const midLat = la1 - ((ny - 1) * dy) / 2;
   const sy = sigmaKm / (dy * KM_PER_DEG);
-  const sx = sigmaKm / (dx * KM_PER_DEG * Math.max(0.1, Math.cos((midLat * Math.PI) / 180)));
+  const sx =
+    sigmaKm /
+    (dx * KM_PER_DEG * Math.max(0.1, Math.cos((midLat * Math.PI) / 180)));
   const kernel = (s) => {
     const rad = Math.max(1, Math.min(40, Math.ceil(s * 3)));
     const w = [];
@@ -1514,14 +1644,38 @@ function marchingSquares(field, level) {
       const left = () => cross(x, y, tl, x, y + 1, bl);
       const push = (a, b) => segs.push([a[0], a[1], b[0], b[1]]);
       switch (idx) {
-        case 1: case 14: push(left(), bottom()); break;
-        case 2: case 13: push(bottom(), right()); break;
-        case 3: case 12: push(left(), right()); break;
-        case 4: case 11: push(top(), right()); break;
-        case 6: case 9: push(top(), bottom()); break;
-        case 7: case 8: push(left(), top()); break;
-        case 5: push(left(), top()); push(bottom(), right()); break;
-        case 10: push(top(), right()); push(left(), bottom()); break;
+        case 1:
+        case 14:
+          push(left(), bottom());
+          break;
+        case 2:
+        case 13:
+          push(bottom(), right());
+          break;
+        case 3:
+        case 12:
+          push(left(), right());
+          break;
+        case 4:
+        case 11:
+          push(top(), right());
+          break;
+        case 6:
+        case 9:
+          push(top(), bottom());
+          break;
+        case 7:
+        case 8:
+          push(left(), top());
+          break;
+        case 5:
+          push(left(), top());
+          push(bottom(), right());
+          break;
+        case 10:
+          push(top(), right());
+          push(left(), bottom());
+          break;
       }
     }
   }
@@ -1610,7 +1764,9 @@ function displayUnitLabel(config, sourceUnit) {
 
 // Wind-direction display style: "compass" (N/O/Z/W, default) or "deg" (0-360).
 function directionMode(config) {
-  const raw = String((config && config.direction_unit) || "compass").toLowerCase().trim();
+  const raw = String((config && config.direction_unit) || "compass")
+    .toLowerCase()
+    .trim();
   return DIRECTION_DEG_ALIASES.has(raw) ? "deg" : "compass";
 }
 
@@ -1631,17 +1787,32 @@ const GRIB_PARAM_GROUPS = {
   wind: ["wind_10m", "wind_gust_10m"],
   sea: ["current", "water_level", "water_temperature"],
   weather: [
-    "wind_10m", "wind_gust_10m", "temperature_2m", "dewpoint_2m", "humidity_2m",
-    "precipitation", "pressure_msl", "visibility", "cloud_cover", "cape",
+    "wind_10m",
+    "wind_gust_10m",
+    "temperature_2m",
+    "dewpoint_2m",
+    "humidity_2m",
+    "precipitation",
+    "pressure_msl",
+    "visibility",
+    "cloud_cover",
+    "cape",
   ],
 };
 
 // Dutch (and a few loose English) names for those groups.
 const GRIB_GROUP_ALIASES = {
-  golven: "waves", golf: "waves", wave: "waves",
+  golven: "waves",
+  golf: "waves",
+  wave: "waves",
   deining: "swell",
-  windgolven: "windwaves", windwave: "windwaves", wind_waves: "windwaves",
-  zee: "sea", stroming: "sea", currents: "sea", water: "sea",
+  windgolven: "windwaves",
+  windwave: "windwaves",
+  wind_waves: "windwaves",
+  zee: "sea",
+  stroming: "sea",
+  currents: "sea",
+  water: "sea",
   weer: "weather",
 };
 
@@ -1651,7 +1822,9 @@ const GRIB_GROUP_ALIASES = {
 function filterTokens(raw) {
   if (raw == null) return null;
   const list = Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/);
-  const tokens = list.map((s) => String(s).trim().toLowerCase()).filter(Boolean);
+  const tokens = list
+    .map((s) => String(s).trim().toLowerCase())
+    .filter(Boolean);
   return tokens.length ? tokens : null;
 }
 
@@ -1662,7 +1835,12 @@ function tokenMatches(token, value) {
   const v = String(value).toLowerCase();
   if (!token.includes("*")) return token === v;
   const rx = new RegExp(
-    "^" + token.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$"
+    "^" +
+      token
+        .split("*")
+        .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+        .join(".*") +
+      "$"
   );
   return rx.test(v);
 }
@@ -1675,7 +1853,8 @@ function matchesAny(tokens, value) {
 function expandParamTokens(tokens) {
   if (!tokens) return null;
   const out = [];
-  for (const t of tokens) out.push(...(GRIB_PARAM_GROUPS[GRIB_GROUP_ALIASES[t] || t] || [t]));
+  for (const t of tokens)
+    out.push(...(GRIB_PARAM_GROUPS[GRIB_GROUP_ALIASES[t] || t] || [t]));
   return out;
 }
 
@@ -1683,9 +1862,14 @@ function expandParamTokens(tokens) {
 // or the title shown in the dropdown.
 function entryMatchesToken(entry, token) {
   const ds = (entry && entry.dataset) || {};
-  return [entry.entry_id, entry.source, ds.key, ds.name, gribDatasetName(ds), entry.title].some(
-    (v) => tokenMatches(token, v)
-  );
+  return [
+    entry.entry_id,
+    entry.source,
+    ds.key,
+    ds.name,
+    gribDatasetName(ds),
+    entry.title,
+  ].some((v) => tokenMatches(token, v));
 }
 
 // The parameters a card keeps, in the entry's own order. A height or period
@@ -1696,12 +1880,21 @@ function filterCardParameters(params, include, exclude) {
   if (!include && !exclude) return list;
   const keep = new Set(
     list
-      .filter((p) => (!include || matchesAny(include, p.key)) && !matchesAny(exclude, p.key))
+      .filter(
+        (p) =>
+          (!include || matchesAny(include, p.key)) &&
+          !matchesAny(exclude, p.key)
+      )
       .map((p) => p.key)
   );
   for (const key of [...keep]) {
     const dir = gribDirectionKeyFor(key);
-    if (dir && !keep.has(dir) && !matchesAny(exclude, dir) && list.some((p) => p.key === dir)) {
+    if (
+      dir &&
+      !keep.has(dir) &&
+      !matchesAny(exclude, dir) &&
+      list.some((p) => p.key === dir)
+    ) {
       keep.add(dir);
     }
   }
@@ -1724,7 +1917,9 @@ function filterCardEntries(entries, config) {
     if (exclude && exclude.some((t) => entryMatchesToken(entry, t))) continue;
     const params = filterCardParameters(entry.parameters, pInclude, pExclude);
     if (!params.length) continue;
-    out.push(params === entry.parameters ? entry : { ...entry, parameters: params });
+    out.push(
+      params === entry.parameters ? entry : { ...entry, parameters: params }
+    );
   }
   return out;
 }
@@ -1773,10 +1968,15 @@ function cardFilterKey(config) {
 
 // Canonical column resolution ("quarter"/"hour"/"3h"/"day") with aliases.
 function normalizeResolution(v) {
-  const raw = String(v == null ? "" : v).toLowerCase().replace(/\s+/g, "");
-  if (["kwartier", "kwart", "quarter", "15", "15m", "15min"].includes(raw)) return "quarter";
-  if (["3uur", "3u", "3h", "3", "180", "3hour", "3hourly"].includes(raw)) return "3h";
-  if (["dag", "day", "daily", "24h", "24u", "24uur", "1440"].includes(raw)) return "day";
+  const raw = String(v == null ? "" : v)
+    .toLowerCase()
+    .replace(/\s+/g, "");
+  if (["kwartier", "kwart", "quarter", "15", "15m", "15min"].includes(raw))
+    return "quarter";
+  if (["3uur", "3u", "3h", "3", "180", "3hour", "3hourly"].includes(raw))
+    return "3h";
+  if (["dag", "day", "daily", "24h", "24u", "24uur", "1440"].includes(raw))
+    return "day";
   return "hour"; // uur / hour / 1h / 60 and the default
 }
 
@@ -1857,7 +2057,9 @@ function aggregateSeries(series, res, sum, columns) {
     for (const [key, a] of acc) {
       out.set(key, {
         value: a.vN ? a.vSum / a.vN : null,
-        direction: a.dN ? ((Math.atan2(a.sin, a.cos) * 180) / Math.PI + 360) % 360 : null,
+        direction: a.dN
+          ? ((Math.atan2(a.sin, a.cos) * 180) / Math.PI + 360) % 360
+          : null,
       });
     }
     return out;
@@ -1872,11 +2074,16 @@ function aggregateSeries(series, res, sum, columns) {
     const dist = Math.abs(t - key);
     const cur = best.get(key);
     if (!cur || dist < cur.dist) {
-      best.set(key, { dist, value: s.value ?? null, direction: s.direction ?? null });
+      best.set(key, {
+        dist,
+        value: s.value ?? null,
+        direction: s.direction ?? null,
+      });
     }
   }
   const out = new Map();
-  for (const [key, b] of best) out.set(key, { value: b.value, direction: b.direction });
+  for (const [key, b] of best)
+    out.set(key, { value: b.value, direction: b.direction });
   return out;
 }
 
@@ -1914,7 +2121,8 @@ function readableText(rgb) {
 // Format a display value for a table cell (decimals scaled to the unit).
 function fmtCell(sourceUnit, v) {
   if (v == null || !Number.isFinite(v)) return "–";
-  if (sourceUnit === "°C" || sourceUnit === "hPa" || sourceUnit === "%") return String(Math.round(v));
+  if (sourceUnit === "°C" || sourceUnit === "hPa" || sourceUnit === "%")
+    return String(Math.round(v));
   if (sourceUnit === "mm") return v < 0.05 ? "–" : v.toFixed(1);
   return (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1)).replace(/\.0$/, "");
 }
@@ -1933,7 +2141,9 @@ function broadcastGribPoint(lat, lng, source) {
   } catch {
     /* private mode / storage disabled: fall back to the in-memory value */
   }
-  window.dispatchEvent(new CustomEvent(GRIB_POINT_EVENT, { detail: { lat, lng, source } }));
+  window.dispatchEvent(
+    new CustomEvent(GRIB_POINT_EVENT, { detail: { lat, lng, source } })
+  );
 }
 // The point last picked on any card this session (memory first, then storage).
 function gribReadSharedPoint() {
@@ -2014,12 +2224,16 @@ function gribSetMeasurementsBulk(lat, lng, param, colValues, station) {
     store[key] = rec;
   }
   const bucket = {};
-  for (const [col, v] of colValues) if (v != null && Number.isFinite(v)) bucket[col] = Number(v);
+  for (const [col, v] of colValues)
+    if (v != null && Number.isFinite(v)) bucket[col] = Number(v);
   if (!Object.keys(bucket).length) return;
   rec.params[param] = bucket;
   if (station) {
     rec.stations = rec.stations || {};
-    rec.stations[param] = { name: station.name || "meetstation", provider: station.provider || "" };
+    rec.stations[param] = {
+      name: station.name || "meetstation",
+      provider: station.provider || "",
+    };
   }
   gribWriteAllMeasurements(store);
   window.dispatchEvent(new Event(GRIB_MEAS_EVENT));
@@ -2042,7 +2256,8 @@ function gribClearMeasurements(lat, lng, param) {
   if (!rec) return;
   if (param && rec.params) delete rec.params[param];
   if (param && rec.stations) delete rec.stations[param];
-  if (!param || !rec.params || !Object.keys(rec.params).length) delete store[key];
+  if (!param || !rec.params || !Object.keys(rec.params).length)
+    delete store[key];
   gribWriteAllMeasurements(store);
   window.dispatchEvent(new Event(GRIB_MEAS_EVENT));
 }
@@ -2072,22 +2287,22 @@ function confirmClearAllMeasurements() {
 // is a later step. "NZ" marks North Sea platforms.
 const KNMI_STATIONS = [
   { name: "De Kooy", lat: 52.928, lon: 4.781 },
-  { name: "Schiphol", lat: 52.318, lon: 4.790 },
+  { name: "Schiphol", lat: 52.318, lon: 4.79 },
   { name: "Berkhout", lat: 52.644, lon: 4.979 },
   { name: "Wijk aan Zee", lat: 52.506, lon: 4.603 },
-  { name: "De Bilt", lat: 52.100, lon: 5.180 },
-  { name: "Soesterberg", lat: 52.130, lon: 5.274 },
+  { name: "De Bilt", lat: 52.1, lon: 5.18 },
+  { name: "Soesterberg", lat: 52.13, lon: 5.274 },
   { name: "Stavoren", lat: 52.898, lon: 5.384 },
-  { name: "Lelystad", lat: 52.458, lon: 5.520 },
+  { name: "Lelystad", lat: 52.458, lon: 5.52 },
   { name: "Leeuwarden", lat: 53.224, lon: 5.752 },
   { name: "Marknesse", lat: 52.703, lon: 5.888 },
   { name: "Deelen", lat: 52.056, lon: 5.873 },
-  { name: "Lauwersoog", lat: 53.413, lon: 6.200 },
+  { name: "Lauwersoog", lat: 53.413, lon: 6.2 },
   { name: "Heino", lat: 52.435, lon: 6.259 },
-  { name: "Hoogeveen", lat: 52.750, lon: 6.574 },
+  { name: "Hoogeveen", lat: 52.75, lon: 6.574 },
   { name: "Eelde", lat: 53.125, lon: 6.585 },
   { name: "Hupsel", lat: 52.069, lon: 6.657 },
-  { name: "Nieuw Beerta", lat: 53.196, lon: 7.150 },
+  { name: "Nieuw Beerta", lat: 53.196, lon: 7.15 },
   { name: "Twenthe", lat: 52.274, lon: 6.891 },
   { name: "Cadzand", lat: 51.381, lon: 3.379 },
   { name: "Vlissingen", lat: 51.442, lon: 3.596 },
@@ -2096,7 +2311,7 @@ const KNMI_STATIONS = [
   { name: "Hoek van Holland", lat: 51.992, lon: 4.122 },
   { name: "Woensdrecht", lat: 51.449, lon: 4.342 },
   { name: "Rotterdam", lat: 51.962, lon: 4.447 },
-  { name: "Cabauw", lat: 51.970, lon: 4.926 },
+  { name: "Cabauw", lat: 51.97, lon: 4.926 },
   { name: "Gilze-Rijen", lat: 51.566, lon: 4.936 },
   { name: "Herwijnen", lat: 51.859, lon: 5.146 },
   { name: "Eindhoven", lat: 51.451, lon: 5.377 },
@@ -2106,7 +2321,7 @@ const KNMI_STATIONS = [
   { name: "Arcen", lat: 51.497, lon: 6.197 },
   { name: "Hoorn (Terschelling)", lat: 53.392, lon: 5.346 },
   { name: "Europlatform (NZ)", lat: 51.999, lon: 3.276 },
-  { name: "K13-A (NZ)", lat: 53.218, lon: 3.220 },
+  { name: "K13-A (NZ)", lat: 53.218, lon: 3.22 },
 ];
 function gribHaversineKm(aLat, aLon, bLat, bLon) {
   const R = 6371;
@@ -2114,12 +2329,17 @@ function gribHaversineKm(aLat, aLon, bLat, bLon) {
   const dLon = ((bLon - aLon) * Math.PI) / 180;
   const s =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos((aLat * Math.PI) / 180) * Math.cos((bLat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+    Math.cos((aLat * Math.PI) / 180) *
+      Math.cos((bLat * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 // Stations within `radiusKm` of a point, nearest first, with the distance in km.
 function stationsWithin(lat, lng, radiusKm) {
-  return KNMI_STATIONS.map((s) => ({ ...s, distKm: gribHaversineKm(lat, lng, s.lat, s.lon) }))
+  return KNMI_STATIONS.map((s) => ({
+    ...s,
+    distKm: gribHaversineKm(lat, lng, s.lat, s.lon),
+  }))
     .filter((s) => s.distKm <= radiusKm)
     .sort((a, b) => a.distKm - b.distKm);
 }
@@ -2131,7 +2351,8 @@ class GribOverlayCard extends HTMLElement {
 
   setConfig(config) {
     const filtersChanged =
-      this._config !== undefined && cardFilterKey(config || {}) !== cardFilterKey(this._config);
+      this._config !== undefined &&
+      cardFilterKey(config || {}) !== cardFilterKey(this._config);
     this._config = config || {};
     this._render();
     this._applyLayout();
@@ -2150,7 +2371,8 @@ class GribOverlayCard extends HTMLElement {
     if (entry && this._els && this._els.paramSelect) {
       for (const opt of this._els.paramSelect.options) {
         const param = entry.parameters.find((p) => p.key === opt.value);
-        if (param) opt.textContent = `${gribParamName(param)} (${this._displayUnitLabel(param.unit)})`;
+        if (param)
+          opt.textContent = `${gribParamName(param)} (${this._displayUnitLabel(param.unit)})`;
       }
     }
     this._updateLegend();
@@ -2180,7 +2402,9 @@ class GribOverlayCard extends HTMLElement {
 
   _rows() {
     const cfg = this._config || {};
-    const rows = Number((cfg.grid_options && cfg.grid_options.rows) ?? cfg.rows);
+    const rows = Number(
+      (cfg.grid_options && cfg.grid_options.rows) ?? cfg.rows
+    );
     return rows > 0 ? rows : 8;
   }
 
@@ -2240,9 +2464,11 @@ class GribOverlayCard extends HTMLElement {
     // (Re)attach the cross-card point listener here, not in _initialize, so it
     // survives HA view switches (which re-use the element). addEventListener with
     // the same reference is idempotent.
-    this._boundPointSync = this._boundPointSync || ((ev) => this._onSharedPoint(ev));
+    this._boundPointSync =
+      this._boundPointSync || ((ev) => this._onSharedPoint(ev));
     window.addEventListener(GRIB_POINT_EVENT, this._boundPointSync);
-    this._boundMeasSync = this._boundMeasSync || (() => this._renderSavedMarkers());
+    this._boundMeasSync =
+      this._boundMeasSync || (() => this._renderSavedMarkers());
     window.addEventListener(GRIB_MEAS_EVENT, this._boundMeasSync); // same tab
     window.addEventListener("storage", this._boundMeasSync); // other tabs (localStorage)
     // Re-attach (navigating back to the view): the container was hidden/removed,
@@ -2265,7 +2491,13 @@ class GribOverlayCard extends HTMLElement {
   // before the newest run. Fetch the list again and draw the same moment, so
   // coming back to the page looks like opening it fresh (no reload needed).
   async _refreshAfterReattach() {
-    if (this._reattaching || !this._hass || !this._entries || !this._entries.length) return;
+    if (
+      this._reattaching ||
+      !this._hass ||
+      !this._entries ||
+      !this._entries.length
+    )
+      return;
     this._reattaching = true;
     try {
       await this._ensureTiles({ allowRebuild: true });
@@ -2288,7 +2520,8 @@ class GribOverlayCard extends HTMLElement {
     this._connected = false;
     this._stopPlayback();
     this._closeDetailMeteogram();
-    if (this._boundPointSync) window.removeEventListener(GRIB_POINT_EVENT, this._boundPointSync);
+    if (this._boundPointSync)
+      window.removeEventListener(GRIB_POINT_EVENT, this._boundPointSync);
     if (this._boundMeasSync) {
       window.removeEventListener(GRIB_MEAS_EVENT, this._boundMeasSync);
       window.removeEventListener("storage", this._boundMeasSync);
@@ -2302,7 +2535,10 @@ class GribOverlayCard extends HTMLElement {
       this._visibilityObserver = null;
     }
     if (this._boundPageVisibility) {
-      document.removeEventListener("visibilitychange", this._boundPageVisibility);
+      document.removeEventListener(
+        "visibilitychange",
+        this._boundPageVisibility
+      );
     }
     this._visibilityWatched = false;
   }
@@ -2316,11 +2552,19 @@ class GribOverlayCard extends HTMLElement {
   // reopens that point (and its saved values, via the compare card / meteogram).
   _renderSavedMarkers() {
     if (!this._map || !window.L) return;
-    if (!this._savedLayer) this._savedLayer = window.L.layerGroup().addTo(this._map);
+    if (!this._savedLayer)
+      this._savedLayer = window.L.layerGroup().addTo(this._map);
     this._savedLayer.clearLayers();
-    const icon = window.L.divIcon({ className: "grib-saved-marker", iconSize: [14, 14], iconAnchor: [7, 7] });
+    const icon = window.L.divIcon({
+      className: "grib-saved-marker",
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+    });
     for (const p of gribSavedPoints()) {
-      const mk = window.L.marker([p.lat, p.lng], { icon, title: gribT("savedMeasurement") });
+      const mk = window.L.marker([p.lat, p.lng], {
+        icon,
+        title: gribT("savedMeasurement"),
+      });
       mk.on("click", () => this._openSavedPoint(p.lat, p.lng));
       this._savedLayer.addLayer(mk);
     }
@@ -2336,7 +2580,12 @@ class GribOverlayCard extends HTMLElement {
     const p = gribReadSharedPoint();
     if (!p) return;
     const last = this._lastAdoptedPoint;
-    if (last && Math.abs(p.lat - last.lat) < 1e-9 && Math.abs(p.lng - last.lng) < 1e-9) return;
+    if (
+      last &&
+      Math.abs(p.lat - last.lat) < 1e-9 &&
+      Math.abs(p.lng - last.lng) < 1e-9
+    )
+      return;
     this._applySharedPoint(p.lat, p.lng, true);
   }
 
@@ -2409,7 +2658,10 @@ class GribOverlayCard extends HTMLElement {
       return;
     }
 
-    gribLog("warn", "grib-overlay-card: the map came back blank, building it again");
+    gribLog(
+      "warn",
+      "grib-overlay-card: the map came back blank, building it again"
+    );
     const center = this._map.getCenter();
     const zoom = this._map.getZoom();
     const shown = this._frames[this._frameIndex || 0];
@@ -2419,7 +2671,9 @@ class GribOverlayCard extends HTMLElement {
     await this._initialize();
     if (!this._map) return;
     this._map.setView(center, zoom);
-    const back = shown ? this._frames.findIndex((f) => f.valid_time === shown.valid_time) : -1;
+    const back = shown
+      ? this._frames.findIndex((f) => f.valid_time === shown.valid_time)
+      : -1;
     if (back > 0) this._showFrame(back);
   }
 
@@ -2441,7 +2695,8 @@ class GribOverlayCard extends HTMLElement {
   // Called whenever the card gains a size; fits what could not be fitted yet.
   _applyPendingFit() {
     if (!this._pendingFit || !this._map) return false;
-    if (!this._els.mapDiv.offsetWidth || !this._els.mapDiv.offsetHeight) return false;
+    if (!this._els.mapDiv.offsetWidth || !this._els.mapDiv.offsetHeight)
+      return false;
     const bounds = this._pendingFit;
     this._pendingFit = null;
     this._boundsFit = true;
@@ -2460,7 +2715,10 @@ class GribOverlayCard extends HTMLElement {
       // Becoming visible again (another dashboard page, a state-switch, the
       // card built while its view was still hidden) can leave Leaflet with an
       // empty container: recover rather than wait for a page reload.
-      if (this._els.mapDiv.offsetWidth && !this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) {
+      if (
+        this._els.mapDiv.offsetWidth &&
+        !this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)
+      ) {
         this._ensureTiles({ allowRebuild: true });
       }
     });
@@ -2474,7 +2732,8 @@ class GribOverlayCard extends HTMLElement {
   // cards nobody can see -- and, on a laptop, its battery. Follow whether this
   // card is actually on screen, and let it sleep when it is not.
   _watchVisibility() {
-    if (this._visibilityWatched || !this._els || !this._els.mapContainer) return;
+    if (this._visibilityWatched || !this._els || !this._els.mapContainer)
+      return;
     this._visibilityWatched = true;
     // Another browser tab in front: requestAnimationFrame is throttled there
     // anyway, but the frame player is not.
@@ -2482,7 +2741,10 @@ class GribOverlayCard extends HTMLElement {
     document.addEventListener("visibilitychange", this._boundPageVisibility);
     if (!window.IntersectionObserver) return;
     this._visibilityObserver = new IntersectionObserver(
-      (entries) => this._setAwake(entries.some((e) => e.isIntersecting) && !document.hidden),
+      (entries) =>
+        this._setAwake(
+          entries.some((e) => e.isIntersecting) && !document.hidden
+        ),
       { threshold: 0 }
     );
     this._visibilityObserver.observe(this._els.mapContainer);
@@ -2548,13 +2810,18 @@ class GribOverlayCard extends HTMLElement {
     try {
       if (running) {
         delete layer._startWindy; // back to the vendored one on the prototype
-        if (typeof layer._clearAndRestart === "function") layer._clearAndRestart();
+        if (typeof layer._clearAndRestart === "function")
+          layer._clearAndRestart();
       } else {
         layer._startWindy = () => {};
         if (typeof layer._clearWind === "function") layer._clearWind();
       }
     } catch (err) {
-      gribLog("warn", "grib-overlay-card: could not pause the particle layer", err);
+      gribLog(
+        "warn",
+        "grib-overlay-card: could not pause the particle layer",
+        err
+      );
     }
   }
 
@@ -2855,17 +3122,31 @@ class GribOverlayCard extends HTMLElement {
       this._els.stepSelect.appendChild(el);
     }
 
-    this._els.entrySelect.addEventListener("change", () => this._onEntryChange());
-    this._els.paramSelect.addEventListener("change", () => this._onParameterChange());
-    this._els.modeSingleBtn.addEventListener("click", () => this._setMode("single"));
-    this._els.modeAnimateBtn.addEventListener("click", () => this._setMode("animate"));
+    this._els.entrySelect.addEventListener("change", () =>
+      this._onEntryChange()
+    );
+    this._els.paramSelect.addEventListener("change", () =>
+      this._onParameterChange()
+    );
+    this._els.modeSingleBtn.addEventListener("click", () =>
+      this._setMode("single")
+    );
+    this._els.modeAnimateBtn.addEventListener("click", () =>
+      this._setMode("animate")
+    );
     this._els.timeSlider.addEventListener("input", () => {
       this._steppedThroughTime = true; // from here on, the next frame is worth having ready
       this._showFrame(Number(this._els.timeSlider.value));
     });
-    this._els.playPauseBtn.addEventListener("click", () => this._togglePlayback());
-    this._els.startSelect.addEventListener("change", () => this._clampAnimationRange());
-    this._els.endSelect.addEventListener("change", () => this._clampAnimationRange());
+    this._els.playPauseBtn.addEventListener("click", () =>
+      this._togglePlayback()
+    );
+    this._els.startSelect.addEventListener("change", () =>
+      this._clampAnimationRange()
+    );
+    this._els.endSelect.addEventListener("change", () =>
+      this._clampAnimationRange()
+    );
     // Scrubbing the animation progress bar pauses playback and jumps to that frame.
     this._els.progressSlider.addEventListener("input", () => {
       this._stopPlayback();
@@ -2876,15 +3157,21 @@ class GribOverlayCard extends HTMLElement {
     this._els.speedSlider.addEventListener("input", () => {
       if (this._playTimer) this._startPlaybackTimer();
     });
-    this._els.renderModeSelect.addEventListener("change", () => this._onRenderModeChange());
-    this._els.isobarsToggle.addEventListener("change", () => this._onIsobarsToggle());
+    this._els.renderModeSelect.addEventListener("change", () =>
+      this._onRenderModeChange()
+    );
+    this._els.isobarsToggle.addEventListener("change", () =>
+      this._onIsobarsToggle()
+    );
 
     this._mode = "single";
     // Default base overlay mode: honour a configured `render_mode` (or the legacy
     // `renderMode`) when it names a real mode; otherwise plain raster. The
     // availability check downgrades to raster if the mode doesn't fit the data.
     const wantedMode = this._config?.render_mode ?? this._config?.renderMode;
-    this._renderMode = RENDER_MODES.includes(wantedMode) ? wantedMode : "raster";
+    this._renderMode = RENDER_MODES.includes(wantedMode)
+      ? wantedMode
+      : "raster";
     // Isobars + pressure centres are a separate overlay layer (default off).
     this._isobarsOn = !!this._config?.show_isobars;
     this._frames = [];
@@ -2908,7 +3195,9 @@ class GribOverlayCard extends HTMLElement {
     // dashboard pages via sessionStorage), else the configured/default centre.
     const sharedStart = gribReadSharedPoint();
     this._map = window.L.map(this._els.mapDiv, {
-      center: sharedStart ? [sharedStart.lat, sharedStart.lng] : this._config.center || [52.1, 5.3],
+      center: sharedStart
+        ? [sharedStart.lat, sharedStart.lng]
+        : this._config.center || [52.1, 5.3],
       zoom: this._config.zoom || 7,
     });
     gribFixMapPosition(this._els.mapDiv);
@@ -2970,8 +3259,7 @@ class GribOverlayCard extends HTMLElement {
     }
 
     if (!this._allEntries.length) {
-      this._els.note.textContent =
-        gribT("noIntegration");
+      this._els.note.textContent = gribT("noIntegration");
       return;
     }
 
@@ -3012,7 +3300,10 @@ class GribOverlayCard extends HTMLElement {
   // back to the first configured entry.
   _resolveDefaultEntryId() {
     const cfg = this._config || {};
-    if (cfg.entry_id && this._entries.some((e) => e.entry_id === cfg.entry_id)) {
+    if (
+      cfg.entry_id &&
+      this._entries.some((e) => e.entry_id === cfg.entry_id)
+    ) {
       return cfg.entry_id;
     }
     if (cfg.dataset) {
@@ -3021,7 +3312,7 @@ class GribOverlayCard extends HTMLElement {
         (e) =>
           (e.dataset.key || "").toLowerCase() === want ||
           (e.dataset.name || "").toLowerCase() === want ||
-          (e.title || "").toLowerCase() === want,
+          (e.title || "").toLowerCase() === want
       );
       if (match) return match.entry_id;
     }
@@ -3030,7 +3321,9 @@ class GribOverlayCard extends HTMLElement {
 
   _currentEntry() {
     // Guard against early calls (e.g. a map resize event) before entries load.
-    return (this._entries || []).find((e) => e.entry_id === this._els.entrySelect.value);
+    return (this._entries || []).find(
+      (e) => e.entry_id === this._els.entrySelect.value
+    );
   }
 
   // Resolve a source unit ("m/s"/"km") to the configured display conversion,
@@ -3067,17 +3360,23 @@ class GribOverlayCard extends HTMLElement {
     // Keep what the user was looking at when this dataset also has it (the
     // card rebuilds itself after a dashboard switch); otherwise the config's
     // choice, otherwise the first parameter.
-    const wantedParam = params.some((p) => p.key === current) ? current : this._config.parameter;
+    const wantedParam = params.some((p) => p.key === current)
+      ? current
+      : this._config.parameter;
     this._els.paramSelect.value = params.some((p) => p.key === wantedParam)
       ? wantedParam
       : params[0]?.key || "";
 
     // Auto-fit to the dataset bounds only when the user hasn't pinned the view
     // via config; an explicit center/zoom must win over the auto-fit.
-    const hasManualView = this._config.center !== undefined || this._config.zoom !== undefined;
+    const hasManualView =
+      this._config.center !== undefined || this._config.zoom !== undefined;
     if (!this._boundsFit && !hasManualView) {
       const [south, west, north, east] = entry.dataset.bounds;
-      this._fitBounds([[south, west], [north, east]]);
+      this._fitBounds([
+        [south, west],
+        [north, east],
+      ]);
     } else {
       this._boundsFit = true;
     }
@@ -3102,10 +3401,10 @@ class GribOverlayCard extends HTMLElement {
       return;
     }
 
-    this._frames = (data[paramKey] || []).slice().sort((a, b) => a.valid_time.localeCompare(b.valid_time));
-    this._els.note.textContent = this._frames.length
-      ? ""
-      : gribT("noFrames");
+    this._frames = (data[paramKey] || [])
+      .slice()
+      .sort((a, b) => a.valid_time.localeCompare(b.valid_time));
+    this._els.note.textContent = this._frames.length ? "" : gribT("noFrames");
 
     const lastIndex = String(Math.max(0, this._frames.length - 1));
     this._els.timeSlider.max = lastIndex;
@@ -3163,7 +3462,10 @@ class GribOverlayCard extends HTMLElement {
     this._frameIndex = index;
     const mode = this._activeMode(); // particles | vectors | wavevectors | null
     const [south, west, north, east] = frame.bounds;
-    const bounds = [[south, west], [north, east]];
+    const bounds = [
+      [south, west],
+      [north, east],
+    ];
 
     // In an overlay mode the coloured raster stays as a dimmed background under
     // the particles/arrows (the windy.com look); otherwise it's the overlay.
@@ -3181,12 +3483,17 @@ class GribOverlayCard extends HTMLElement {
     // a detached image paints nothing.
     if (this._imageOverlay && !this._map.hasLayer(this._imageOverlay)) {
       this._imageOverlay = null;
-    } else if (this._imageOverlay && !this._imageOverlay.getElement()?.isConnected) {
+    } else if (
+      this._imageOverlay &&
+      !this._imageOverlay.getElement()?.isConnected
+    ) {
       this._map.removeLayer(this._imageOverlay);
       this._imageOverlay = null;
     }
     if (!this._imageOverlay) {
-      this._imageOverlay = window.L.imageOverlay(frame.image_url, bounds, { opacity }).addTo(this._map);
+      this._imageOverlay = window.L.imageOverlay(frame.image_url, bounds, {
+        opacity,
+      }).addTo(this._map);
     } else {
       this._imageOverlay.setUrl(frame.image_url);
       this._imageOverlay.setBounds(bounds);
@@ -3209,7 +3516,8 @@ class GribOverlayCard extends HTMLElement {
 
     // Isobars + pressure centres are an independent layer on top of the base
     // overlay above, drawn from the entry's pressure parameter for this time.
-    if (this._isobarsOn && this._pressureParam()) this._updateIsobarOverlay(frame);
+    if (this._isobarsOn && this._pressureParam())
+      this._updateIsobarOverlay(frame);
     else this._removeIsobars();
 
     const label = `${formatTime(frame.valid_time)} (run ${formatTime(frame.run_time)})`;
@@ -3244,10 +3552,20 @@ class GribOverlayCard extends HTMLElement {
     try {
       if (frame.wind_url) {
         const d = await this._fetchWind(frame.wind_url);
-        source = { kind: "wind", header: d[0].header, u: d[0].data, v: d[1].data };
+        source = {
+          kind: "wind",
+          header: d[0].header,
+          u: d[0].data,
+          v: d[1].data,
+        };
       } else if (frame.field_url) {
         const d = await this._fetchJson(frame.field_url, this._fieldCache);
-        source = { kind: "scalar", header: d, data: d.data, unit: frame.legend.unit };
+        source = {
+          kind: "scalar",
+          header: d,
+          data: d.data,
+          unit: frame.legend.unit,
+        };
       }
     } catch {
       source = null;
@@ -3303,7 +3621,10 @@ class GribOverlayCard extends HTMLElement {
   // The active wind mode, or null when it doesn't apply (non-wind param or the
   // plain raster mode).
   _windMode() {
-    if ((this._renderMode === "particles" || this._renderMode === "vectors") && this._paramHasWind()) {
+    if (
+      (this._renderMode === "particles" || this._renderMode === "vectors") &&
+      this._paramHasWind()
+    ) {
       return this._renderMode;
     }
     return null;
@@ -3327,7 +3648,8 @@ class GribOverlayCard extends HTMLElement {
   _directionParam() {
     const entry = this._currentEntry();
     if (!entry) return null;
-    const selected = this._els && this._els.paramSelect ? this._els.paramSelect.value : "";
+    const selected =
+      this._els && this._els.paramSelect ? this._els.paramSelect.value : "";
     const own = gribDirectionKeyFor(selected);
     return (
       entry.parameters.find((p) => p.key === own && p.unit === "°") ||
@@ -3339,7 +3661,10 @@ class GribOverlayCard extends HTMLElement {
   _heightParamFor(dirParam) {
     const entry = this._currentEntry();
     const own = dirParam.key.replace(/_direction$/, "_height");
-    return (entry && entry.parameters.find((p) => p.key === own)) || this._paramByUnit("m");
+    return (
+      (entry && entry.parameters.find((p) => p.key === own)) ||
+      this._paramByUnit("m")
+    );
   }
 
   _hasWaveVectors() {
@@ -3356,15 +3681,20 @@ class GribOverlayCard extends HTMLElement {
 
   // The active base overlay mode, honouring what the current data supports.
   _activeMode() {
-    if ((this._renderMode === "particles" || this._renderMode === "vectors") && this._paramHasWind()) {
+    if (
+      (this._renderMode === "particles" || this._renderMode === "vectors") &&
+      this._paramHasWind()
+    ) {
       return this._renderMode;
     }
-    if (this._renderMode === "wavevectors" && this._hasWaveVectors()) return "wavevectors";
+    if (this._renderMode === "wavevectors" && this._hasWaveVectors())
+      return "wavevectors";
     return null;
   }
 
   async _fetchParamFrames(paramKey) {
-    if (this._paramFramesCache.has(paramKey)) return this._paramFramesCache.get(paramKey);
+    if (this._paramFramesCache.has(paramKey))
+      return this._paramFramesCache.get(paramKey);
     const entry = this._currentEntry();
     const pending = this._hass
       .callApi(
@@ -3372,7 +3702,9 @@ class GribOverlayCard extends HTMLElement {
         `grib_overlay/frames/${entry.entry_id}?parameter=${encodeURIComponent(paramKey)}`
       )
       .then((data) =>
-        (data[paramKey] || []).slice().sort((a, b) => a.valid_time.localeCompare(b.valid_time))
+        (data[paramKey] || [])
+          .slice()
+          .sort((a, b) => a.valid_time.localeCompare(b.valid_time))
       );
     this._paramFramesCache.set(paramKey, pending);
     pending.catch(() => this._paramFramesCache.delete(paramKey));
@@ -3395,22 +3727,32 @@ class GribOverlayCard extends HTMLElement {
     let dirField;
     let magField = null;
     try {
-      const dirFrame = await this._frameForParamAt(dirParam.key, frame.valid_time);
+      const dirFrame = await this._frameForParamAt(
+        dirParam.key,
+        frame.valid_time
+      );
       if (!dirFrame || !dirFrame.field_url) {
         this._removeVectors();
         return;
       }
       dirField = await this._fetchJson(dirFrame.field_url, this._fieldCache);
       if (heightParam) {
-        const magFrame = await this._frameForParamAt(heightParam.key, frame.valid_time);
+        const magFrame = await this._frameForParamAt(
+          heightParam.key,
+          frame.valid_time
+        );
         if (magFrame && magFrame.field_url) {
-          magField = await this._fetchJson(magFrame.field_url, this._fieldCache);
+          magField = await this._fetchJson(
+            magFrame.field_url,
+            this._fieldCache
+          );
         }
       }
     } catch {
       return;
     }
-    if (token !== this._windToken || this._activeMode() !== "wavevectors") return;
+    if (token !== this._windToken || this._activeMode() !== "wavevectors")
+      return;
     this._vectorData = this._buildWaveVectorData(dirField, magField);
     this._drawVectors();
   }
@@ -3423,7 +3765,10 @@ class GribOverlayCard extends HTMLElement {
     const u = new Array(n).fill(0);
     const v = new Array(n).fill(0);
     const sameGrid =
-      magField && magField.data && magField.data.length === n && magField.nx === dirField.nx;
+      magField &&
+      magField.data &&
+      magField.data.length === n &&
+      magField.nx === dirField.nx;
     for (let i = 0; i < n; i++) {
       const dir = dirField.data[i];
       if (dir == null) continue;
@@ -3444,7 +3789,10 @@ class GribOverlayCard extends HTMLElement {
       dx: dirField.dx,
       dy: dirField.dy,
     };
-    return [{ header, data: u }, { header, data: v }];
+    return [
+      { header, data: u },
+      { header, data: v },
+    ];
   }
 
   async _fetchWind(url) {
@@ -3473,7 +3821,9 @@ class GribOverlayCard extends HTMLElement {
     if (token !== this._windToken || this._windMode() !== "particles") return;
 
     if (!this._windLayer) {
-      this._windLayer = window.L.velocityLayer(this._velocityOptions(data)).addTo(this._map);
+      this._windLayer = window.L.velocityLayer(
+        this._velocityOptions(data)
+      ).addTo(this._map);
     } else {
       this._windLayer.setData(data);
     }
@@ -3492,7 +3842,8 @@ class GribOverlayCard extends HTMLElement {
       data,
       maxVelocity: 30,
       velocityScale: 0.01,
-      lineWidth: Number(cfg.particle_width) > 0 ? Number(cfg.particle_width) : 2,
+      lineWidth:
+        Number(cfg.particle_width) > 0 ? Number(cfg.particle_width) : 2,
     };
     const pc = String(cfg.particle_color || "").trim();
     if (/^#?[0-9a-f]{6}$/i.test(pc)) {
@@ -3608,7 +3959,8 @@ class GribOverlayCard extends HTMLElement {
     // casing so they keep contrast against the dimmed overlay. The casing colour
     // (halo) is configurable via `arrow_halo_color` (default white). Wave arrows
     // stay a single dark colour (their "speed" isn't wind speed).
-    const colorFn = m === "vectors" ? this._colorFromLegend(this._currentLegend) : null;
+    const colorFn =
+      m === "vectors" ? this._colorFromLegend(this._currentLegend) : null;
     const haloColor = this._config?.arrow_halo_color || "#ffffff";
     const svgns = "http://www.w3.org/2000/svg";
     const addLine = (px, py, x2, y2, stroke, width, marker, opacity) => {
@@ -3640,10 +3992,37 @@ class GribOverlayCard extends HTMLElement {
         const x2 = px + (uu / speed) * len;
         const y2 = py - (vv / speed) * len;
         if (colorFn) {
-          addLine(px, py, x2, y2, haloColor, "3.6", "url(#gribArrowHeadCasing)", "0.85");
-          addLine(px, py, x2, y2, colorFn(speed), "1.7", "url(#gribArrowHeadColor)", "1");
+          addLine(
+            px,
+            py,
+            x2,
+            y2,
+            haloColor,
+            "3.6",
+            "url(#gribArrowHeadCasing)",
+            "0.85"
+          );
+          addLine(
+            px,
+            py,
+            x2,
+            y2,
+            colorFn(speed),
+            "1.7",
+            "url(#gribArrowHeadColor)",
+            "1"
+          );
         } else {
-          addLine(px, py, x2, y2, "#12324f", "1.6", "url(#gribArrowHead)", "0.9");
+          addLine(
+            px,
+            py,
+            x2,
+            y2,
+            "#12324f",
+            "1.6",
+            "url(#gribArrowHead)",
+            "0.9"
+          );
         }
       }
     }
@@ -3680,7 +4059,8 @@ class GribOverlayCard extends HTMLElement {
         const pframes = await this._fetchParamFrames(pParam.key);
         pf = nearestFrame(pframes, frame.valid_time, ISOBAR_MAX_OFFSET_MS);
       }
-      if (pf && pf.field_url) field = await this._fetchJson(pf.field_url, this._fieldCache);
+      if (pf && pf.field_url)
+        field = await this._fetchJson(pf.field_url, this._fieldCache);
     } catch {
       field = null;
     }
@@ -3695,7 +4075,8 @@ class GribOverlayCard extends HTMLElement {
       // or the parameter was only just enabled on the integration.
       this._removeIsobars();
       this._setIsobarNote(gribT("isobarsNoData"));
-      gribLog("warn",
+      gribLog(
+        "warn",
 
         `grib-overlay-card: no pressure field for ${pParam.key} at ${frame.valid_time}`
       );
@@ -3768,7 +4149,8 @@ class GribOverlayCard extends HTMLElement {
     // default is moderate: heavier smoothing (e.g. 100-150) gives a cleaner
     // synoptic look but can flatten a centre near the domain edge until the
     // closed-isobar test drops it.
-    const sigmaKm = cfg.isobar_smoothing == null ? 60 : Number(cfg.isobar_smoothing);
+    const sigmaKm =
+      cfg.isobar_smoothing == null ? 60 : Number(cfg.isobar_smoothing);
     const field = smoothField(this._isobarField, sigmaKm);
     let lo = Infinity;
     let hi = -Infinity;
@@ -3792,7 +4174,11 @@ class GribOverlayCard extends HTMLElement {
     } else {
       const interval = Math.max(0.5, Number(cfg.isobar_interval) || 4);
       levels = [];
-      for (let level = Math.ceil(lo / interval) * interval; level <= hi; level += interval) {
+      for (
+        let level = Math.ceil(lo / interval) * interval;
+        level <= hi;
+        level += interval
+      ) {
         levels.push(level);
       }
     }
@@ -3838,7 +4224,10 @@ class GribOverlayCard extends HTMLElement {
       g.appendChild(line);
 
       // One value label per isobar, near screen centre, spaced from other labels.
-      if (best && !placed.some((p) => (p.x - best.x) ** 2 + (p.y - best.y) ** 2 < 44 * 44)) {
+      if (
+        best &&
+        !placed.some((p) => (p.x - best.x) ** 2 + (p.y - best.y) ** 2 < 44 * 44)
+      ) {
         placed.push(best);
         const t = document.createElementNS(svgns, "text");
         t.setAttribute("x", best.x.toFixed(1));
@@ -3857,7 +4246,8 @@ class GribOverlayCard extends HTMLElement {
       }
     }
 
-    if (cfg.show_pressure_centres !== false) this._drawPressureCentres(field, g, proj, size);
+    if (cfg.show_pressure_centres !== false)
+      this._drawPressureCentres(field, g, proj, size);
     svg.appendChild(g);
   }
 
@@ -3908,14 +4298,21 @@ class GribOverlayCard extends HTMLElement {
     const enclosed = (c) => {
       const thr = c.type === "H" ? c.v - dP : c.v + dP;
       const inside = (v) => (c.type === "H" ? v >= thr : v <= thr);
-      const stronger = (v) => (c.type === "H" ? v > c.v + 1e-6 : v < c.v - 1e-6);
+      const stronger = (v) =>
+        c.type === "H" ? v > c.v + 1e-6 : v < c.v - 1e-6;
       const seen = new Set([c.y * nx + c.x]);
       const stack = [[c.x, c.y]];
       let touchedEdge = false;
       while (stack.length) {
         const [x, y] = stack.pop();
-        if (x === 0 || x === nx - 1 || y === 0 || y === ny - 1) touchedEdge = true;
-        for (const [ix, iy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (x === 0 || x === nx - 1 || y === 0 || y === ny - 1)
+          touchedEdge = true;
+        for (const [ix, iy] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ]) {
           const xx = x + ix;
           const yy = y + iy;
           if (xx < 0 || xx >= nx || yy < 0 || yy >= ny) continue;
@@ -3973,11 +4370,20 @@ class GribOverlayCard extends HTMLElement {
       for (const c of chosen) {
         if (drawn >= maxPerType) break;
         const p = proj(la1 - c.y * dy, lo1 + c.x * dx);
-        if (p.x < 14 || p.x > size.x - 14 || p.y < 18 || p.y > size.y - 18) continue;
+        if (p.x < 14 || p.x > size.x - 14 || p.y < 18 || p.y > size.y - 18)
+          continue;
         drawn++;
         const color = type === "H" ? "#1440a4" : "#d0021b";
         label(p.x, p.y, type, color, "20", "700", "3.5");
-        label(p.x, p.y + 15, String(Math.round(c.v)), color, "10", "600", "2.6");
+        label(
+          p.x,
+          p.y + 15,
+          String(Math.round(c.v)),
+          color,
+          "10",
+          "600",
+          "2.6"
+        );
       }
     }
   }
@@ -4048,8 +4454,16 @@ class GribOverlayCard extends HTMLElement {
     if (!this._map || !window.L) return;
     const ll = window.L.latLng(lat, lng);
     if (!this._sharedMarker) {
-      const icon = window.L.divIcon({ className: "grib-shared-marker", iconSize: [16, 16], iconAnchor: [8, 8] });
-      this._sharedMarker = window.L.marker(ll, { icon, interactive: false, keyboard: false }).addTo(this._map);
+      const icon = window.L.divIcon({
+        className: "grib-shared-marker",
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
+      });
+      this._sharedMarker = window.L.marker(ll, {
+        icon,
+        interactive: false,
+        keyboard: false,
+      }).addTo(this._map);
     } else {
       this._sharedMarker.setLatLng(ll);
     }
@@ -4071,10 +4485,14 @@ class GribOverlayCard extends HTMLElement {
         const windSeries = (windResp && windResp.series) || [];
         if (!windSeries.some((s) => s.value != null)) return;
         const hasDir =
-          !!(windResp && windResp.direction_unit) && windSeries.some((s) => s.direction != null);
+          !!(windResp && windResp.direction_unit) &&
+          windSeries.some((s) => s.direction != null);
         const svg = this._buildMeteogram(windSeries, windResp.unit, latlng, {
           hasDirection: hasDir,
-          overlay: { series: (gustResp && gustResp.series) || [], label: "windstoten" },
+          overlay: {
+            series: (gustResp && gustResp.series) || [],
+            label: "windstoten",
+          },
           title: this._paramLabel(pair.windKey),
         });
         this._openMeteogramPopup(latlng, svg);
@@ -4084,8 +4502,12 @@ class GribOverlayCard extends HTMLElement {
       const resp = await this._fetchPointSeries(paramKey, latlng);
       const series = (resp && resp.series) || [];
       if (!series.some((s) => s.value != null)) return;
-      const hasDir = !!(resp && resp.direction_unit) && series.some((s) => s.direction != null);
-      const svg = this._buildMeteogram(series, resp.unit, latlng, { hasDirection: hasDir });
+      const hasDir =
+        !!(resp && resp.direction_unit) &&
+        series.some((s) => s.direction != null);
+      const svg = this._buildMeteogram(series, resp.unit, latlng, {
+        hasDirection: hasDir,
+      });
       this._openMeteogramPopup(latlng, svg);
     } catch {
       // no popup when the series cannot be drawn: the card stays as it was
@@ -4127,7 +4549,10 @@ class GribOverlayCard extends HTMLElement {
   // Link markup (shared by the value + meteogram popups) that opens the full
   // meteogram. Only shown when there's more than one series worth combining.
   _detailLinkHtml() {
-    const paramCount = (this._entries || []).reduce((n, e) => n + (e.parameters || []).length, 0);
+    const paramCount = (this._entries || []).reduce(
+      (n, e) => n + (e.parameters || []).length,
+      0
+    );
     if (paramCount <= 1) return "";
     return (
       `<a href="#" class="grib-meteogram-more" style="display:block;margin-top:5px;` +
@@ -4138,7 +4563,10 @@ class GribOverlayCard extends HTMLElement {
 
   // After a popup opens, wire its "all parameters" link to the full meteogram.
   _wireDetailLink(latlng) {
-    const el = this._pointPopup && this._pointPopup.getElement && this._pointPopup.getElement();
+    const el =
+      this._pointPopup &&
+      this._pointPopup.getElement &&
+      this._pointPopup.getElement();
     const more = el && el.querySelector(".grib-meteogram-more");
     if (more) {
       more.addEventListener("click", (ev) => {
@@ -4149,7 +4577,12 @@ class GribOverlayCard extends HTMLElement {
     }
   }
 
-  _buildMeteogram(series, sourceUnit, latlng, { hasDirection = false, overlay = null, title = null } = {}) {
+  _buildMeteogram(
+    series,
+    sourceUnit,
+    latlng,
+    { hasDirection = false, overlay = null, title = null } = {}
+  ) {
     const conv = this._conversionFor(sourceUnit);
     const factor = conv ? conv.factor : 1;
     const unit = conv ? conv.label : sourceUnit;
@@ -4210,8 +4643,20 @@ class GribOverlayCard extends HTMLElement {
       const exp = Math.floor(Math.log10(range));
       const f = range / 10 ** exp;
       const nf = round
-        ? f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10
-        : f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+        ? f < 1.5
+          ? 1
+          : f < 3
+            ? 2
+            : f < 7
+              ? 5
+              : 10
+        : f <= 1
+          ? 1
+          : f <= 2
+            ? 2
+            : f <= 5
+              ? 5
+              : 10;
       return nf * 10 ** exp;
     };
 
@@ -4268,8 +4713,12 @@ class GribOverlayCard extends HTMLElement {
     for (let i = 0; i <= nY; i++) {
       const v = vmin + i * yStep;
       const y = sy(v).toFixed(1);
-      parts.push(`<line x1="${px0}" y1="${y}" x2="${px1}" y2="${y}" stroke="#d9dee3"/>`);
-      parts.push(`<line x1="${px0 - 5}" y1="${y}" x2="${px0}" y2="${y}" stroke="#9aa5ad"/>`);
+      parts.push(
+        `<line x1="${px0}" y1="${y}" x2="${px1}" y2="${y}" stroke="#d9dee3"/>`
+      );
+      parts.push(
+        `<line x1="${px0 - 5}" y1="${y}" x2="${px0}" y2="${y}" stroke="#9aa5ad"/>`
+      );
       parts.push(
         `<text x="${px0 - 8}" y="${(parseFloat(y) + FS / 3).toFixed(1)}" font-size="${FS}" fill="#666" text-anchor="end">${Number(v.toFixed(2))}</text>`
       );
@@ -4279,7 +4728,9 @@ class GribOverlayCard extends HTMLElement {
     for (let j = 0; j <= nYm; j++) {
       const v = vmin + j * yMinorStep;
       if (Math.abs(v / yStep - Math.round(v / yStep)) < 1e-6) continue; // on a major
-      parts.push(`<line x1="${px0 - 3}" y1="${sy(v).toFixed(1)}" x2="${px0}" y2="${sy(v).toFixed(1)}" stroke="#c2c9cf"/>`);
+      parts.push(
+        `<line x1="${px0 - 3}" y1="${sy(v).toFixed(1)}" x2="${px0}" y2="${sy(v).toFixed(1)}" stroke="#c2c9cf"/>`
+      );
     }
     // Major vertical gridlines + x labels + major x ticks; minor x ticks between.
     const pad2 = (n) => (n < 10 ? "0" + n : "" + n);
@@ -4288,19 +4739,29 @@ class GribOverlayCard extends HTMLElement {
       const hr = new Date(tt).getHours();
       const x = sx(tt).toFixed(1);
       if (hr % xMajorH === 0) {
-        parts.push(`<line x1="${x}" y1="${py0}" x2="${x}" y2="${py1}" stroke="#d9dee3"/>`);
-        parts.push(`<line x1="${x}" y1="${py1}" x2="${x}" y2="${(py1 + 5).toFixed(1)}" stroke="#9aa5ad"/>`);
+        parts.push(
+          `<line x1="${x}" y1="${py0}" x2="${x}" y2="${py1}" stroke="#d9dee3"/>`
+        );
+        parts.push(
+          `<line x1="${x}" y1="${py1}" x2="${x}" y2="${(py1 + 5).toFixed(1)}" stroke="#9aa5ad"/>`
+        );
         const label = hr === 0 ? wd.format(new Date(tt)) : pad2(hr);
         parts.push(
           `<text x="${x}" y="${H - 10}" font-size="${FS}" fill="#666" text-anchor="middle">${label}</text>`
         );
       } else {
-        parts.push(`<line x1="${x}" y1="${py1}" x2="${x}" y2="${(py1 + 3).toFixed(1)}" stroke="#c2c9cf"/>`);
+        parts.push(
+          `<line x1="${x}" y1="${py1}" x2="${x}" y2="${(py1 + 3).toFixed(1)}" stroke="#c2c9cf"/>`
+        );
       }
     }
     // Axes (drawn over the gridlines).
-    parts.push(`<line x1="${px0}" y1="${py1}" x2="${px1}" y2="${py1}" stroke="#aeb6bd"/>`);
-    parts.push(`<line x1="${px0}" y1="${py0}" x2="${px0}" y2="${py1}" stroke="#aeb6bd"/>`);
+    parts.push(
+      `<line x1="${px0}" y1="${py1}" x2="${px1}" y2="${py1}" stroke="#aeb6bd"/>`
+    );
+    parts.push(
+      `<line x1="${px0}" y1="${py0}" x2="${px0}" y2="${py1}" stroke="#aeb6bd"/>`
+    );
     // ---- secondary axis: wind direction (0-360 deg, from-direction) ----
     if (showDir) {
       const sy2 = (d) => py1 - (d / 360) * (py1 - py0);
@@ -4308,7 +4769,9 @@ class GribOverlayCard extends HTMLElement {
       // Major label per style: compass letters or the numeric bearing (0-360).
       const dirLabel = (d) => (dirMode === "deg" ? String(d) : compassLbl[d]);
       // Right axis line + 10-deg minor ticks (longer at 45s) + 90-deg majors.
-      parts.push(`<line x1="${px1}" y1="${py0}" x2="${px1}" y2="${py1}" stroke="#e0a274"/>`);
+      parts.push(
+        `<line x1="${px1}" y1="${py0}" x2="${px1}" y2="${py1}" stroke="#e0a274"/>`
+      );
       for (let d = 10; d < 360; d += 10) {
         if (d % 90 === 0) continue; // majors drawn below
         const y = sy2(d).toFixed(1);
@@ -4319,7 +4782,9 @@ class GribOverlayCard extends HTMLElement {
       }
       for (let d = 0; d <= 360; d += 90) {
         const y = sy2(d).toFixed(1);
-        parts.push(`<line x1="${px1}" y1="${y}" x2="${(px1 + 5).toFixed(1)}" y2="${y}" stroke="${DIR_COLOR}"/>`);
+        parts.push(
+          `<line x1="${px1}" y1="${y}" x2="${(px1 + 5).toFixed(1)}" y2="${y}" stroke="${DIR_COLOR}"/>`
+        );
         parts.push(
           `<text x="${(px1 + 8).toFixed(1)}" y="${(parseFloat(y) + FS / 3).toFixed(1)}" font-size="${FS}" fill="${DIR_COLOR}" text-anchor="start">${dirLabel(d)}</text>`
         );
@@ -4342,7 +4807,10 @@ class GribOverlayCard extends HTMLElement {
       parts.push(
         pts
           .filter((p) => p.dir != null)
-          .map((p) => `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy2(p.dir).toFixed(1)}" r="2" fill="${DIR_COLOR}"/>`)
+          .map(
+            (p) =>
+              `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy2(p.dir).toFixed(1)}" r="2" fill="${DIR_COLOR}"/>`
+          )
           .join("")
       );
       // Gust from-direction on the same axis: a lighter, finely-dotted line with
@@ -4355,7 +4823,8 @@ class GribOverlayCard extends HTMLElement {
             gprev = null;
             continue;
           }
-          const cmd = gprev == null || Math.abs(p.gdir - gprev) > 180 ? "M" : "L";
+          const cmd =
+            gprev == null || Math.abs(p.gdir - gprev) > 180 ? "M" : "L";
           gdpath += `${cmd}${sx(p.t).toFixed(1)},${sy2(p.gdir).toFixed(1)}`;
           gprev = p.gdir;
         }
@@ -4365,7 +4834,10 @@ class GribOverlayCard extends HTMLElement {
         parts.push(
           gustPts
             .filter((p) => p.gdir != null)
-            .map((p) => `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy2(p.gdir).toFixed(1)}" r="1.6" fill="none" stroke="${DIR_COLOR}" stroke-width="1" opacity="0.8"/>`)
+            .map(
+              (p) =>
+                `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy2(p.gdir).toFixed(1)}" r="1.6" fill="none" stroke="${DIR_COLOR}" stroke-width="1" opacity="0.8"/>`
+            )
             .join("")
         );
       }
@@ -4374,7 +4846,12 @@ class GribOverlayCard extends HTMLElement {
     // Wind-gust envelope: a light band between wind and gust speed, plus a
     // dashed gust line, drawn under the wind line so the wind stays prominent.
     if (gustPts) {
-      const up = gustPts.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.g).toFixed(1)}`).join(" ");
+      const up = gustPts
+        .map(
+          (p, i) =>
+            `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.g).toFixed(1)}`
+        )
+        .join(" ");
       const down = gustPts
         .slice()
         .reverse()
@@ -4383,23 +4860,40 @@ class GribOverlayCard extends HTMLElement {
       parts.push(
         `<path d="${up} ${down} Z" fill="var(--primary-color,#03a9f4)" fill-opacity="0.12" stroke="none"/>`
       );
-      const gline = gustPts.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.g).toFixed(1)}`).join(" ");
+      const gline = gustPts
+        .map(
+          (p, i) =>
+            `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.g).toFixed(1)}`
+        )
+        .join(" ");
       parts.push(
         `<path d="${gline}" fill="none" stroke="var(--primary-color,#03a9f4)" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.85"/>`
       );
       parts.push(
         gustPts
-          .map((p) => `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy(p.g).toFixed(1)}" r="1.8" fill="var(--primary-color,#03a9f4)" opacity="0.85"/>`)
+          .map(
+            (p) =>
+              `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy(p.g).toFixed(1)}" r="1.8" fill="var(--primary-color,#03a9f4)" opacity="0.85"/>`
+          )
           .join("")
       );
     }
 
     // Data line + dots (speed, on top, left axis).
-    const line = pts.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`).join(" ");
-    parts.push(`<path d="${line}" fill="none" stroke="var(--primary-color,#03a9f4)" stroke-width="2.5"/>`);
+    const line = pts
+      .map(
+        (p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`
+      )
+      .join(" ");
+    parts.push(
+      `<path d="${line}" fill="none" stroke="var(--primary-color,#03a9f4)" stroke-width="2.5"/>`
+    );
     parts.push(
       pts
-        .map((p) => `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy(p.v).toFixed(1)}" r="2.2" fill="var(--primary-color,#03a9f4)"/>`)
+        .map(
+          (p) =>
+            `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy(p.v).toFixed(1)}" r="2.2" fill="var(--primary-color,#03a9f4)"/>`
+        )
         .join("")
     );
 
@@ -4412,22 +4906,44 @@ class GribOverlayCard extends HTMLElement {
       {
         label: primaryLabel,
         color: "var(--primary-color,#03a9f4)",
-        samples: pts.map((p) => ({ t: p.t, x: +sx(p.t).toFixed(1), y: +sy(p.v).toFixed(1), disp: `${fmtCell(sourceUnit, p.v)} ${unit}` })),
+        samples: pts.map((p) => ({
+          t: p.t,
+          x: +sx(p.t).toFixed(1),
+          y: +sy(p.v).toFixed(1),
+          disp: `${fmtCell(sourceUnit, p.v)} ${unit}`,
+        })),
       },
     ];
     if (gustPts)
       hoverSeries.push({
         label: overlay.label,
         color: "var(--primary-color,#03a9f4)",
-        samples: gustPts.map((p) => ({ t: p.t, x: +sx(p.t).toFixed(1), y: +sy(p.g).toFixed(1), disp: `${fmtCell(sourceUnit, p.g)} ${unit}` })),
+        samples: gustPts.map((p) => ({
+          t: p.t,
+          x: +sx(p.t).toFixed(1),
+          y: +sy(p.g).toFixed(1),
+          disp: `${fmtCell(sourceUnit, p.g)} ${unit}`,
+        })),
       });
     if (showDir)
       hoverSeries.push({
         label: showGustDir ? gribT("windDirection") : gribT("direction"),
         color: DIR_COLOR,
-        samples: pts.filter((p) => p.dir != null).map((p) => ({ t: p.t, x: +sx(p.t).toFixed(1), y: +sy2h(p.dir).toFixed(1), disp: this._formatDirection(p.dir) })),
+        samples: pts
+          .filter((p) => p.dir != null)
+          .map((p) => ({
+            t: p.t,
+            x: +sx(p.t).toFixed(1),
+            y: +sy2h(p.dir).toFixed(1),
+            disp: this._formatDirection(p.dir),
+          })),
       });
-    parts.push(chartHoverMarkup({ x0: px0, x1: px1, y0: py0, y1: py1, fs: 12 }, hoverSeries));
+    parts.push(
+      chartHoverMarkup(
+        { x0: px0, x1: px1, y0: py0, y1: py1, fs: 12 },
+        hoverSeries
+      )
+    );
     const legendItems = [
       `<span style="color:var(--primary-color,#03a9f4)">━ ${primaryLabel} (${unit})</span>`,
     ];
@@ -4442,7 +4958,9 @@ class GribOverlayCard extends HTMLElement {
         `<span style="color:${DIR_COLOR}">┅ ${showGustDir ? gribT("windDirection") : gribT("direction")} (${dirUnit})</span>`
       );
       if (showGustDir) {
-        legendItems.push(`<span style="color:${DIR_COLOR};opacity:.8">⋯ ${gribT("gustDirection")}</span>`);
+        legendItems.push(
+          `<span style="color:${DIR_COLOR};opacity:.8">⋯ ${gribT("gustDirection")}</span>`
+        );
       }
     }
     const legend =
@@ -4477,9 +4995,13 @@ class GribOverlayCard extends HTMLElement {
     // and are dropped when the table is built.
     let groups;
     try {
-      groups = await Promise.all(entries.map((entry) => this._fetchEntryPointData(entry, latlng)));
+      groups = await Promise.all(
+        entries.map((entry) => this._fetchEntryPointData(entry, latlng))
+      );
     } catch {
-      this._setDetailBody(`<div class="grib-detail-loading">${gribT("meteogramFailed")}</div>`);
+      this._setDetailBody(
+        `<div class="grib-detail-loading">${gribT("meteogramFailed")}</div>`
+      );
       return;
     }
     if (!this._detailModal) return; // closed while loading
@@ -4522,7 +5044,9 @@ class GribOverlayCard extends HTMLElement {
       return { entry, seriesByKey, legendByKey };
     } catch {
       const [framesAll, seriesEntries] = await Promise.all([
-        this._hass.callApi("GET", `grib_overlay/frames/${entry.entry_id}`).catch(() => ({})),
+        this._hass
+          .callApi("GET", `grib_overlay/frames/${entry.entry_id}`)
+          .catch(() => ({})),
         Promise.all(
           params.map((p) =>
             this._fetchPointSeries(p.key, latlng, entry.entry_id)
@@ -4555,15 +5079,18 @@ class GribOverlayCard extends HTMLElement {
     this._closeDetailMeteogram();
     this._detailHidden = new Set(); // rows the user has temporarily hidden
     this._detailRowNames = new Map();
-    this._detailResolution = this._normalizeResolution((this._config || {}).meteogram_resolution);
+    this._detailResolution = this._normalizeResolution(
+      (this._config || {}).meteogram_resolution
+    );
     this._detailMode = "bron"; // "bron" (per-source table) | "compare" (models)
     this._detailMeasure = new Map(); // manual measurements (display units) for compare mode
     this._detailShowMeasure = false;
     this._detailCorrMode = "none"; // forecast correction: none | abs | rel
     this._detailCorrSources = null; // null = all shown sources
-    this._detailRadius = Number((this._config || {}).measurement_radius_km) > 0
-      ? Number(this._config.measurement_radius_km)
-      : 10;
+    this._detailRadius =
+      Number((this._config || {}).measurement_radius_km) > 0
+        ? Number(this._config.measurement_radius_km)
+        : 10;
     const backdrop = document.createElement("div");
     backdrop.className = "grib-detail-backdrop";
     backdrop.innerHTML =
@@ -4605,49 +5132,69 @@ class GribOverlayCard extends HTMLElement {
       .addEventListener("click", () => this._closeDetailMeteogram());
     // Click a row label to hide that parameter; click a chip to bring it back;
     // "Wis meting" clears this point's measurement for the compare parameter.
-    backdrop.querySelector(".grib-detail-scroll").addEventListener("click", (ev) => {
-      if (ev.target.closest(".grib-cmp-clear-all")) {
-        if (confirmClearAllMeasurements()) {
-          gribClearAllMeasurements();
+    backdrop
+      .querySelector(".grib-detail-scroll")
+      .addEventListener("click", (ev) => {
+        if (ev.target.closest(".grib-cmp-clear-all")) {
+          if (confirmClearAllMeasurements()) {
+            gribClearAllMeasurements();
+            this._detailMeasure = new Map();
+            this._rerenderDetail();
+          }
+          return;
+        }
+        if (ev.target.closest(".grib-cmp-clear")) {
+          if (this._detailLatlng) {
+            gribClearMeasurements(
+              this._detailLatlng.lat,
+              this._detailLatlng.lng,
+              this._detailCmpParam
+            );
+          }
           this._detailMeasure = new Map();
           this._rerenderDetail();
+          return;
         }
-        return;
-      }
-      if (ev.target.closest(".grib-cmp-clear")) {
-        if (this._detailLatlng) {
-          gribClearMeasurements(this._detailLatlng.lat, this._detailLatlng.lng, this._detailCmpParam);
+        if (ev.target.closest(".grib-cmp-dl-station")) {
+          if (this._detailLatlng)
+            this._downloadDetailStation(
+              this._detailLatlng.lat,
+              this._detailLatlng.lng,
+              null
+            );
+          return;
         }
-        this._detailMeasure = new Map();
-        this._rerenderDetail();
-        return;
-      }
-      if (ev.target.closest(".grib-cmp-dl-station")) {
-        if (this._detailLatlng) this._downloadDetailStation(this._detailLatlng.lat, this._detailLatlng.lng, null);
-        return;
-      }
-      const st = ev.target.closest(".grib-cmp-station");
-      if (st) {
-        this._downloadDetailStation(Number(st.getAttribute("data-lat")), Number(st.getAttribute("data-lng")), st.getAttribute("data-name"));
-        return;
-      }
-      const label = ev.target.closest("td.rowlabel[data-grp]");
-      if (label) this._toggleDetailRow(label.getAttribute("data-grp"));
-    });
+        const st = ev.target.closest(".grib-cmp-station");
+        if (st) {
+          this._downloadDetailStation(
+            Number(st.getAttribute("data-lat")),
+            Number(st.getAttribute("data-lng")),
+            st.getAttribute("data-name")
+          );
+          return;
+        }
+        const label = ev.target.closest("td.rowlabel[data-grp]");
+        if (label) this._toggleDetailRow(label.getAttribute("data-grp"));
+      });
     // Correction mode / per-source toggles in compare mode (delegated on the scroll).
-    backdrop.querySelector(".grib-detail-scroll").addEventListener("change", (ev) => {
-      if (ev.target.classList.contains("grib-cmp-corrmode")) {
-        this._detailCorrMode = ev.target.value;
-        this._detailCorrSources = null;
-        this._rerenderDetail();
-      } else if (ev.target.closest(".grib-cmp-corrsrc")) {
-        const eid = ev.target.getAttribute("data-eid");
-        if (!this._detailCorrSources) this._detailCorrSources = new Set((this._detailShownModels || []).map((m) => m.entryId));
-        if (ev.target.checked) this._detailCorrSources.add(eid);
-        else this._detailCorrSources.delete(eid);
-        this._rerenderDetail();
-      }
-    });
+    backdrop
+      .querySelector(".grib-detail-scroll")
+      .addEventListener("change", (ev) => {
+        if (ev.target.classList.contains("grib-cmp-corrmode")) {
+          this._detailCorrMode = ev.target.value;
+          this._detailCorrSources = null;
+          this._rerenderDetail();
+        } else if (ev.target.closest(".grib-cmp-corrsrc")) {
+          const eid = ev.target.getAttribute("data-eid");
+          if (!this._detailCorrSources)
+            this._detailCorrSources = new Set(
+              (this._detailShownModels || []).map((m) => m.entryId)
+            );
+          if (ev.target.checked) this._detailCorrSources.add(eid);
+          else this._detailCorrSources.delete(eid);
+          this._rerenderDetail();
+        }
+      });
     backdrop.querySelector(".chips").addEventListener("click", (ev) => {
       const chip = ev.target.closest(".chip[data-grp]");
       if (chip) this._toggleDetailRow(chip.getAttribute("data-grp"));
@@ -4677,7 +5224,9 @@ class GribOverlayCard extends HTMLElement {
     });
     backdrop.querySelector(".detmeas").addEventListener("change", (ev) => {
       this._detailShowMeasure = ev.target.checked;
-      backdrop.querySelector(".detradctl").classList.toggle("hidden", !this._detailShowMeasure);
+      backdrop
+        .querySelector(".detradctl")
+        .classList.toggle("hidden", !this._detailShowMeasure);
       this._rerenderDetail();
       if (this._detailShowMeasure) this._loadDetailStations();
     });
@@ -4693,18 +5242,29 @@ class GribOverlayCard extends HTMLElement {
     // Live measurement entry in compare mode: update the map + re-render only the
     // chart/delta boxes (leaving the focused input untouched), and save the value
     // for this point + parameter for the session.
-    backdrop.querySelector(".grib-detail-scroll").addEventListener("input", (ev) => {
-      const inp = ev.target.closest(".grib-cmp-meas");
-      if (!inp) return;
-      const key = Number(inp.getAttribute("data-col"));
-      const val = inp.value.trim();
-      if (val === "") this._detailMeasure.delete(key);
-      else this._detailMeasure.set(key, Number(val));
-      if (this._detailLatlng) {
-        gribSetMeasurement(this._detailLatlng.lat, this._detailLatlng.lng, this._detailCmpParam, key, val === "" ? null : Number(val));
-      }
-      refreshCompareMeasure(this._detailModal.querySelector(".grib-detail-scroll"), this._detailSpec());
-    });
+    backdrop
+      .querySelector(".grib-detail-scroll")
+      .addEventListener("input", (ev) => {
+        const inp = ev.target.closest(".grib-cmp-meas");
+        if (!inp) return;
+        const key = Number(inp.getAttribute("data-col"));
+        const val = inp.value.trim();
+        if (val === "") this._detailMeasure.delete(key);
+        else this._detailMeasure.set(key, Number(val));
+        if (this._detailLatlng) {
+          gribSetMeasurement(
+            this._detailLatlng.lat,
+            this._detailLatlng.lng,
+            this._detailCmpParam,
+            key,
+            val === "" ? null : Number(val)
+          );
+        }
+        refreshCompareMeasure(
+          this._detailModal.querySelector(".grib-detail-scroll"),
+          this._detailSpec()
+        );
+      });
     this._detailEsc = (ev) => {
       if (ev.key === "Escape") this._closeDetailMeteogram();
     };
@@ -4713,8 +5273,12 @@ class GribOverlayCard extends HTMLElement {
     if (window.ResizeObserver) {
       // The comparison chart is drawn at its box's width; redraw it when the
       // window (and with it this full-screen view) changes size.
-      this._detailChartObserver = new ResizeObserver(() => this._fitDetailChart());
-      this._detailChartObserver.observe(backdrop.querySelector(".grib-detail-scroll"));
+      this._detailChartObserver = new ResizeObserver(() =>
+        this._fitDetailChart()
+      );
+      this._detailChartObserver.observe(
+        backdrop.querySelector(".grib-detail-scroll")
+      );
     }
     this.shadowRoot.appendChild(backdrop);
     this._detailModal = backdrop;
@@ -4743,7 +5307,10 @@ class GribOverlayCard extends HTMLElement {
     const q = (sel) => this._detailModal.querySelector(sel);
     q(".cmpparamsel").classList.toggle("hidden", !compare);
     q(".measctl").classList.toggle("hidden", !compare);
-    q(".detradctl").classList.toggle("hidden", !(compare && this._detailShowMeasure));
+    q(".detradctl").classList.toggle(
+      "hidden",
+      !(compare && this._detailShowMeasure)
+    );
     q(".hint").classList.toggle("hidden", compare);
     if (compare) {
       q(".chips").innerHTML = "";
@@ -4756,7 +5323,8 @@ class GribOverlayCard extends HTMLElement {
   // Fill the compare-mode parameter picker with parameters that at least one
   // source has data for here; default to one that ≥2 models share.
   _populateCompareParams() {
-    const sel = this._detailModal && this._detailModal.querySelector(".cmpparam");
+    const sel =
+      this._detailModal && this._detailModal.querySelector(".cmpparam");
     if (!sel) return;
     const has = (g, key) => {
       const r = g.seriesByKey.get(key);
@@ -4796,11 +5364,14 @@ class GribOverlayCard extends HTMLElement {
   _loadDetailMeasurements() {
     if (!this._detailLatlng || !this._detailCmpParam) return;
     this._detailMeasure = gribGetMeasurements(
-      this._detailLatlng.lat, this._detailLatlng.lng, this._detailCmpParam
+      this._detailLatlng.lat,
+      this._detailLatlng.lng,
+      this._detailCmpParam
     );
     if (this._detailMeasure.size > 0) {
       this._detailShowMeasure = true;
-      const cb = this._detailModal && this._detailModal.querySelector(".detmeas");
+      const cb =
+        this._detailModal && this._detailModal.querySelector(".detmeas");
       if (cb) cb.checked = true;
     }
   }
@@ -4808,8 +5379,11 @@ class GribOverlayCard extends HTMLElement {
   // Compare-mode body: overlaid line chart + per-model table for one parameter.
   _buildCompareView() {
     const param = this._detailCmpParam;
-    if (!param) return `<div class="grib-cmp-empty">${gribT("noParamSelected")}</div>`;
-    const shortById = compareShortLabels((this._detailGroups || []).map((g) => g.entry));
+    if (!param)
+      return `<div class="grib-cmp-empty">${gribT("noParamSelected")}</div>`;
+    const shortById = compareShortLabels(
+      (this._detailGroups || []).map((g) => g.entry)
+    );
     const models = (this._detailGroups || [])
       .map((g, i) => {
         const resp = g.seriesByKey.get(param);
@@ -4826,8 +5400,12 @@ class GribOverlayCard extends HTMLElement {
         };
       })
       .filter(Boolean);
-    const withData = models.filter((m) => m.series.some((s) => s.value != null));
-    const dropped = models.filter((m) => !m.series.some((s) => s.value != null));
+    const withData = models.filter((m) =>
+      m.series.some((s) => s.value != null)
+    );
+    const dropped = models.filter(
+      (m) => !m.series.some((s) => s.value != null)
+    );
     if (!withData.length) {
       return `<div class="grib-cmp-empty">${gribT("noModelData")}</div>`;
     }
@@ -4838,17 +5416,32 @@ class GribOverlayCard extends HTMLElement {
       ? `<div class="grib-detail-note">${gribT("notShown", { items: dropped.map((m) => m.name).join("; ") })}</div>`
       : "";
     if (!this._detailMeasure) this._detailMeasure = new Map();
-    const stations = this._detailShowMeasure && this._detailLatlng
-      ? this._detailCurrentStations()
-      : [];
+    const stations =
+      this._detailShowMeasure && this._detailLatlng
+        ? this._detailCurrentStations()
+        : [];
     const station = this._detailLatlng
-      ? gribGetStation(this._detailLatlng.lat, this._detailLatlng.lng, this._detailCmpParam)
+      ? gribGetStation(
+          this._detailLatlng.lat,
+          this._detailLatlng.lng,
+          this._detailCmpParam
+        )
       : null;
     return (
       compareViewHtml(
-        withData, this._config, this._detailResolution, unit,
-        this._detailMeasure, !!this._detailShowMeasure,
-        { stations, radiusKm: this._detailRadius, station, corrMode: this._detailCorrMode, corrSources: this._detailCorrSources }
+        withData,
+        this._config,
+        this._detailResolution,
+        unit,
+        this._detailMeasure,
+        !!this._detailShowMeasure,
+        {
+          stations,
+          radiusKm: this._detailRadius,
+          station,
+          corrMode: this._detailCorrMode,
+          corrSources: this._detailCorrSources,
+        }
       ) + note
     );
   }
@@ -4856,20 +5449,48 @@ class GribOverlayCard extends HTMLElement {
   // Stations to present in the meteogram compare mode: the backend list (only
   // those with data for the compare parameter) when loaded, else the built-in list.
   _detailCurrentStations() {
-    if (this._detailStationsData != null && this._detailStationsParam === this._detailCmpParam) return this._detailStationsData;
-    return this._detailLatlng ? stationsWithin(this._detailLatlng.lat, this._detailLatlng.lng, this._detailRadius) : [];
+    if (
+      this._detailStationsData != null &&
+      this._detailStationsParam === this._detailCmpParam
+    )
+      return this._detailStationsData;
+    return this._detailLatlng
+      ? stationsWithin(
+          this._detailLatlng.lat,
+          this._detailLatlng.lng,
+          this._detailRadius
+        )
+      : [];
   }
 
   async _loadDetailStations() {
-    if (!this._detailShowMeasure || !this._detailLatlng || !this._hass || !this._detailCmpParam) {
+    if (
+      !this._detailShowMeasure ||
+      !this._detailLatlng ||
+      !this._hass ||
+      !this._detailCmpParam
+    ) {
       this._detailStationsData = null;
       return;
     }
-    const q = new URLSearchParams({ param: this._detailCmpParam, lat: this._detailLatlng.lat.toFixed(4), lon: this._detailLatlng.lng.toFixed(4), radius: String(this._detailRadius) });
+    const q = new URLSearchParams({
+      param: this._detailCmpParam,
+      lat: this._detailLatlng.lat.toFixed(4),
+      lon: this._detailLatlng.lng.toFixed(4),
+      radius: String(this._detailRadius),
+    });
     let stations;
     try {
-      const data = await this._hass.callApi("GET", `grib_overlay/stations?${q}`);
-      stations = ((data && data.stations) || []).map((s) => ({ name: s.name, lat: s.lat, lon: s.lon, distKm: s.dist_km }));
+      const data = await this._hass.callApi(
+        "GET",
+        `grib_overlay/stations?${q}`
+      );
+      stations = ((data && data.stations) || []).map((s) => ({
+        name: s.name,
+        lat: s.lat,
+        lon: s.lon,
+        distKm: s.dist_km,
+      }));
     } catch {
       stations = null;
     }
@@ -4879,7 +5500,8 @@ class GribOverlayCard extends HTMLElement {
   }
 
   _dropDetailStation(lat, lng) {
-    if (this._detailStationsData == null) this._detailStationsData = this._detailCurrentStations();
+    if (this._detailStationsData == null)
+      this._detailStationsData = this._detailCurrentStations();
     this._detailStationsParam = this._detailCmpParam;
     this._detailStationsData = this._detailStationsData.filter(
       (s) => Math.abs(s.lat - lat) > 1e-4 || Math.abs(s.lon - lng) > 1e-4
@@ -4893,18 +5515,25 @@ class GribOverlayCard extends HTMLElement {
     if (!this._detailLatlng || !this._detailCmpParam) return;
     const param = this._detailCmpParam;
     const models = this._detailShownModels || [];
-    const btn = this._detailModal && this._detailModal.querySelector(".grib-cmp-dl-station");
+    const btn =
+      this._detailModal &&
+      this._detailModal.querySelector(".grib-cmp-dl-station");
     if (btn) {
       btn.disabled = true;
       btn.textContent = gribT("busy");
     }
     let tMin = Infinity;
-    for (const m of models) for (const s of m.series || []) if (s.value != null) tMin = Math.min(tMin, new Date(s.valid_time).getTime());
+    for (const m of models)
+      for (const s of m.series || [])
+        if (s.value != null)
+          tMin = Math.min(tMin, new Date(s.valid_time).getTime());
     const q = new URLSearchParams({
       param,
       lat: Number(lat).toFixed(4),
       lon: Number(lng).toFixed(4),
-      start: new Date(Number.isFinite(tMin) ? tMin : Date.now() - 48 * 3600e3).toISOString(),
+      start: new Date(
+        Number.isFinite(tMin) ? tMin : Date.now() - 48 * 3600e3
+      ).toISOString(),
       end: new Date().toISOString(),
     });
     let data;
@@ -4918,30 +5547,50 @@ class GribOverlayCard extends HTMLElement {
       if (btn) {
         btn.disabled = false;
         btn.textContent = gribT("downloadStation");
-        btn.title = data && data.error ? String(data.error) : gribT("stationNoData");
+        btn.title =
+          data && data.error ? String(data.error) : gribT("stationNoData");
       }
       this._rerenderDetail();
       return;
     }
     const unit = (models[0] && models[0].unit) || "";
     const columns = compareColumns(models, this._detailResolution);
-    const colValues = stationColValues(data.series, unit, this._detailResolution, columns, this._config);
+    const colValues = stationColValues(
+      data.series,
+      unit,
+      this._detailResolution,
+      columns,
+      this._config
+    );
     const st = data.station || {};
     const stName = name || st.name || gribT("aStation");
     if (!colValues.length) {
       if (btn) {
         btn.disabled = false;
         btn.textContent = gribT("noOverlap");
-        btn.title = gribT("noOverlapTitle", { name: stName, n: data.series.length });
+        btn.title = gribT("noOverlapTitle", {
+          name: stName,
+          n: data.series.length,
+        });
       }
       return;
     }
-    gribSetMeasurementsBulk(this._detailLatlng.lat, this._detailLatlng.lng, param, colValues, {
-      name: stName,
-      provider: st.provider || data.provider || "",
-    });
+    gribSetMeasurementsBulk(
+      this._detailLatlng.lat,
+      this._detailLatlng.lng,
+      param,
+      colValues,
+      {
+        name: stName,
+        provider: st.provider || data.provider || "",
+      }
+    );
     this._detailShowMeasure = true;
-    this._detailMeasure = gribGetMeasurements(this._detailLatlng.lat, this._detailLatlng.lng, param);
+    this._detailMeasure = gribGetMeasurements(
+      this._detailLatlng.lat,
+      this._detailLatlng.lng,
+      param
+    );
     const detmeas = this._detailModal.querySelector(".detmeas");
     if (detmeas) detmeas.checked = true;
     const radctl = this._detailModal.querySelector(".detradctl");
@@ -4961,14 +5610,21 @@ class GribOverlayCard extends HTMLElement {
   _applyDetailHidden() {
     if (!this._detailModal) return;
     const hidden = this._detailHidden || new Set();
-    this._detailModal.querySelectorAll(".grib-detail-table td.rowlabel[data-grp]").forEach((td) => {
-      const tr = td.closest("tr");
-      if (tr) tr.style.display = hidden.has(td.getAttribute("data-grp")) ? "none" : "";
-    });
+    this._detailModal
+      .querySelectorAll(".grib-detail-table td.rowlabel[data-grp]")
+      .forEach((td) => {
+        const tr = td.closest("tr");
+        if (tr)
+          tr.style.display = hidden.has(td.getAttribute("data-grp"))
+            ? "none"
+            : "";
+      });
     const list = [...hidden];
     const chips = this._detailModal.querySelector(".grib-detail-tools .chips");
     const hint = this._detailModal.querySelector(".grib-detail-tools .hint");
-    const showall = this._detailModal.querySelector(".grib-detail-tools .showall");
+    const showall = this._detailModal.querySelector(
+      ".grib-detail-tools .showall"
+    );
     if (chips) {
       chips.innerHTML = list
         .map(
@@ -5005,7 +5661,10 @@ class GribOverlayCard extends HTMLElement {
 
   _fitDetailChart() {
     if (!this._detailModal || this._detailMode !== "compare") return;
-    fitCompareChart(this._detailModal.querySelector(".grib-detail-scroll"), this._detailSpec());
+    fitCompareChart(
+      this._detailModal.querySelector(".grib-detail-scroll"),
+      this._detailSpec()
+    );
   }
 
   _closeDetailMeteogram() {
@@ -5036,9 +5695,14 @@ class GribOverlayCard extends HTMLElement {
         (r) => r && r.series && r.series.some((s) => s.value != null)
       )
     );
-    const note = this._droppedSourcesNote(all.filter((g) => !active.includes(g)));
+    const note = this._droppedSourcesNote(
+      all.filter((g) => !active.includes(g))
+    );
     if (!active.length) {
-      return `<div class="grib-detail-loading">${gribT("noDataAtPoint")}</div>` + note;
+      return (
+        `<div class="grib-detail-loading">${gribT("noDataAtPoint")}</div>` +
+        note
+      );
     }
 
     // Column resolution: raw timestamps are floored to a bucket (kwartier / uur /
@@ -5052,7 +5716,8 @@ class GribOverlayCard extends HTMLElement {
       for (const r of g.seriesByKey.values()) {
         if (r && r.series) {
           for (const s of r.series) {
-            if (s.value != null) keySet.add(this._bucketStart(new Date(s.valid_time), res));
+            if (s.value != null)
+              keySet.add(this._bucketStart(new Date(s.valid_time), res));
           }
         }
       }
@@ -5062,27 +5727,47 @@ class GribOverlayCard extends HTMLElement {
 
     // Row-1 groups by a coarser unit than the columns: day for sub-day columns,
     // month for day columns. Separators + the "now" column follow the same grid.
-    const g1key = (d) => (res === "day" ? `${d.getFullYear()}-${d.getMonth()}` : d.toDateString());
-    const sepAt = dates.map((d, i) => i > 0 && g1key(d) !== g1key(dates[i - 1]));
+    const g1key = (d) =>
+      res === "day" ? `${d.getFullYear()}-${d.getMonth()}` : d.toDateString();
+    const sepAt = dates.map(
+      (d, i) => i > 0 && g1key(d) !== g1key(dates[i - 1])
+    );
     const nowIdx = columns.indexOf(this._bucketStart(new Date(), res));
-    const cls = (i) => `cell${sepAt[i] ? " daysep" : ""}${i === nowIdx ? " nowcol" : ""}`;
+    const cls = (i) =>
+      `cell${sepAt[i] ? " daysep" : ""}${i === nowIdx ? " nowcol" : ""}`;
 
     // Header: a group row (spanning its columns) + a per-column label row, both
     // adapting to the resolution (day columns show the date; finer ones the hour).
     const grpFmt =
       res === "day"
-        ? new Intl.DateTimeFormat(gribLocale(), { month: "long", year: "numeric" })
-        : new Intl.DateTimeFormat(gribLocale(), { weekday: "short", day: "numeric", month: "short" });
-    const dayFmt = new Intl.DateTimeFormat(gribLocale(), { weekday: "short", day: "numeric" });
+        ? new Intl.DateTimeFormat(gribLocale(), {
+            month: "long",
+            year: "numeric",
+          })
+        : new Intl.DateTimeFormat(gribLocale(), {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+          });
+    const dayFmt = new Intl.DateTimeFormat(gribLocale(), {
+      weekday: "short",
+      day: "numeric",
+    });
     const colLabel = (d) => {
       if (res === "day") return dayFmt.format(d);
       const hh = String(d.getHours()).padStart(2, "0");
-      return res === "quarter" ? `${hh}:${String(d.getMinutes()).padStart(2, "0")}` : hh;
+      return res === "quarter"
+        ? `${hh}:${String(d.getMinutes()).padStart(2, "0")}`
+        : hh;
     };
     let groupRow = `<th class="rowlabel"></th>`;
-    for (let i = 0; i < dates.length; ) {
+    for (let i = 0; i < dates.length;) {
       let span = 1;
-      while (i + span < dates.length && g1key(dates[i + span]) === g1key(dates[i])) span++;
+      while (
+        i + span < dates.length &&
+        g1key(dates[i + span]) === g1key(dates[i])
+      )
+        span++;
       groupRow += `<th colspan="${span}" class="dayhead${i > 0 ? " daysep" : ""}">${grpFmt.format(dates[i])}</th>`;
       i += span;
     }
@@ -5094,7 +5779,13 @@ class GribOverlayCard extends HTMLElement {
     // Compact source labels (alias-aware, same-source disambiguated) over the
     // full set, so the per-source group badge matches the comparison view.
     const shortById = compareShortLabels(all.map((g) => g.entry));
-    const ctx = { columns, cls, colCount: columns.length, resolution: res, shortById };
+    const ctx = {
+      columns,
+      cls,
+      colCount: columns.length,
+      resolution: res,
+      shortById,
+    };
     const body = active.map((g) => this._buildEntryRows(g, ctx)).join("");
     return (
       `<table class="grib-detail-table">` +
@@ -5121,8 +5812,14 @@ class GribOverlayCard extends HTMLElement {
     if (!dropped || !dropped.length) return "";
     const items = dropped.map((g) => {
       const src = String(g.entry.source || "").toUpperCase();
-      const name = gribDatasetName(g.entry.dataset) || g.entry.title || src || gribT("source");
-      const hasFrames = [...g.seriesByKey.values()].some((r) => r && r.series && r.series.length);
+      const name =
+        gribDatasetName(g.entry.dataset) ||
+        g.entry.title ||
+        src ||
+        gribT("source");
+      const hasFrames = [...g.seriesByKey.values()].some(
+        (r) => r && r.series && r.series.length
+      );
       const reason = hasFrames ? gribT("outOfRange") : gribT("noDataYet");
       return `${src ? src + " · " : ""}${name} (${reason})`;
     });
@@ -5136,9 +5833,12 @@ class GribOverlayCard extends HTMLElement {
     const rows = [];
     const src = String(entry.source || "").toUpperCase();
     // Compact label (user alias, or source disambiguated per compareShortLabels).
-    const short = (shortById && shortById.get(entry.entry_id)) || compareModelShort(entry);
-    const dsName = gribDatasetName(entry.dataset) || entry.title || src || gribT("source");
-    const suffix = entry.title && entry.title !== dsName ? ` · ${entry.title}` : "";
+    const short =
+      (shortById && shortById.get(entry.entry_id)) || compareModelShort(entry);
+    const dsName =
+      gribDatasetName(entry.dataset) || entry.title || src || gribT("source");
+    const suffix =
+      entry.title && entry.title !== dsName ? ` · ${entry.title}` : "";
     rows.push(
       `<tr class="grouprow">` +
         `<td class="rowlabel grouplabel"><span class="src" title="${escapeXml(compareModelName(entry))}">${escapeXml(short || "GRIB")}</span></td>` +
@@ -5148,25 +5848,35 @@ class GribOverlayCard extends HTMLElement {
 
     for (const p of entry.parameters || []) {
       const resp = seriesByKey.get(p.key);
-      if (!resp || !resp.series || !resp.series.some((s) => s.value != null)) continue;
+      if (!resp || !resp.series || !resp.series.some((s) => s.value != null))
+        continue;
       if (p.unit === "°") continue; // a standalone direction is drawn as arrows on its companion
 
       // Precipitation (and any mm accumulation) is totalled over the period ending
       // at each column; other parameters are averaged (day) or sampled (finer) --
       // see _aggregateSeries.
-      const byBucket = this._aggregateSeries(resp.series, resolution, resp.unit === "mm", columns);
+      const byBucket = this._aggregateSeries(
+        resp.series,
+        resolution,
+        resp.unit === "mm",
+        columns
+      );
       const conv = this._conversionFor(resp.unit);
       const factor = conv ? conv.factor : 1;
       const dispUnit = conv ? conv.label : resp.unit;
       const legend = legendByKey[p.key];
       // A per-parameter id so a row (and its direction companion) can be hidden.
       const grp = `${entry.entry_id}::${p.key}`;
-      if (this._detailRowNames) this._detailRowNames.set(grp, `${short} · ${gribParamName(p)}`);
+      if (this._detailRowNames)
+        this._detailRowNames.set(grp, `${short} · ${gribParamName(p)}`);
 
       // Direction arrow row: the arrow points the way the wind/waves travel, with
       // the from-direction printed below it in the card's chosen unit (compass or
       // 0-360 degrees), so it reads both at a glance and exactly.
-      if (resp.direction_unit && [...byBucket.values()].some((b) => b.direction != null)) {
+      if (
+        resp.direction_unit &&
+        [...byBucket.values()].some((b) => b.direction != null)
+      ) {
         let cells = `<td class="rowlabel" data-grp="${grp}" title="${gribT("clickToHide")}">${gribParamName(p)}<span class="ru">${gribT("direction")}</span></td>`;
         columns.forEach((key, i) => {
           const b = byBucket.get(key);
@@ -5191,7 +5901,9 @@ class GribOverlayCard extends HTMLElement {
         const b = byBucket.get(key);
         if (b && b.value != null) {
           const bg = legend ? this._lerpLegendColor(legend, b.value) : null;
-          const style = bg ? ` style="background:${bg};color:${this._readableText(bg)}"` : "";
+          const style = bg
+            ? ` style="background:${bg};color:${this._readableText(bg)}"`
+            : "";
           cells += `<td class="${cls(i)}"${style}>${this._fmtCell(resp.unit, b.value * factor)}</td>`;
         } else {
           cells += `<td class="${cls(i)}">–</td>`;
@@ -5247,7 +5959,8 @@ class GribOverlayCard extends HTMLElement {
       this._setIsobarNote("");
     } else {
       this._setIsobarNote(gribT("isobarsNoFrames"));
-      gribLog("warn",
+      gribLog(
+        "warn",
 
         `grib-overlay-card: no ${pParam.key} frames for ${this._currentEntry()?.title}`
       );
@@ -5260,14 +5973,21 @@ class GribOverlayCard extends HTMLElement {
   _syncRenderModeAvailability() {
     const hasWind = this._paramHasWind();
     for (const value of ["particles", "vectors"]) {
-      const opt = this._els.renderModeSelect.querySelector(`option[value="${value}"]`);
+      const opt = this._els.renderModeSelect.querySelector(
+        `option[value="${value}"]`
+      );
       if (opt) opt.disabled = !hasWind;
     }
     const hasWave = this._hasWaveVectors();
-    const waveOpt = this._els.renderModeSelect.querySelector('option[value="wavevectors"]');
+    const waveOpt = this._els.renderModeSelect.querySelector(
+      'option[value="wavevectors"]'
+    );
     if (waveOpt) waveOpt.disabled = !hasWave;
 
-    if (!hasWind && (this._renderMode === "particles" || this._renderMode === "vectors")) {
+    if (
+      !hasWind &&
+      (this._renderMode === "particles" || this._renderMode === "vectors")
+    ) {
       this._renderMode = "raster";
     }
     if (!hasWave && this._renderMode === "wavevectors") {
@@ -5315,7 +6035,8 @@ class GribOverlayCard extends HTMLElement {
     const tickParts = [];
     for (let i = 0; i < TICKS; i++) {
       const t = i / (TICKS - 1);
-      const value = (legend.min_value + (legend.max_value - legend.min_value) * t) * factor;
+      const value =
+        (legend.min_value + (legend.max_value - legend.min_value) * t) * factor;
       const last = i === TICKS - 1;
       const text = last ? `${fmt(value)} ${unit}` : fmt(value);
       scaleParts.push(`<span>${text}</span>`);
@@ -5338,8 +6059,14 @@ class GribOverlayCard extends HTMLElement {
     this._mode = mode;
     this._els.modeSingleBtn.classList.toggle("active", mode === "single");
     this._els.modeAnimateBtn.classList.toggle("active", mode === "animate");
-    this._els.modeSingleBtn.setAttribute("aria-pressed", String(mode === "single"));
-    this._els.modeAnimateBtn.setAttribute("aria-pressed", String(mode === "animate"));
+    this._els.modeSingleBtn.setAttribute(
+      "aria-pressed",
+      String(mode === "single")
+    );
+    this._els.modeAnimateBtn.setAttribute(
+      "aria-pressed",
+      String(mode === "animate")
+    );
     this._els.singleControls.classList.toggle("hidden", mode !== "single");
     this._els.animateControls.classList.toggle("hidden", mode !== "animate");
     if (mode !== "animate") this._stopPlayback();
@@ -5421,8 +6148,16 @@ gribDefineCard("grib-overlay-card", GribOverlayCard);
 // ==========================================================================
 
 const MODEL_COLORS = [
-  "#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4",
-  "#008080", "#e6ab02", "#000075", "#9a6324", "#808000",
+  "#e6194b",
+  "#3cb44b",
+  "#4363d8",
+  "#f58231",
+  "#911eb4",
+  "#008080",
+  "#e6ab02",
+  "#000075",
+  "#9a6324",
+  "#808000",
 ];
 
 function compareModelColor(i) {
@@ -5431,8 +6166,10 @@ function compareModelColor(i) {
 
 function compareModelName(entry) {
   return (
-    entry.title || gribDatasetName(entry.dataset) ||
-    String(entry.source || "").toUpperCase() || entry.entry_id
+    entry.title ||
+    gribDatasetName(entry.dataset) ||
+    String(entry.source || "").toUpperCase() ||
+    entry.entry_id
   );
 }
 
@@ -5456,9 +6193,17 @@ function compareModelShort(entry) {
 // else the model's leading word (HARMONIE, ICON, …), capped.
 function modelDetailToken(entry) {
   const src = String(entry.source || "").trim();
-  let s = (entry.dataset && entry.dataset.name) || entry.title || entry.entry_id || "";
+  let s =
+    (entry.dataset && entry.dataset.name) ||
+    entry.title ||
+    entry.entry_id ||
+    "";
   if (src) s = s.replace(new RegExp("\\b" + src + "\\b", "ig"), " ");
-  s = s.replace(/\(.*?\)/g, " ").replace(/[-–—·|/]+/g, " ").replace(/\s+/g, " ").trim();
+  s = s
+    .replace(/\(.*?\)/g, " ")
+    .replace(/[-–—·|/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   const region = [
     [/\bnederland\b|\bnetherlands\b|\bnl\b/i, "NL"],
     [/\beuropa\b|\beurope\b|\beu\b/i, "EU"],
@@ -5485,14 +6230,17 @@ function compareShortLabels(entries) {
     aliased: !!String(e.alias || "").trim(), // user-set alias is used verbatim
   }));
   const counts = {};
-  for (const r of rows) if (!r.aliased) counts[r.base] = (counts[r.base] || 0) + 1;
+  for (const r of rows)
+    if (!r.aliased) counts[r.base] = (counts[r.base] || 0) + 1;
   const map = new Map();
   const seen = {};
   const fallback = {};
   for (const r of rows) {
     let label = r.base;
     if (!r.aliased && counts[r.base] > 1) {
-      const tok = modelDetailToken(r.entry) || String((fallback[r.base] = (fallback[r.base] || 0) + 1));
+      const tok =
+        modelDetailToken(r.entry) ||
+        String((fallback[r.base] = (fallback[r.base] || 0) + 1));
       label = `${r.base} ${tok}`;
     }
     if (seen[label]) label = `${label} ${(seen[label] += 1)}`;
@@ -5512,15 +6260,23 @@ function compareShortLabels(entries) {
 // ==========================================================================
 
 function escapeXml(s) {
-  return String(s).replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+  return String(s).replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ]
   );
 }
 
 // A short "za 23 aug 14:00"-style label for the tooltip header.
 function fmtHoverTime(t) {
   return new Intl.DateTimeFormat(gribLocale(), {
-    weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(new Date(t));
 }
 
@@ -5591,16 +6347,37 @@ function updateChartHover(svg, data, userX) {
         smp = q;
       }
     }
-    if (smp) rows.push({ color: s.color, label: s.label, disp: smp.disp, x: smp.x, y: smp.y, t: smp.t });
+    if (smp)
+      rows.push({
+        color: s.color,
+        label: s.label,
+        disp: smp.disp,
+        x: smp.x,
+        y: smp.y,
+        t: smp.t,
+      });
   }
   if (!rows.length) return;
-  const lines = [`<line x1="${snapX.toFixed(1)}" y1="${box.y0}" x2="${snapX.toFixed(1)}" y2="${box.y1}" stroke="var(--primary-text-color,#37474f)" stroke-width="1" stroke-dasharray="2 2" opacity="0.6"/>`];
+  const lines = [
+    `<line x1="${snapX.toFixed(1)}" y1="${box.y0}" x2="${snapX.toFixed(1)}" y2="${box.y1}" stroke="var(--primary-text-color,#37474f)" stroke-width="1" stroke-dasharray="2 2" opacity="0.6"/>`,
+  ];
   for (const r of rows)
-    lines.push(`<circle cx="${r.x.toFixed(1)}" cy="${r.y.toFixed(1)}" r="3.4" fill="${r.color}" stroke="#fff" stroke-width="1.2"/>`);
+    lines.push(
+      `<circle cx="${r.x.toFixed(1)}" cy="${r.y.toFixed(1)}" r="3.4" fill="${r.color}" stroke="#fff" stroke-width="1.2"/>`
+    );
   // Tooltip box, sized from the longest line (text can't be measured in SVG
   // user units, so estimate from character count).
-  const hm = (t) => new Intl.DateTimeFormat(gribLocale(), { hour: "2-digit", minute: "2-digit" }).format(new Date(t));
-  const texts = [fmtHoverTime(best.t), ...rows.map((r) => `${r.label}: ${r.disp}${r.t === best.t ? "" : " @" + hm(r.t)}`)];
+  const hm = (t) =>
+    new Intl.DateTimeFormat(gribLocale(), {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(t));
+  const texts = [
+    fmtHoverTime(best.t),
+    ...rows.map(
+      (r) => `${r.label}: ${r.disp}${r.t === best.t ? "" : " @" + hm(r.t)}`
+    ),
+  ];
   const lineH = fs + 4;
   const pad = 6;
   const sw = Math.round(fs * 0.7);
@@ -5611,13 +6388,21 @@ function updateChartHover(svg, data, userX) {
   if (bx + boxW > box.x1) bx = snapX - 10 - boxW;
   if (bx < box.x0) bx = box.x0 + 2;
   const by = box.y0 + 2;
-  lines.push(`<rect x="${bx.toFixed(1)}" y="${by}" width="${boxW.toFixed(1)}" height="${boxH.toFixed(1)}" rx="4" fill="var(--card-background-color,#fff)" stroke="var(--divider-color,#c7ccd1)" opacity="0.97"/>`);
+  lines.push(
+    `<rect x="${bx.toFixed(1)}" y="${by}" width="${boxW.toFixed(1)}" height="${boxH.toFixed(1)}" rx="4" fill="var(--card-background-color,#fff)" stroke="var(--divider-color,#c7ccd1)" opacity="0.97"/>`
+  );
   let ty = by + pad + fs;
-  lines.push(`<text x="${(bx + pad).toFixed(1)}" y="${ty.toFixed(1)}" font-size="${fs}" fill="var(--secondary-text-color,#888)">${escapeXml(texts[0])}</text>`);
+  lines.push(
+    `<text x="${(bx + pad).toFixed(1)}" y="${ty.toFixed(1)}" font-size="${fs}" fill="var(--secondary-text-color,#888)">${escapeXml(texts[0])}</text>`
+  );
   rows.forEach((r, i) => {
     ty += lineH;
-    lines.push(`<rect x="${(bx + pad).toFixed(1)}" y="${(ty - fs + 2).toFixed(1)}" width="${sw}" height="${sw}" rx="2" fill="${r.color}"/>`);
-    lines.push(`<text x="${(bx + pad + sw + 5).toFixed(1)}" y="${ty.toFixed(1)}" font-size="${fs}" fill="var(--primary-text-color,#12324f)">${escapeXml(texts[i + 1])}</text>`);
+    lines.push(
+      `<rect x="${(bx + pad).toFixed(1)}" y="${(ty - fs + 2).toFixed(1)}" width="${sw}" height="${sw}" rx="2" fill="${r.color}"/>`
+    );
+    lines.push(
+      `<text x="${(bx + pad + sw + 5).toFixed(1)}" y="${ty.toFixed(1)}" font-size="${fs}" fill="var(--primary-text-color,#12324f)">${escapeXml(texts[i + 1])}</text>`
+    );
   });
   layer.innerHTML = lines.join("");
   layer.style.display = "";
@@ -5657,24 +6442,42 @@ function wireChartHovers(root) {
 // bucket-start epochs at a resolution. Returns {groupRow, colRow, cls}.
 function buildColumnHeader(columns, res) {
   const dates = columns.map((ms) => new Date(ms));
-  const g1key = (d) => (res === "day" ? `${d.getFullYear()}-${d.getMonth()}` : d.toDateString());
+  const g1key = (d) =>
+    res === "day" ? `${d.getFullYear()}-${d.getMonth()}` : d.toDateString();
   const sepAt = dates.map((d, i) => i > 0 && g1key(d) !== g1key(dates[i - 1]));
   const nowIdx = columns.indexOf(bucketStart(new Date(), res));
-  const cls = (i) => `cell${sepAt[i] ? " daysep" : ""}${i === nowIdx ? " nowcol" : ""}`;
+  const cls = (i) =>
+    `cell${sepAt[i] ? " daysep" : ""}${i === nowIdx ? " nowcol" : ""}`;
   const grpFmt =
     res === "day"
-      ? new Intl.DateTimeFormat(gribLocale(), { month: "long", year: "numeric" })
-      : new Intl.DateTimeFormat(gribLocale(), { weekday: "short", day: "numeric", month: "short" });
-  const dayFmt = new Intl.DateTimeFormat(gribLocale(), { weekday: "short", day: "numeric" });
+      ? new Intl.DateTimeFormat(gribLocale(), {
+          month: "long",
+          year: "numeric",
+        })
+      : new Intl.DateTimeFormat(gribLocale(), {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+        });
+  const dayFmt = new Intl.DateTimeFormat(gribLocale(), {
+    weekday: "short",
+    day: "numeric",
+  });
   const colLabel = (d) => {
     if (res === "day") return dayFmt.format(d);
     const hh = String(d.getHours()).padStart(2, "0");
-    return res === "quarter" ? `${hh}:${String(d.getMinutes()).padStart(2, "0")}` : hh;
+    return res === "quarter"
+      ? `${hh}:${String(d.getMinutes()).padStart(2, "0")}`
+      : hh;
   };
   let groupRow = `<th class="rowlabel"></th>`;
-  for (let i = 0; i < dates.length; ) {
+  for (let i = 0; i < dates.length;) {
     let span = 1;
-    while (i + span < dates.length && g1key(dates[i + span]) === g1key(dates[i])) span++;
+    while (
+      i + span < dates.length &&
+      g1key(dates[i + span]) === g1key(dates[i])
+    )
+      span++;
     groupRow += `<th colspan="${span}" class="dayhead${i > 0 ? " daysep" : ""}">${grpFmt.format(dates[i])}</th>`;
     i += span;
   }
@@ -5711,7 +6514,14 @@ function compareChartWidth(box) {
 // Overlaid multi-model line chart for one parameter. Values are converted to the
 // configured display unit; a dashed vertical "now" line is drawn when in range.
 // `corrections` (optional) adds a dashed corrected ("gecorreleerde") line per source.
-function compareChartSvg(models, config, unitLabel, measurePts, corrections, width) {
+function compareChartSvg(
+  models,
+  config,
+  unitLabel,
+  measurePts,
+  corrections,
+  width
+) {
   const factorFor = (u) => {
     const c = conversionFor(config, u);
     return c ? c.factor : 1;
@@ -5724,7 +6534,10 @@ function compareChartSvg(models, config, unitLabel, measurePts, corrections, wid
       unit: m.unit,
       pts: (m.series || [])
         .filter((s) => s.value != null)
-        .map((s) => ({ t: new Date(s.valid_time).getTime(), v: s.value * factorFor(m.unit) }))
+        .map((s) => ({
+          t: new Date(s.valid_time).getTime(),
+          v: s.value * factorFor(m.unit),
+        }))
         .sort((a, b) => a.t - b.t),
     }))
     .filter((l) => l.pts.length);
@@ -5736,16 +6549,33 @@ function compareChartSvg(models, config, unitLabel, measurePts, corrections, wid
       if (!c) return null;
       const pts = (m.series || [])
         .filter((s) => s.value != null)
-        .map((s) => ({ t: new Date(s.valid_time).getTime(), v: applyCorrection(s.value * factorFor(m.unit), c) }))
+        .map((s) => ({
+          t: new Date(s.valid_time).getTime(),
+          v: applyCorrection(s.value * factorFor(m.unit), c),
+        }))
         .filter((p) => p.v != null)
         .sort((a, b) => a.t - b.t);
-      return pts.length ? { short: (m.short || m.name) + " ✓", name: m.name, color: m.color, unit: m.unit, pts } : null;
+      return pts.length
+        ? {
+            short: (m.short || m.name) + " ✓",
+            name: m.name,
+            color: m.color,
+            unit: m.unit,
+            pts,
+          }
+        : null;
     })
     .filter(Boolean);
-  const meas = (measurePts || []).filter((p) => p.v != null).sort((a, b) => a.t - b.t);
-  if (!lines.length && !meas.length) return `<div class="grib-cmp-empty">${gribT("nothingToCompare")}</div>`;
+  const meas = (measurePts || [])
+    .filter((p) => p.v != null)
+    .sort((a, b) => a.t - b.t);
+  if (!lines.length && !meas.length)
+    return `<div class="grib-cmp-empty">${gribT("nothingToCompare")}</div>`;
 
-  let tMin = Infinity, tMax = -Infinity, vMin = Infinity, vMax = -Infinity;
+  let tMin = Infinity,
+    tMax = -Infinity,
+    vMin = Infinity,
+    vMax = -Infinity;
   for (const l of [...lines, ...corrLines]) {
     for (const p of l.pts) {
       if (p.t < tMin) tMin = p.t;
@@ -5780,14 +6610,21 @@ function compareChartSvg(models, config, unitLabel, measurePts, corrections, wid
   const W = Math.max(COMPARE_CHART_MIN_WIDTH, Math.round(width || 640));
   const H = Math.round(Math.min(320, Math.max(220, W * 0.32)));
   const m = { l: 46, r: 12, t: 10, b: 26 };
-  const px0 = m.l, px1 = W - m.r, py0 = m.t, py1 = H - m.b;
+  const px0 = m.l,
+    px1 = W - m.r,
+    py0 = m.t,
+    py1 = H - m.b;
   const sx = (t) => px0 + ((t - tMin) / (tMax - tMin)) * (px1 - px0);
   const sy = (v) => py1 - ((v - y0) / (y1 - y0)) * (py1 - py0);
   const parts = [];
   for (let v = y0; v <= y1 + 1e-6; v += yStep) {
     const y = sy(v).toFixed(1);
-    parts.push(`<line x1="${px0}" y1="${y}" x2="${px1}" y2="${y}" stroke="var(--divider-color,#d9dee3)" stroke-width="0.7"/>`);
-    parts.push(`<text x="${px0 - 6}" y="${(+y + 4).toFixed(1)}" font-size="11" fill="var(--secondary-text-color,#888)" text-anchor="end">${Number(v.toFixed(2))}</text>`);
+    parts.push(
+      `<line x1="${px0}" y1="${y}" x2="${px1}" y2="${y}" stroke="var(--divider-color,#d9dee3)" stroke-width="0.7"/>`
+    );
+    parts.push(
+      `<text x="${px0 - 6}" y="${(+y + 4).toFixed(1)}" font-size="11" fill="var(--secondary-text-color,#888)" text-anchor="end">${Number(v.toFixed(2))}</text>`
+    );
   }
   const spanH = (tMax - tMin) / 3600000 || 1;
   const cand = [1, 2, 3, 6, 12, 24, 48];
@@ -5808,33 +6645,76 @@ function compareChartSvg(models, config, unitLabel, measurePts, corrections, wid
     const hr = new Date(tt).getHours();
     if (hr % step !== 0) continue;
     const x = sx(tt).toFixed(1);
-    parts.push(`<line x1="${x}" y1="${py0}" x2="${x}" y2="${py1}" stroke="var(--divider-color,#eceff1)" stroke-width="0.6"/>`);
-    const lab = hr === 0 ? wd.format(new Date(tt)) : String(hr).padStart(2, "0");
-    parts.push(`<text x="${x}" y="${H - 8}" font-size="11" fill="var(--secondary-text-color,#888)" text-anchor="middle">${lab}</text>`);
+    parts.push(
+      `<line x1="${x}" y1="${py0}" x2="${x}" y2="${py1}" stroke="var(--divider-color,#eceff1)" stroke-width="0.6"/>`
+    );
+    const lab =
+      hr === 0 ? wd.format(new Date(tt)) : String(hr).padStart(2, "0");
+    parts.push(
+      `<text x="${x}" y="${H - 8}" font-size="11" fill="var(--secondary-text-color,#888)" text-anchor="middle">${lab}</text>`
+    );
   }
   const now = Date.now();
   if (now >= tMin && now <= tMax) {
     const x = sx(now).toFixed(1);
-    parts.push(`<line x1="${x}" y1="${py0}" x2="${x}" y2="${py1}" stroke="var(--primary-color,#03a9f4)" stroke-width="1" stroke-dasharray="3 3"/>`);
+    parts.push(
+      `<line x1="${x}" y1="${py0}" x2="${x}" y2="${py1}" stroke="var(--primary-color,#03a9f4)" stroke-width="1" stroke-dasharray="3 3"/>`
+    );
   }
-  parts.push(`<line x1="${px0}" y1="${py1}" x2="${px1}" y2="${py1}" stroke="var(--secondary-text-color,#aeb6bd)"/>`);
-  parts.push(`<line x1="${px0}" y1="${py0}" x2="${px0}" y2="${py1}" stroke="var(--secondary-text-color,#aeb6bd)"/>`);
+  parts.push(
+    `<line x1="${px0}" y1="${py1}" x2="${px1}" y2="${py1}" stroke="var(--secondary-text-color,#aeb6bd)"/>`
+  );
+  parts.push(
+    `<line x1="${px0}" y1="${py0}" x2="${px0}" y2="${py1}" stroke="var(--secondary-text-color,#aeb6bd)"/>`
+  );
   for (const l of lines) {
-    const d = l.pts.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`).join("");
-    parts.push(`<path d="${d}" fill="none" stroke="${l.color}" stroke-width="2"/>`);
-    parts.push(l.pts.map((p) => `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy(p.v).toFixed(1)}" r="1.8" fill="${l.color}"/>`).join(""));
+    const d = l.pts
+      .map(
+        (p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`
+      )
+      .join("");
+    parts.push(
+      `<path d="${d}" fill="none" stroke="${l.color}" stroke-width="2"/>`
+    );
+    parts.push(
+      l.pts
+        .map(
+          (p) =>
+            `<circle cx="${sx(p.t).toFixed(1)}" cy="${sy(p.v).toFixed(1)}" r="1.8" fill="${l.color}"/>`
+        )
+        .join("")
+    );
   }
   // Corrected forecasts: a dashed line in the source's colour (no dots, so it
   // reads as the "adjusted" companion of the solid model line).
   for (const l of corrLines) {
-    const d = l.pts.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`).join("");
-    parts.push(`<path d="${d}" fill="none" stroke="${l.color}" stroke-width="1.8" stroke-dasharray="5 3" opacity="0.9"/>`);
+    const d = l.pts
+      .map(
+        (p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`
+      )
+      .join("");
+    parts.push(
+      `<path d="${d}" fill="none" stroke="${l.color}" stroke-width="1.8" stroke-dasharray="5 3" opacity="0.9"/>`
+    );
   }
   // Measurements: a thick dark line with square markers ("the truth").
   if (meas.length) {
-    const d = meas.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`).join("");
-    parts.push(`<path d="${d}" fill="none" stroke="var(--primary-text-color,#12324f)" stroke-width="2.6"/>`);
-    parts.push(meas.map((p) => `<rect x="${(sx(p.t) - 2.6).toFixed(1)}" y="${(sy(p.v) - 2.6).toFixed(1)}" width="5.2" height="5.2" fill="var(--primary-text-color,#12324f)"/>`).join(""));
+    const d = meas
+      .map(
+        (p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`
+      )
+      .join("");
+    parts.push(
+      `<path d="${d}" fill="none" stroke="var(--primary-text-color,#12324f)" stroke-width="2.6"/>`
+    );
+    parts.push(
+      meas
+        .map(
+          (p) =>
+            `<rect x="${(sx(p.t) - 2.6).toFixed(1)}" y="${(sy(p.v) - 2.6).toFixed(1)}" width="5.2" height="5.2" fill="var(--primary-text-color,#12324f)"/>`
+        )
+        .join("")
+    );
   }
   // Hover/tap layer: one series per model line (+ the measurement line), each
   // sample carrying its display value so the tooltip can show x (time) and y.
@@ -5842,29 +6722,57 @@ function compareChartSvg(models, config, unitLabel, measurePts, corrections, wid
   const hoverSeries = lines.map((l) => ({
     label: l.short,
     color: l.color,
-    samples: l.pts.map((p) => ({ t: p.t, x: +sx(p.t).toFixed(1), y: +sy(p.v).toFixed(1), disp: `${fmtCell(l.unit, p.v)} ${unitLabel || ""}`.trim() })),
+    samples: l.pts.map((p) => ({
+      t: p.t,
+      x: +sx(p.t).toFixed(1),
+      y: +sy(p.v).toFixed(1),
+      disp: `${fmtCell(l.unit, p.v)} ${unitLabel || ""}`.trim(),
+    })),
   }));
   for (const l of corrLines)
     hoverSeries.push({
       label: l.short,
       color: l.color,
-      samples: l.pts.map((p) => ({ t: p.t, x: +sx(p.t).toFixed(1), y: +sy(p.v).toFixed(1), disp: `${fmtCell(l.unit, p.v)} ${unitLabel || ""}`.trim() })),
+      samples: l.pts.map((p) => ({
+        t: p.t,
+        x: +sx(p.t).toFixed(1),
+        y: +sy(p.v).toFixed(1),
+        disp: `${fmtCell(l.unit, p.v)} ${unitLabel || ""}`.trim(),
+      })),
     });
   if (meas.length)
     hoverSeries.push({
       label: gribT("measurementRow"),
       color: "var(--primary-text-color,#12324f)",
-      samples: meas.map((p) => ({ t: p.t, x: +sx(p.t).toFixed(1), y: +sy(p.v).toFixed(1), disp: `${fmtCell(measUnit, p.v)} ${unitLabel || ""}`.trim() })),
+      samples: meas.map((p) => ({
+        t: p.t,
+        x: +sx(p.t).toFixed(1),
+        y: +sy(p.v).toFixed(1),
+        disp: `${fmtCell(measUnit, p.v)} ${unitLabel || ""}`.trim(),
+      })),
     });
-  parts.push(chartHoverMarkup({ x0: px0, x1: px1, y0: py0, y1: py1, fs: 14 }, hoverSeries));
+  parts.push(
+    chartHoverMarkup(
+      { x0: px0, x1: px1, y0: py0, y1: py1, fs: 14 },
+      hoverSeries
+    )
+  );
   const legend =
     lines
-      .map((l) => `<span class="lg" title="${escapeXml(l.name)}"><span class="sw" style="background:${l.color}"></span>${escapeXml(l.short)}</span>`)
+      .map(
+        (l) =>
+          `<span class="lg" title="${escapeXml(l.name)}"><span class="sw" style="background:${l.color}"></span>${escapeXml(l.short)}</span>`
+      )
       .join("") +
     corrLines
-      .map((l) => `<span class="lg" title="${escapeXml(gribT("correctedLegend", { name: l.name }))}"><span class="sw dash" style="background:${l.color}"></span>${escapeXml(l.short)}</span>`)
+      .map(
+        (l) =>
+          `<span class="lg" title="${escapeXml(gribT("correctedLegend", { name: l.name }))}"><span class="sw dash" style="background:${l.color}"></span>${escapeXml(l.short)}</span>`
+      )
       .join("") +
-    (meas.length ? `<span class="lg"><span class="sw" style="background:var(--primary-text-color,#12324f)"></span>${gribT("measurementRow")}</span>` : "");
+    (meas.length
+      ? `<span class="lg"><span class="sw" style="background:var(--primary-text-color,#12324f)"></span>${gribT("measurementRow")}</span>`
+      : "");
   return (
     `<div class="grib-cmp-chart">` +
     `<div class="grib-cmp-unit">${unitLabel || ""}</div>` +
@@ -5875,13 +6783,17 @@ function compareChartSvg(models, config, unitLabel, measurePts, corrections, wid
 
 // Points {t,v} (v in display units) from a measurement map keyed by column epoch.
 function measurePtsFromMap(measureMap) {
-  return [...(measureMap || new Map())].map(([t, v]) => ({ t: +t, v })).filter((p) => p.v != null);
+  return [...(measureMap || new Map())]
+    .map(([t, v]) => ({ t: +t, v }))
+    .filter((p) => p.v != null);
 }
 
 // The editable "Meting" row: a number input per column, pre-filled from the map.
 // Inputs carry data-col="<epoch>" so a delegated listener can update the map.
 function compareMeasureRow(columns, cls, measureMap, unitLabel, station) {
-  const title = station ? gribT("measurementFrom", { name: station.name }) + (station.provider ? " (" + station.provider.toUpperCase() + ")" : "")
+  const title = station
+    ? gribT("measurementFrom", { name: station.name }) +
+      (station.provider ? " (" + station.provider.toUpperCase() + ")" : "")
     : gribT("measurementManual");
   const label = station
     ? `${gribT("measurement")}<span class="ru">${escapeXml(station.name)}</span>`
@@ -5945,7 +6857,11 @@ function fmtDelta(d) {
 function fmtRelDelta(r) {
   if (r == null || !Number.isFinite(r)) return "";
   const a = Math.abs(r);
-  return (r >= 0 ? "+" : "−") + (a >= 100 ? a.toFixed(0) : a.toFixed(a >= 10 ? 0 : 1)) + "%";
+  return (
+    (r >= 0 ? "+" : "−") +
+    (a >= 100 ? a.toFixed(0) : a.toFixed(a >= 10 ? 0 : 1)) +
+    "%"
+  );
 }
 
 // Per-source forecast correction ("gecorreleerde voorspelling"): each selected
@@ -5954,7 +6870,15 @@ function fmtRelDelta(r) {
 // measurement is higher; absolute = shift by +bias (raises the forecast when the
 // measurement is higher); relative = scale by mean(meting / model). Returns one
 // entry per correctable source in `corrSet`.
-function computeCorrections(models, columns, measureMap, config, res, mode, corrSet) {
+function computeCorrections(
+  models,
+  columns,
+  measureMap,
+  config,
+  res,
+  mode,
+  corrSet
+) {
   if (!mode || mode === "none" || !measureMap) return [];
   const out = [];
   for (const m of models) {
@@ -6013,7 +6937,8 @@ function compareColumns(models, res) {
   const keySet = new Set();
   for (const m of models || []) {
     if (!m.series) continue;
-    for (const s of m.series) if (s.value != null) keySet.add(bucketStart(new Date(s.valid_time), res));
+    for (const s of m.series)
+      if (s.value != null) keySet.add(bucketStart(new Date(s.valid_time), res));
   }
   return [...keySet].sort((a, b) => a - b);
 }
@@ -6027,7 +6952,8 @@ function stationColValues(series, unit, res, columns, config) {
   const out = [];
   for (const key of columns) {
     const b = byBucket.get(key);
-    if (b && b.value != null && Number.isFinite(b.value)) out.push([key, b.value * factor]);
+    if (b && b.value != null && Number.isFinite(b.value))
+      out.push([key, b.value * factor]);
   }
   return out;
 }
@@ -6037,14 +6963,21 @@ function compareSummaryHtml(models, columns, measureMap, config, res) {
   if (!measureMap || !measurePtsFromMap(measureMap).length) {
     return `<div class="grib-cmp-note">${gribT("fillMeasurement")}</div>`;
   }
-  const { perModel } = computeCompareDeltas(models, columns, measureMap, config, res);
+  const { perModel } = computeCompareDeltas(
+    models,
+    columns,
+    measureMap,
+    config,
+    res
+  );
   return perModel
     .map(({ m, deltas, rels }) => {
       const dot = `<span class="dot" style="background:${m.color}"></span>`;
       const nm = `<span title="${escapeXml(m.name)}">${escapeXml(m.short || m.name)}</span>`;
       const present = deltas.filter((d) => d != null);
       const n = present.length;
-      if (!n) return `<div class="sumline">${dot}${nm}: <span class="ru">${gribT("noOverlapWithMeasurement")}</span></div>`;
+      if (!n)
+        return `<div class="sumline">${dot}${nm}: <span class="ru">${gribT("noOverlapWithMeasurement")}</span></div>`;
       const bias = present.reduce((a, b) => a + b, 0) / n;
       const mae = present.reduce((a, b) => a + Math.abs(b), 0) / n;
       const rmse = Math.sqrt(present.reduce((a, b) => a + b * b, 0) / n);
@@ -6062,12 +6995,23 @@ function compareSummaryHtml(models, columns, measureMap, config, res) {
 // value/meting/delta rows share a single table (one horizontal scrollbar) so they
 // stay column-aligned. On measurement input only the delta cells, the summary and
 // the chart update in place -- the table (and the focused input) is left standing.
-function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure, opts) {
+function compareViewHtml(
+  models,
+  config,
+  res,
+  unitLabel,
+  measureMap,
+  showMeasure,
+  opts
+) {
   opts = opts || {};
-  const active = models.filter((m) => m.series && m.series.some((s) => s.value != null));
+  const active = models.filter(
+    (m) => m.series && m.series.some((s) => s.value != null)
+  );
   const keySet = new Set();
   for (const m of active) {
-    for (const s of m.series) if (s.value != null) keySet.add(bucketStart(new Date(s.valid_time), res));
+    for (const s of m.series)
+      if (s.value != null) keySet.add(bucketStart(new Date(s.valid_time), res));
   }
   const columns = [...keySet].sort((a, b) => a - b);
   const { groupRow, colRow, cls } = buildColumnHeader(columns, res);
@@ -6083,7 +7027,10 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
     const short = m.short || m.name;
     const label = (sub) =>
       `<td class="rowlabel" title="${escapeXml(m.name)}"><span class="dot" style="background:${m.color}"></span>${escapeXml(short)}<span class="ru">${sub}</span></td>`;
-    if (m.direction_unit && [...byBucket.values()].some((b) => b.direction != null)) {
+    if (
+      m.direction_unit &&
+      [...byBucket.values()].some((b) => b.direction != null)
+    ) {
       let cells = label(gribT("direction"));
       columns.forEach((key, i) => {
         const b = byBucket.get(key);
@@ -6104,7 +7051,9 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
       const b = byBucket.get(key);
       if (b && b.value != null) {
         const bg = legend ? lerpLegendColor(legend, b.value) : null;
-        const style = bg ? ` style="background:${bg};color:${readableText(bg)}"` : "";
+        const style = bg
+          ? ` style="background:${bg};color:${readableText(bg)}"`
+          : "";
         cells += `<td class="${cls(i)}"${style}>${fmtCell(m.unit, b.value * factor)}</td>`;
       } else {
         cells += `<td class="${cls(i)}">–</td>`;
@@ -6115,35 +7064,68 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
 
   let corrections = [];
   if (showMeasure) {
-    rows.push(compareMeasureRow(columns, cls, measureMap, unitLabel, opts.station));
+    rows.push(
+      compareMeasureRow(columns, cls, measureMap, unitLabel, opts.station)
+    );
     // Δ rows: absolute delta (main) + relative delta (% below), both per column.
-    const { perModel, scale } = computeCompareDeltas(active, columns, measureMap, config, res);
+    const { perModel, scale } = computeCompareDeltas(
+      active,
+      columns,
+      measureMap,
+      config,
+      res
+    );
     perModel.forEach(({ m, deltas, rels }, mi) => {
       let cells = `<td class="rowlabel" title="${escapeXml(gribT("deltaTitle", { name: m.name }))}"><span class="dot" style="background:${m.color}"></span>Δ ${escapeXml(m.short || m.name)}<span class="ru">${gribT("deltaRowUnit")}</span></td>`;
       deltas.forEach((d, ci) => {
-        const style = d == null ? "" : ` style="background:${deltaColor(d, scale)}"`;
-        const inner = d == null ? "–" : `<span class="da">${fmtDelta(d)}</span><span class="dr">${fmtRelDelta(rels[ci])}</span>`;
+        const style =
+          d == null ? "" : ` style="background:${deltaColor(d, scale)}"`;
+        const inner =
+          d == null
+            ? "–"
+            : `<span class="da">${fmtDelta(d)}</span><span class="dr">${fmtRelDelta(rels[ci])}</span>`;
         cells += `<td class="${cls(ci)} grib-cmp-delta-cell" data-mi="${mi}" data-ci="${ci}"${style}>${inner}</td>`;
       });
       rows.push(`<tr class="valrow deltarow">${cells}</tr>`);
     });
     // Corrected ("gecorreleerde") rows: each selected source shifted/scaled by its
     // own bias vs the measurement, applied to every column.
-    corrections = computeCorrections(active, columns, measureMap, config, res, opts.corrMode, opts.corrSources);
+    corrections = computeCorrections(
+      active,
+      columns,
+      measureMap,
+      config,
+      res,
+      opts.corrMode,
+      opts.corrSources
+    );
     corrections.forEach((corr, si) => {
       const src = active.find((m) => m.entryId === corr.entryId);
-      const byBucket = aggregateSeries(src.series, res, src.unit === "mm", columns);
-      const modeLbl = corr.mode === "rel" ? `×${corr.ratio.toFixed(2)}` : `${fmtDelta(corr.bias)}`;
+      const byBucket = aggregateSeries(
+        src.series,
+        res,
+        src.unit === "mm",
+        columns
+      );
+      const modeLbl =
+        corr.mode === "rel"
+          ? `×${corr.ratio.toFixed(2)}`
+          : `${fmtDelta(corr.bias)}`;
       let cells = `<td class="rowlabel" title="${escapeXml(gribT("correctedTitle", { name: corr.name, mode: gribT(corr.mode === "rel" ? "corrRelShort" : "corrAbsShort"), n: corr.n }))}"><span class="dot" style="background:${corr.color}"></span>${escapeXml(corr.short)} ✓<span class="ru">corr ${modeLbl}</span></td>`;
       columns.forEach((key, ci) => {
         const b = byBucket.get(key);
-        const cv = b && b.value != null ? applyCorrection(b.value * corr.factor, corr) : null;
+        const cv =
+          b && b.value != null
+            ? applyCorrection(b.value * corr.factor, corr)
+            : null;
         if (cv == null) {
           cells += `<td class="${cls(ci)} grib-cmp-corr-cell" data-si="${si}" data-ci="${ci}">–</td>`;
         } else {
           const src2 = corr.factor ? cv / corr.factor : cv; // back to source unit for the legend
           const bg = corr.legend ? lerpLegendColor(corr.legend, src2) : null;
-          const style = bg ? ` style="background:${bg};color:${readableText(bg)}"` : "";
+          const style = bg
+            ? ` style="background:${bg};color:${readableText(bg)}"`
+            : "";
           cells += `<td class="${cls(ci)} grib-cmp-corr-cell" data-si="${si}" data-ci="${ci}"${style}>${fmtCell(corr.unit, cv)}</td>`;
         }
       });
@@ -6155,8 +7137,17 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
     active.length || showMeasure
       ? `<table class="grib-detail-table grib-cmp-table"><thead><tr>${groupRow}</tr><tr>${colRow}</tr></thead><tbody>${rows.join("")}</tbody></table>`
       : "";
-  const chart = compareChartSvg(active, config, unitLabel, showMeasure ? measurePtsFromMap(measureMap) : [], corrections, opts && opts.chartWidth);
-  const summary = showMeasure ? compareSummaryHtml(active, columns, measureMap, config, res) : "";
+  const chart = compareChartSvg(
+    active,
+    config,
+    unitLabel,
+    showMeasure ? measurePtsFromMap(measureMap) : [],
+    corrections,
+    opts && opts.chartWidth
+  );
+  const summary = showMeasure
+    ? compareSummaryHtml(active, columns, measureMap, config, res)
+    : "";
   // "Wis alle meetdata" wipes every saved point at once: on a phone (Home
   // Assistant companion app) points can only be dropped by moving to another
   // one, which leaves the last one un-clearable.
@@ -6184,7 +7175,8 @@ function compareViewHtml(models, config, res, unitLabel, measureMap, showMeasure
 // apply it to (a corrected line/row appears per ticked source).
 function compareCorrectionHtml(models, corrMode, corrSet) {
   const mode = corrMode || "none";
-  const opt = (v, lbl) => `<option value="${v}"${v === mode ? " selected" : ""}>${lbl}</option>`;
+  const opt = (v, lbl) =>
+    `<option value="${v}"${v === mode ? " selected" : ""}>${lbl}</option>`;
   const sel =
     `<label class="corrmode">${gribT("correction")} <select class="grib-cmp-corrmode">` +
     opt("none", gribT("corrNone")) +
@@ -6233,33 +7225,67 @@ function refreshCompareMeasure(root, spec) {
   const active = spec.models;
   const keySet = new Set();
   for (const m of active) {
-    for (const s of m.series) if (s.value != null) keySet.add(bucketStart(new Date(s.valid_time), spec.res));
+    for (const s of m.series)
+      if (s.value != null)
+        keySet.add(bucketStart(new Date(s.valid_time), spec.res));
   }
   const columns = [...keySet].sort((a, b) => a - b);
-  const corrections = computeCorrections(active, columns, spec.measureMap, spec.config, spec.res, spec.corrMode, spec.corrSources);
+  const corrections = computeCorrections(
+    active,
+    columns,
+    spec.measureMap,
+    spec.config,
+    spec.res,
+    spec.corrMode,
+    spec.corrSources
+  );
   // If a new value made a source (un)correctable the row structure changed -> full
   // re-render (adding/removing rows can't be done cell-by-cell).
   const domCorrRows = root.querySelectorAll(".corrrow").length;
-  if (domCorrRows !== corrections.length && typeof spec.rerender === "function") {
+  if (
+    domCorrRows !== corrections.length &&
+    typeof spec.rerender === "function"
+  ) {
     spec.rerender();
     return;
   }
-  const { perModel, scale } = computeCompareDeltas(active, columns, spec.measureMap, spec.config, spec.res);
+  const { perModel, scale } = computeCompareDeltas(
+    active,
+    columns,
+    spec.measureMap,
+    spec.config,
+    spec.res
+  );
   perModel.forEach(({ deltas, rels }, mi) => {
     deltas.forEach((d, ci) => {
-      const cell = root.querySelector(`.grib-cmp-delta-cell[data-mi="${mi}"][data-ci="${ci}"]`);
+      const cell = root.querySelector(
+        `.grib-cmp-delta-cell[data-mi="${mi}"][data-ci="${ci}"]`
+      );
       if (!cell) return;
-      cell.innerHTML = d == null ? "–" : `<span class="da">${fmtDelta(d)}</span><span class="dr">${fmtRelDelta(rels[ci])}</span>`;
+      cell.innerHTML =
+        d == null
+          ? "–"
+          : `<span class="da">${fmtDelta(d)}</span><span class="dr">${fmtRelDelta(rels[ci])}</span>`;
       cell.style.background = d == null ? "" : deltaColor(d, scale);
     });
   });
   corrections.forEach((corr, si) => {
-    const byBucket = aggregateSeries(active.find((m) => m.entryId === corr.entryId).series, spec.res, corr.unit === "mm", columns);
+    const byBucket = aggregateSeries(
+      active.find((m) => m.entryId === corr.entryId).series,
+      spec.res,
+      corr.unit === "mm",
+      columns
+    );
     columns.forEach((key, ci) => {
-      const cell = root.querySelector(`.grib-cmp-corr-cell[data-si="${si}"][data-ci="${ci}"]`);
+      const cell = root.querySelector(
+        `.grib-cmp-corr-cell[data-si="${si}"][data-ci="${ci}"]`
+      );
       if (!cell) return;
       const b = byBucket.get(key);
-      const cv = b && b.value != null ? applyCorrection(b.value * corr.factor, corr) : null;
+      const cv =
+        b && b.value != null
+          ? applyCorrection(b.value * corr.factor, corr)
+          : null;
       if (cv == null) {
         cell.textContent = "–";
         cell.style.background = "";
@@ -6274,10 +7300,24 @@ function refreshCompareMeasure(root, spec) {
     });
   });
   const sum = root.querySelector(".grib-cmp-summary");
-  if (sum) sum.innerHTML = compareSummaryHtml(active, columns, spec.measureMap, spec.config, spec.res);
+  if (sum)
+    sum.innerHTML = compareSummaryHtml(
+      active,
+      columns,
+      spec.measureMap,
+      spec.config,
+      spec.res
+    );
   const chartBox = root.querySelector(".grib-cmp-chart-box");
   if (chartBox) {
-    chartBox.innerHTML = compareChartSvg(active, spec.config, spec.unitLabel, measurePtsFromMap(spec.measureMap), corrections, compareChartWidth(chartBox));
+    chartBox.innerHTML = compareChartSvg(
+      active,
+      spec.config,
+      spec.unitLabel,
+      measurePtsFromMap(spec.measureMap),
+      corrections,
+      compareChartWidth(chartBox)
+    );
   }
 }
 
@@ -6394,7 +7434,8 @@ class GribCompareCard extends HTMLElement {
 
   setConfig(config) {
     const filtersChanged =
-      this._config !== undefined && cardFilterKey(config || {}) !== cardFilterKey(this._config);
+      this._config !== undefined &&
+      cardFilterKey(config || {}) !== cardFilterKey(this._config);
     this._config = config || {};
     this._resolution = normalizeResolution(this._config.meteogram_resolution);
     const r = Number(this._config.measurement_radius_km);
@@ -6427,7 +7468,14 @@ class GribCompareCard extends HTMLElement {
   }
 
   getGridOptions() {
-    return { columns: "full", rows: 12, min_columns: 3, max_columns: 12, min_rows: 4, max_rows: 40 };
+    return {
+      columns: "full",
+      rows: 12,
+      min_columns: 3,
+      max_columns: 12,
+      min_rows: 4,
+      max_rows: 40,
+    };
   }
 
   getLayoutOptions() {
@@ -6440,9 +7488,11 @@ class GribCompareCard extends HTMLElement {
     this._tryInitialize();
     // (Re)attach the cross-card listeners here so they survive HA view switches
     // (which re-use the element instead of re-running _initialize).
-    this._boundPointSync = this._boundPointSync || ((ev) => this._onSharedPoint(ev));
+    this._boundPointSync =
+      this._boundPointSync || ((ev) => this._onSharedPoint(ev));
     window.addEventListener(GRIB_POINT_EVENT, this._boundPointSync);
-    this._boundMeasSync = this._boundMeasSync || (() => this._renderSavedMarkers());
+    this._boundMeasSync =
+      this._boundMeasSync || (() => this._renderSavedMarkers());
     window.addEventListener(GRIB_MEAS_EVENT, this._boundMeasSync); // same tab
     window.addEventListener("storage", this._boundMeasSync); // other tabs (localStorage)
     this._watchVisibility();
@@ -6460,7 +7510,8 @@ class GribCompareCard extends HTMLElement {
 
   disconnectedCallback() {
     this._connected = false;
-    if (this._boundPointSync) window.removeEventListener(GRIB_POINT_EVENT, this._boundPointSync);
+    if (this._boundPointSync)
+      window.removeEventListener(GRIB_POINT_EVENT, this._boundPointSync);
     if (this._boundMeasSync) {
       window.removeEventListener(GRIB_MEAS_EVENT, this._boundMeasSync);
       window.removeEventListener("storage", this._boundMeasSync);
@@ -6478,7 +7529,10 @@ class GribCompareCard extends HTMLElement {
       this._visibilityObserver = null;
     }
     if (this._boundPageVisibility) {
-      document.removeEventListener("visibilitychange", this._boundPageVisibility);
+      document.removeEventListener(
+        "visibilitychange",
+        this._boundPageVisibility
+      );
     }
     this._visibilityWatched = false;
   }
@@ -6492,7 +7546,11 @@ class GribCompareCard extends HTMLElement {
   _adoptSharedPoint() {
     const p = gribReadSharedPoint();
     if (!p || !this._point) return;
-    if (Math.abs(p.lat - this._point.lat) < 1e-9 && Math.abs(p.lng - this._point.lng) < 1e-9) return;
+    if (
+      Math.abs(p.lat - this._point.lat) < 1e-9 &&
+      Math.abs(p.lng - this._point.lng) < 1e-9
+    )
+      return;
     this._applySharedPoint(p.lat, p.lng, true);
   }
 
@@ -6527,7 +7585,11 @@ class GribCompareCard extends HTMLElement {
   _loadMeasurementsForPoint() {
     if (!this._point) return;
     const param = this._els.paramSelect.value;
-    this._measure = gribGetMeasurements(this._point.lat, this._point.lng, param);
+    this._measure = gribGetMeasurements(
+      this._point.lat,
+      this._point.lng,
+      param
+    );
     if (this._measure.size > 0) {
       this._showMeasure = true;
       if (this._els.measToggle) this._els.measToggle.checked = true;
@@ -6537,11 +7599,19 @@ class GribCompareCard extends HTMLElement {
   // Amber pins for points with saved measurements; clicking one reopens it.
   _renderSavedMarkers() {
     if (!this._map || !window.L) return;
-    if (!this._savedLayer) this._savedLayer = window.L.layerGroup().addTo(this._map);
+    if (!this._savedLayer)
+      this._savedLayer = window.L.layerGroup().addTo(this._map);
     this._savedLayer.clearLayers();
-    const icon = window.L.divIcon({ className: "grib-saved-marker", iconSize: [14, 14], iconAnchor: [7, 7] });
+    const icon = window.L.divIcon({
+      className: "grib-saved-marker",
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+    });
     for (const p of gribSavedPoints()) {
-      const mk = window.L.marker([p.lat, p.lng], { icon, title: gribT("savedMeasurement") });
+      const mk = window.L.marker([p.lat, p.lng], {
+        icon,
+        title: gribT("savedMeasurement"),
+      });
       mk.on("click", () => this._openSavedPoint(p.lat, p.lng));
       this._savedLayer.addLayer(mk);
     }
@@ -6549,7 +7619,8 @@ class GribCompareCard extends HTMLElement {
 
   _openSavedPoint(lat, lng) {
     const ll = window.L.latLng(lat, lng);
-    if (!this._map.getBounds().contains(ll)) this._map.setView(ll, this._map.getZoom(), { animate: false });
+    if (!this._map.getBounds().contains(ll))
+      this._map.setView(ll, this._map.getZoom(), { animate: false });
     this._pickPoint(ll);
   }
 
@@ -6557,8 +7628,11 @@ class GribCompareCard extends HTMLElement {
   // the current parameter) when available, else the built-in list as a fallback.
   _currentStations() {
     const param = this._els.paramSelect.value;
-    if (this._stationsData != null && this._stationsParam === param) return this._stationsData;
-    return this._point ? stationsWithin(this._point.lat, this._point.lng, this._radius) : [];
+    if (this._stationsData != null && this._stationsParam === param)
+      return this._stationsData;
+    return this._point
+      ? stationsWithin(this._point.lat, this._point.lng, this._radius)
+      : [];
   }
 
   // Fetch the nearby stations that actually have data for the current parameter,
@@ -6569,11 +7643,24 @@ class GribCompareCard extends HTMLElement {
       this._stationsData = null;
       return;
     }
-    const q = new URLSearchParams({ param, lat: this._point.lat.toFixed(4), lon: this._point.lng.toFixed(4), radius: String(this._radius) });
+    const q = new URLSearchParams({
+      param,
+      lat: this._point.lat.toFixed(4),
+      lon: this._point.lng.toFixed(4),
+      radius: String(this._radius),
+    });
     let stations;
     try {
-      const data = await this._hass.callApi("GET", `grib_overlay/stations?${q}`);
-      stations = ((data && data.stations) || []).map((s) => ({ name: s.name, lat: s.lat, lon: s.lon, distKm: s.dist_km }));
+      const data = await this._hass.callApi(
+        "GET",
+        `grib_overlay/stations?${q}`
+      );
+      stations = ((data && data.stations) || []).map((s) => ({
+        name: s.name,
+        lat: s.lat,
+        lon: s.lon,
+        distKm: s.dist_km,
+      }));
     } catch {
       stations = null; // fall back to the built-in list
     }
@@ -6586,7 +7673,8 @@ class GribCompareCard extends HTMLElement {
   // Drop a station (matched by position) from the shown list -- used when a
   // download turns out to have no data for it, so it isn't offered again.
   _dropStation(lat, lng) {
-    if (this._stationsData == null) this._stationsData = this._currentStations();
+    if (this._stationsData == null)
+      this._stationsData = this._currentStations();
     this._stationsParam = this._els.paramSelect.value;
     this._stationsData = this._stationsData.filter(
       (s) => Math.abs(s.lat - lat) > 1e-4 || Math.abs(s.lon - lng) > 1e-4
@@ -6597,14 +7685,22 @@ class GribCompareCard extends HTMLElement {
   // current parameter (only while entering measurements); clicking one downloads it.
   _renderStationMarkers() {
     if (!this._map || !window.L) return;
-    if (!this._stationLayer) this._stationLayer = window.L.layerGroup().addTo(this._map);
+    if (!this._stationLayer)
+      this._stationLayer = window.L.layerGroup().addTo(this._map);
     this._stationLayer.clearLayers();
     if (!this._showMeasure || !this._point) return;
-    const icon = window.L.divIcon({ className: "grib-station-marker", iconSize: [11, 11], iconAnchor: [6, 6] });
+    const icon = window.L.divIcon({
+      className: "grib-station-marker",
+      iconSize: [11, 11],
+      iconAnchor: [6, 6],
+    });
     for (const s of this._currentStations()) {
       const mk = window.L.marker([s.lat, s.lon], {
         icon,
-        title: gribT("stationMarkerTitle", { name: s.name, km: s.distKm.toFixed(1) }),
+        title: gribT("stationMarkerTitle", {
+          name: s.name,
+          km: s.distKm.toFixed(1),
+        }),
       });
       mk.on("click", () => this._downloadStation(s.lat, s.lon, s.name));
       this._stationLayer.addLayer(mk);
@@ -6759,7 +7855,13 @@ class GribCompareCard extends HTMLElement {
       if (val === "") this._measure.delete(key);
       else this._measure.set(key, Number(val));
       if (this._point) {
-        gribSetMeasurement(this._point.lat, this._point.lng, this._els.paramSelect.value, key, val === "" ? null : Number(val));
+        gribSetMeasurement(
+          this._point.lat,
+          this._point.lng,
+          this._els.paramSelect.value,
+          key,
+          val === "" ? null : Number(val)
+        );
       }
       refreshCompareMeasure(this._els.cmpview, this._compareSpec());
     });
@@ -6771,7 +7873,10 @@ class GribCompareCard extends HTMLElement {
         this._renderComparison();
       } else if (ev.target.closest(".grib-cmp-corrsrc")) {
         const eid = ev.target.getAttribute("data-eid");
-        if (!this._corrSources) this._corrSources = new Set((this._shownModels || []).map((m) => m.entryId));
+        if (!this._corrSources)
+          this._corrSources = new Set(
+            (this._shownModels || []).map((m) => m.entryId)
+          );
         if (ev.target.checked) this._corrSources.add(eid);
         else this._corrSources.delete(eid);
         this._renderComparison();
@@ -6788,17 +7893,28 @@ class GribCompareCard extends HTMLElement {
         return;
       }
       if (ev.target.closest(".grib-cmp-clear")) {
-        if (this._point) gribClearMeasurements(this._point.lat, this._point.lng, this._els.paramSelect.value);
+        if (this._point)
+          gribClearMeasurements(
+            this._point.lat,
+            this._point.lng,
+            this._els.paramSelect.value
+          );
         this._measure = new Map();
         this._renderComparison();
         return;
       }
       if (ev.target.closest(".grib-cmp-dl-station")) {
-        if (this._point) this._downloadStation(this._point.lat, this._point.lng, null);
+        if (this._point)
+          this._downloadStation(this._point.lat, this._point.lng, null);
         return;
       }
       const st = ev.target.closest(".grib-cmp-station");
-      if (st) this._downloadStation(Number(st.getAttribute("data-lat")), Number(st.getAttribute("data-lng")), st.getAttribute("data-name"));
+      if (st)
+        this._downloadStation(
+          Number(st.getAttribute("data-lat")),
+          Number(st.getAttribute("data-lng")),
+          st.getAttribute("data-name")
+        );
     });
   }
 
@@ -6835,10 +7951,14 @@ class GribCompareCard extends HTMLElement {
     if (!data || data.error || !data.series || !data.series.length) {
       // No data for this station -> stop offering it (this session).
       if (name) this._dropStation(lat, lng);
-      this._els.note.innerHTML = `<div class="grib-cmp-note">${gribT("stationHiddenNote", {
-        what: name ? "“" + escapeXml(name) + "”" : gribT("thisStation"),
-        detail: data && data.error ? ": " + escapeXml(String(data.error)) : "",
-      })}</div>`;
+      this._els.note.innerHTML = `<div class="grib-cmp-note">${gribT(
+        "stationHiddenNote",
+        {
+          what: name ? "“" + escapeXml(name) + "”" : gribT("thisStation"),
+          detail:
+            data && data.error ? ": " + escapeXml(String(data.error)) : "",
+        }
+      )}</div>`;
       this._renderComparison();
       this._renderStationMarkers();
       if (btn) {
@@ -6849,14 +7969,23 @@ class GribCompareCard extends HTMLElement {
     }
     const unit = (models[0] && models[0].unit) || "";
     const columns = compareColumns(models, this._resolution);
-    const colValues = stationColValues(data.series, unit, this._resolution, columns, this._config);
+    const colValues = stationColValues(
+      data.series,
+      unit,
+      this._resolution,
+      columns,
+      this._config
+    );
     const st = data.station || {};
     const stName = name || st.name || gribT("aStation");
     if (!colValues.length) {
       this._els.note.innerHTML = `<div class="grib-cmp-note">${gribT("noOverlapNote", { name: escapeXml(stName), n: data.series.length })}</div>`;
       return;
     }
-    gribSetMeasurementsBulk(lat, lng, param, colValues, { name: stName, provider: st.provider || data.provider || "" });
+    gribSetMeasurementsBulk(lat, lng, param, colValues, {
+      name: stName,
+      provider: st.provider || data.provider || "",
+    });
     this._showMeasure = true;
     this._els.measToggle.checked = true;
     this._els.radctl.classList.remove("hidden");
@@ -6872,8 +8001,11 @@ class GribCompareCard extends HTMLElement {
     let tMin = Infinity;
     for (const m of models || [])
       for (const s of m.series || [])
-        if (s.value != null) tMin = Math.min(tMin, new Date(s.valid_time).getTime());
-    return new Date(Number.isFinite(tMin) ? tMin : Date.now() - 48 * 3600e3).toISOString();
+        if (s.value != null)
+          tMin = Math.min(tMin, new Date(s.valid_time).getTime());
+    return new Date(
+      Number.isFinite(tMin) ? tMin : Date.now() - 48 * 3600e3
+    ).toISOString();
   }
 
   async _initialize() {
@@ -6901,7 +8033,10 @@ class GribCompareCard extends HTMLElement {
         if (!this._map) return;
         gribFixMapPosition(this._els.mapDiv);
         this._map.invalidateSize();
-        if (this._els.mapDiv.offsetWidth && !this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) {
+        if (
+          this._els.mapDiv.offsetWidth &&
+          !this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)
+        ) {
           this._ensureTiles();
         }
       });
@@ -6939,7 +8074,9 @@ class GribCompareCard extends HTMLElement {
       iconSize: [16, 16],
       iconAnchor: [8, 8],
     });
-    this._marker = window.L.marker(center, { draggable: true, icon }).addTo(this._map);
+    this._marker = window.L.marker(center, { draggable: true, icon }).addTo(
+      this._map
+    );
     this._marker.on("dragend", () => this._pickPoint(this._marker.getLatLng()));
     this._map.on("click", (e) => this._pickPoint(e.latlng));
     this._renderSavedMarkers();
@@ -6951,13 +8088,16 @@ class GribCompareCard extends HTMLElement {
   // does not bring them back: the layers have to be told to draw again. Same
   // story as the overlay card, so the same treatment.
   _watchVisibility() {
-    if (this._visibilityWatched || !this._els || !this._els.mapContainer) return;
+    if (this._visibilityWatched || !this._els || !this._els.mapContainer)
+      return;
     this._visibilityWatched = true;
-    this._boundPageVisibility = () => !document.hidden && this._recoverIfBlank();
+    this._boundPageVisibility = () =>
+      !document.hidden && this._recoverIfBlank();
     document.addEventListener("visibilitychange", this._boundPageVisibility);
     if (!window.IntersectionObserver) return;
     this._visibilityObserver = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting) && !document.hidden) this._recoverIfBlank();
+      if (entries.some((e) => e.isIntersecting) && !document.hidden)
+        this._recoverIfBlank();
     });
     this._visibilityObserver.observe(this._els.mapContainer);
   }
@@ -6989,8 +8129,8 @@ class GribCompareCard extends HTMLElement {
     try {
       for (const wait of [250, 750, 1500]) {
         await new Promise((resolve) => {
-        setTimeout(resolve, wait);
-      });
+          setTimeout(resolve, wait);
+        });
         if (!this._map || !this.isConnected) return;
         if (this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
         gribFixMapPosition(this._els.mapDiv);
@@ -7004,10 +8144,14 @@ class GribCompareCard extends HTMLElement {
       if (this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
       // Never into a container of no size: that builds the blank map it is
       // meant to cure. Becoming visible asks again.
-      if (!this._els.mapDiv.offsetWidth || !this._els.mapDiv.offsetHeight) return;
+      if (!this._els.mapDiv.offsetWidth || !this._els.mapDiv.offsetHeight)
+        return;
       this._rebuilds = (this._rebuilds || 0) + 1;
       if (this._rebuilds > 2) return; // bounded against a loop, reset on return
-      gribLog("warn", "grib-overlay-compare-card: the map came back blank, building it again");
+      gribLog(
+        "warn",
+        "grib-overlay-compare-card: the map came back blank, building it again"
+      );
       const center = this._map.getCenter();
       const zoom = this._map.getZoom();
       this._map.remove();
@@ -7054,7 +8198,9 @@ class GribCompareCard extends HTMLElement {
     // Keep what the user is looking at as long as it is still on offer.
     const current = this._els.paramSelect.value;
     const wanted = seen.has(current) ? current : this._config.parameter;
-    this._els.paramSelect.value = seen.has(wanted) ? wanted : (seen.keys().next().value || "");
+    this._els.paramSelect.value = seen.has(wanted)
+      ? wanted
+      : seen.keys().next().value || "";
   }
 
   // Re-apply the config filters to the entries already fetched (live edit).
@@ -7066,7 +8212,13 @@ class GribCompareCard extends HTMLElement {
 
   // Fetch the selected parameter's series from every entry that offers it.
   async _refresh() {
-    if (!this._hass || !this._entries || !this._els.paramSelect.value || !this._point) return;
+    if (
+      !this._hass ||
+      !this._entries ||
+      !this._els.paramSelect.value ||
+      !this._point
+    )
+      return;
     const param = this._els.paramSelect.value;
     const { lat, lng } = this._point;
     this._els.readout.textContent = `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
@@ -7080,7 +8232,10 @@ class GribCompareCard extends HTMLElement {
       wanted.map(async (e, i) => {
         let data;
         try {
-          data = await this._hass.callApi("GET", `grib_overlay/point/${e.entry_id}/${encodeURIComponent(param)}?${q}`);
+          data = await this._hass.callApi(
+            "GET",
+            `grib_overlay/point/${e.entry_id}/${encodeURIComponent(param)}?${q}`
+          );
         } catch {
           data = null;
         }
@@ -7119,15 +8274,21 @@ class GribCompareCard extends HTMLElement {
   // first comparison, and again after the card was taken off the page.
   _watchChartWidth() {
     if (this._chartObserver || !window.ResizeObserver) return;
-    this._chartObserver = new ResizeObserver(() => fitCompareChart(this._els.cmpview, this._compareSpec()));
+    this._chartObserver = new ResizeObserver(() =>
+      fitCompareChart(this._els.cmpview, this._compareSpec())
+    );
     this._chartObserver.observe(this._els.cmpview);
   }
 
   _renderComparison() {
     const models = this._models || [];
     // Split into those with data here vs those out of range / empty.
-    const withData = models.filter((m) => m.series.some((s) => s.value != null));
-    const dropped = models.filter((m) => !m.series.some((s) => s.value != null));
+    const withData = models.filter((m) =>
+      m.series.some((s) => s.value != null)
+    );
+    const dropped = models.filter(
+      (m) => !m.series.some((s) => s.value != null)
+    );
     // Model checkboxes (only for models that have data here).
     this._els.models.innerHTML = withData
       .map(
@@ -7137,7 +8298,9 @@ class GribCompareCard extends HTMLElement {
       )
       .join("");
     const shown = withData.filter((m) => !this._excluded.has(m.entryId));
-    const unit = shown.length ? displayUnitLabel(this._config, shown[0].unit) : "";
+    const unit = shown.length
+      ? displayUnitLabel(this._config, shown[0].unit)
+      : "";
     this._shownModels = shown;
     this._shownUnit = unit;
     if (!withData.length) {
@@ -7145,13 +8308,30 @@ class GribCompareCard extends HTMLElement {
     } else if (!shown.length) {
       this._els.cmpview.innerHTML = `<div class="grib-cmp-empty">${gribT("allModelsOff")}</div>`;
     } else {
-      const stations = this._showMeasure && this._point ? this._currentStations() : [];
+      const stations =
+        this._showMeasure && this._point ? this._currentStations() : [];
       const station = this._point
-        ? gribGetStation(this._point.lat, this._point.lng, this._els.paramSelect.value)
+        ? gribGetStation(
+            this._point.lat,
+            this._point.lng,
+            this._els.paramSelect.value
+          )
         : null;
       this._els.cmpview.innerHTML = compareViewHtml(
-        shown, this._config, this._resolution, unit, this._measure, this._showMeasure,
-        { stations, radiusKm: this._radius, station, corrMode: this._corrMode, corrSources: this._corrSources, chartWidth: this._els.cmpview.clientWidth }
+        shown,
+        this._config,
+        this._resolution,
+        unit,
+        this._measure,
+        this._showMeasure,
+        {
+          stations,
+          radiusKm: this._radius,
+          station,
+          corrMode: this._corrMode,
+          corrSources: this._corrSources,
+          chartWidth: this._els.cmpview.clientWidth,
+        }
       );
       this._watchChartWidth();
       fitCompareChart(this._els.cmpview, this._compareSpec());
@@ -7209,7 +8389,14 @@ class GribWeatherMapCard extends HTMLElement {
   }
 
   getGridOptions() {
-    return { columns: "full", rows: 8, min_columns: 3, max_columns: 12, min_rows: 4, max_rows: 20 };
+    return {
+      columns: "full",
+      rows: 8,
+      min_columns: 3,
+      max_columns: 12,
+      min_rows: 4,
+      max_rows: 20,
+    };
   }
 
   getLayoutOptions() {
@@ -7219,9 +8406,12 @@ class GribWeatherMapCard extends HTMLElement {
   connectedCallback() {
     gribTrackCard(this);
     if (this._hass && !this._loaded) this._load();
-    this._timer = this._timer || setInterval(() => this._load(true), WEATHER_MAP_REFRESH_MS);
+    this._timer =
+      this._timer ||
+      setInterval(() => this._load(true), WEATHER_MAP_REFRESH_MS);
     this._boundPageVisibility =
-      this._boundPageVisibility || (() => this._missedRefresh && this._load(true));
+      this._boundPageVisibility ||
+      (() => this._missedRefresh && this._load(true));
     document.addEventListener("visibilitychange", this._boundPageVisibility);
   }
 
@@ -7236,7 +8426,10 @@ class GribWeatherMapCard extends HTMLElement {
     clearInterval(this._timer);
     this._timer = null;
     if (this._boundPageVisibility) {
-      document.removeEventListener("visibilitychange", this._boundPageVisibility);
+      document.removeEventListener(
+        "visibilitychange",
+        this._boundPageVisibility
+      );
     }
   }
 
@@ -7297,7 +8490,9 @@ class GribWeatherMapCard extends HTMLElement {
     });
     // Swipe left/right on the chart, as on a phone you would expect.
     let startX = null;
-    this._els.frame.addEventListener("pointerdown", (ev) => { startX = ev.clientX; });
+    this._els.frame.addEventListener("pointerdown", (ev) => {
+      startX = ev.clientX;
+    });
     this._els.frame.addEventListener("pointerup", (ev) => {
       if (startX === null) return;
       const dx = ev.clientX - startX;
@@ -7326,7 +8521,9 @@ class GribWeatherMapCard extends HTMLElement {
       this._charts = charts;
       this._error = data.error || null;
       // Keep the chart the user was looking at; otherwise start at the latest analysis.
-      const kept = current ? charts.findIndex((c) => c.name === current.name) : -1;
+      const kept = current
+        ? charts.findIndex((c) => c.name === current.name)
+        : -1;
       const latestAnalysis = charts.map((c) => c.kind).lastIndexOf("analysis");
       this._index = kept >= 0 ? kept : Math.max(0, latestAnalysis);
       this._fillPicker();
@@ -7343,7 +8540,11 @@ class GribWeatherMapCard extends HTMLElement {
   _label(chart) {
     const valid = new Date(chart.valid_time);
     const when = valid.toLocaleString(gribLocale(), {
-      weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
     });
     const utc = String(valid.getUTCHours()).padStart(2, "0");
     return `${gribT(chart.kind === "analysis" ? "wmAnalysis" : "wmForecast")} · ${when} (${utc} UTC)`;
@@ -7362,7 +8563,10 @@ class GribWeatherMapCard extends HTMLElement {
 
   _step(delta) {
     if (!this._charts || !this._charts.length) return;
-    this._index = Math.min(this._charts.length - 1, Math.max(0, this._index + delta));
+    this._index = Math.min(
+      this._charts.length - 1,
+      Math.max(0, this._index + delta)
+    );
     this._show();
   }
 
@@ -7375,7 +8579,9 @@ class GribWeatherMapCard extends HTMLElement {
     if (!chart) {
       let text = gribT(this._loaded ? "wmNone" : "wmLoading");
       if (this._error) {
-        text = /no KNMI entry/.test(this._error) ? gribT("wmNoKnmi") : gribT("wmError", { msg: this._error });
+        text = /no KNMI entry/.test(this._error)
+          ? gribT("wmNoKnmi")
+          : gribT("wmError", { msg: this._error });
       }
       this._els.frame.innerHTML = `<div class="msg">${escapeXml(text)}</div>`;
       this._els.issued.textContent = "";
@@ -7392,9 +8598,16 @@ class GribWeatherMapCard extends HTMLElement {
     img.alt = this._label(chart);
     img.src = chart.image_url;
     const issued = chart.issued
-      ? new Date(chart.issued).toLocaleString(gribLocale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+      ? new Date(chart.issued).toLocaleString(gribLocale(), {
+          day: "numeric",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
       : "";
-    this._els.issued.textContent = issued ? gribT("wmIssued", { time: issued }) : "";
+    this._els.issued.textContent = issued
+      ? gribT("wmIssued", { time: issued })
+      : "";
   }
 }
 
@@ -7426,7 +8639,8 @@ gribWatchRegistry();
 // is what Home Assistant's "configuration error" placeholder looks like. How
 // long that took, and whether it came off the network at all, is the next
 // question when the placeholder does turn up, so it is printed along.
-gribLog("info",
+gribLog(
+  "info",
 
   `%c GRIB-OVERLAY-CARD %c ${GRIB_ASSET_VERSION || "dev"} `,
   "color:#fff;background:#0b4f8a;font-weight:700;border-radius:3px 0 0 3px",
@@ -7443,7 +8657,10 @@ function gribLoadTiming() {
     const where = entry.transferSize
       ? `${Math.round(entry.transferSize / 1024)} kB`
       : "from cache";
-    const worker = entry.deliveryType === "cache" || entry.workerStart ? ", service worker" : "";
+    const worker =
+      entry.deliveryType === "cache" || entry.workerStart
+        ? ", service worker"
+        : "";
     return `loaded in ${Math.round(entry.duration)} ms (${where}${worker})`;
   } catch {
     return "";

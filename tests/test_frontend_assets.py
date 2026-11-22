@@ -18,6 +18,12 @@ import pytest
 
 from custom_components.grib_overlay import _refresh_precompressed
 
+
+def _flat(text: str) -> str:
+    """The text without any whitespace, so a check does not depend on how Prettier wrapped it."""
+    return re.sub(r"\s+", "", text)
+
+
 INIT = Path("custom_components/grib_overlay/__init__.py").read_text(encoding="utf-8")
 JS = Path("custom_components/grib_overlay/www/grib-overlay-card.js").read_text(
     encoding="utf-8"
@@ -240,7 +246,7 @@ def test_the_banner_says_how_the_card_was_loaded() -> None:
     assert "performance.getEntriesByName(GRIB_ASSET_URL)[0]" in body
     assert '"from cache"' in body
     assert "loaded in ${Math.round(entry.duration)} ms" in body
-    assert "gribLoadTiming()" in JS.split('gribLog("info",', 1)[1]
+    assert "gribLoadTiming()" in re.split(r'gribLog\(\s*"info",', JS, maxsplit=1)[1]
 
 
 def test_a_second_copy_of_the_card_does_not_take_the_file_down() -> None:
@@ -252,7 +258,7 @@ def test_a_second_copy_of_the_card_does_not_take_the_file_down() -> None:
     assert JS.count("customElements.define(") == 1  # only inside the guard
     body = JS.split("function gribDefineCard(tag, cls) {", 1)[1].split("\n}\n", 1)[0]
     assert "const existing = customElements.get(tag);" in body
-    assert 'gribLog("warn",' in body
+    assert re.search(r'gribLog\(\s*"warn",', body)
     for tag in (
         "grib-overlay-card",
         "grib-overlay-compare-card",
@@ -279,8 +285,9 @@ def test_a_blank_configuration_error_is_reported_back_to_home_assistant() -> Non
     assert "gribReportsSent >= GRIB_REPORT_MAX" in JS
     # Reporting failures with console.error would feed the hook its own output.
     send = JS.split("async function gribSendReport() {", 1)[1].split("\n}\n", 1)[0]
-    assert 'gribLog("warn",' in send
-    assert 'gribLog("error",' not in send and "console.error(" not in send
+    assert re.search(r'gribLog\(\s*"warn",', send)
+    assert not re.search(r'gribLog\(\s*"error",', send)
+    assert "console.error(" not in send
 
 
 def test_a_report_says_what_state_the_card_was_in() -> None:
@@ -313,7 +320,7 @@ def test_a_card_nobody_can_see_stops_animating() -> None:
     watch = JS.split("  _watchVisibility() {", 1)[1].split("\n  }\n", 1)[0]
     assert "new IntersectionObserver(" in watch
     assert 'document.addEventListener("visibilitychange"' in watch
-    assert 'document.removeEventListener("visibilitychange"' in JS
+    assert re.search(r'document\.removeEventListener\(\s*"visibilitychange"', JS)
     assert "this._visibilityObserver.disconnect();" in JS
 
 
@@ -357,7 +364,9 @@ def test_a_map_is_never_rebuilt_into_a_container_with_no_size() -> None:
         "  async _ensureTiles() {",
     ):
         body = JS.split(method, 1)[1].split("\n  }\n", 1)[0]
-        assert "offsetWidth || !this._els.mapDiv.offsetHeight) return;" in body, method
+        assert _flat("offsetWidth || !this._els.mapDiv.offsetHeight) return;") in _flat(
+            body
+        ), method
 
 
 def test_a_recovery_asked_for_mid_run_is_not_dropped() -> None:

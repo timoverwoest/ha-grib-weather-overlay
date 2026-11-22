@@ -1,0 +1,3 @@
+# Public KNMI weather-station positions in the card (KNMI_STATIONS): at most three decimals,
+# unlike a home location, which is usually given with four or more.
+custom_components/grib_overlay/www/grib-overlay-card.js :: ^(lat|lon): ?-?[0-9]{1,3}\.[0-9]{1,3}$
