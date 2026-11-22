@@ -41,12 +41,14 @@ class Hang:
     """A blocking call that a test can release, like a share that comes back."""
 
     def __init__(self, result=None) -> None:
+        """Remember what the call returns once it is released."""
         self.release = threading.Event()
         self.entered = threading.Event()
         self.calls = 0
         self._result = result
 
     def __call__(self, *args, **kwargs):
+        """Block until released, counting how often a thread got stuck here."""
         self.calls += 1
         self.entered.set()
         self.release.wait(timeout=20)
@@ -159,9 +161,9 @@ async def test_a_share_that_does_not_answer_is_not_touched_again(
     monkeypatch.setattr(storage_paths, "PROBE_TIMEOUT", 0.3)
     probe = hang(result=storage_paths.PROBE_OK)
     restore = hang(result=(None, {}))
-    coordinators = []
-    for _ in range(17):
-        coordinators.append(GribOverlayCoordinator(hass, _entry(hass, tmp_path)))
+    coordinators = [
+        GribOverlayCoordinator(hass, _entry(hass, tmp_path)) for _ in range(17)
+    ]
 
     with (
         patch.object(storage_paths, "_probe_root", probe),
@@ -224,9 +226,7 @@ async def test_an_io_error_is_reported_not_raised(hass, tmp_path) -> None:
     assert status == storage_paths.PROBE_ERROR
 
 
-async def test_nothing_new_starts_while_home_assistant_stops(
-    hass, tmp_path
-) -> None:
+async def test_nothing_new_starts_while_home_assistant_stops(hass, tmp_path) -> None:
     coordinator = GribOverlayCoordinator(hass, _entry(hass, tmp_path))
     with (
         patch.object(
@@ -294,9 +294,7 @@ async def test_a_measurement_that_takes_too_long_is_given_up(
     assert coordinator._measure_cache() is None
 
 
-async def test_entry_setup_returns_while_the_share_hangs(
-    hass, tmp_path, hang
-) -> None:
+async def test_entry_setup_returns_while_the_share_hangs(hass, tmp_path, hang) -> None:
     """The real thing: set the entry up through Home Assistant with a hung share."""
     probe = hang(result=storage_paths.PROBE_OK)
     entry = _entry(hass, tmp_path)

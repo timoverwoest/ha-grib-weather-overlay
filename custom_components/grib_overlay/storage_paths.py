@@ -229,7 +229,7 @@ async def async_probe_root(
     hass: HomeAssistant,
     root: Path,
     mount: NetworkMount | None = None,
-    timeout: float | None = None,
+    timeout: float | None = None,  # noqa: ASYNC109 -- a deadline on a probe every caller shares
 ) -> str:
     """Ask whether the storage root answers, without ever waiting on it for long.
 

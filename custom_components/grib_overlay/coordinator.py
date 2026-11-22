@@ -1312,7 +1312,6 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                     return None
                 if f.is_file():
                     total += f.stat().st_size
-            return total
         except OSError as err:
             # A file removed between the listing and the stat; the next run
             # measures again.
@@ -1320,6 +1319,7 @@ class GribOverlayCoordinator(DataUpdateCoordinator[dict]):
                 "Could not measure the cache in %s: %s", self.storage_dir, err
             )
             return None
+        return total
 
     def _cleanup_old_runs(self) -> None:
         retain = self.entry.options.get(CONF_RETAIN_RUNS, DEFAULT_RETAIN_RUNS)
