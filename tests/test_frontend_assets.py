@@ -240,7 +240,7 @@ def test_the_banner_says_how_the_card_was_loaded() -> None:
     assert "performance.getEntriesByName(GRIB_ASSET_URL)[0]" in body
     assert '"from cache"' in body
     assert "loaded in ${Math.round(entry.duration)} ms" in body
-    assert "gribLoadTiming()" in JS.split("console.info(", 1)[1]
+    assert "gribLoadTiming()" in JS.split('gribLog("info",', 1)[1]
 
 
 def test_a_second_copy_of_the_card_does_not_take_the_file_down() -> None:
@@ -252,7 +252,7 @@ def test_a_second_copy_of_the_card_does_not_take_the_file_down() -> None:
     assert JS.count("customElements.define(") == 1  # only inside the guard
     body = JS.split("function gribDefineCard(tag, cls) {", 1)[1].split("\n}\n", 1)[0]
     assert "const existing = customElements.get(tag);" in body
-    assert "console.warn(" in body
+    assert 'gribLog("warn",' in body
     for tag in (
         "grib-overlay-card",
         "grib-overlay-compare-card",
@@ -279,7 +279,8 @@ def test_a_blank_configuration_error_is_reported_back_to_home_assistant() -> Non
     assert "gribReportsSent >= GRIB_REPORT_MAX" in JS
     # Reporting failures with console.error would feed the hook its own output.
     send = JS.split("async function gribSendReport() {", 1)[1].split("\n}\n", 1)[0]
-    assert "console.warn(" in send and "console.error(" not in send
+    assert 'gribLog("warn",' in send
+    assert 'gribLog("error",' not in send and "console.error(" not in send
 
 
 def test_a_report_says_what_state_the_card_was_in() -> None:

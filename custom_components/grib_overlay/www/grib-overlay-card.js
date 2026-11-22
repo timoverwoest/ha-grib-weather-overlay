@@ -28,7 +28,7 @@ const GRIB_ASSET_URL = (() => {
 const GRIB_ASSET_VERSION = (() => {
   try {
     return (GRIB_ASSET_URL && new URL(GRIB_ASSET_URL, location.href).searchParams.get("v")) || "";
-  } catch (err) {
+  } catch {
     return "";
   }
 })();
@@ -107,6 +107,21 @@ function gribT(key, vars) {
 // the document/browser language and this puts the user's own language back,
 // without tearing down the Leaflet map. Nodes opt in with data-i18n (text) or
 // data-i18n-title (tooltip).
+// The card's one way of writing to the browser console: diagnostics a user can
+// be asked to read out. Everything else goes through here so the lint exception
+// has a single home (Home Assistant's own guidance is to keep `console` out of
+// production code).
+// Keyboard focus must be visible on the controls the cards draw themselves.
+const GRIB_FOCUS_CSS = `
+  button:focus-visible, select:focus-visible, input:focus-visible {
+    outline: 2px solid var(--primary-color, #03a9f4); outline-offset: 2px;
+  }`;
+
+function gribLog(level, ...args) {
+  // eslint-disable-next-line no-console -- the card's diagnostics channel
+  console[level](...args);
+}
+
 // Home Assistant hands a card a fresh `hass` on every state change, and
 // replaces the card with a bare "configuration error" -- no message, nothing to
 // go on -- as soon as that setter throws. Nothing we do there is worth losing
@@ -115,7 +130,7 @@ function gribGuard(what, fn) {
   try {
     fn();
   } catch (err) {
-    console.error(`grib-overlay-card: ${what} failed`, err);
+    gribLog("error", `grib-overlay-card: ${what} failed`, err);
   }
 }
 
@@ -131,7 +146,8 @@ function gribDefineCard(tag, cls) {
   const existing = customElements.get(tag);
   GRIB_DEFINED.set(tag, cls);
   if (existing) {
-    console.warn(
+    gribLog("warn",
+
       `grib-overlay-card: ${tag} was already defined by another copy of this ` +
         `file; this one (${GRIB_ASSET_VERSION || "dev"}) is not taking over. ` +
         "Check for a duplicate Lovelace resource, or empty the browser cache."
@@ -171,13 +187,14 @@ function gribTeachRegistry() {
     // Home Assistant waits on this before it rebuilds a card it gave up on.
     registry.whenDefined = (tag) =>
       GRIB_DEFINED.has(tag) ? Promise.resolve(GRIB_DEFINED.get(tag)) : whenDefined(tag);
-    console.info(
+    gribLog("info",
+
       "grib-overlay-card: this page replaced its custom element registry after the " +
         "cards had registered; the new one has been told about them."
     );
     return true;
   } catch (err) {
-    console.warn("grib-overlay-card: could not tell the new registry about the cards", err);
+    gribLog("warn", "grib-overlay-card: could not tell the new registry about the cards", err);
     return false;
   }
 }
@@ -242,7 +259,7 @@ let gribReportQueue = [];
 // in a report means.
 try {
   window.__gribOverlayLoads = (Number(window.__gribOverlayLoads) || 0) + 1;
-} catch (err) {
+} catch {
   /* no window to count in */
 }
 
@@ -256,7 +273,7 @@ function gribTrackCard(el) {
       if (!other.isConnected) GRIB_LIVE_CARDS.delete(other);
     }
     GRIB_LIVE_CARDS.add(el);
-  } catch (err) {
+  } catch {
     /* tracking is a nicety, never a reason to fail */
   }
 }
@@ -279,7 +296,7 @@ function gribHassForReport() {
   try {
     const root = document.querySelector("home-assistant");
     if (root && root.hass && typeof root.hass.callApi === "function") return root.hass;
-  } catch (err) {
+  } catch {
     /* not running inside Home Assistant */
   }
   return null;
@@ -347,7 +364,7 @@ function gribNavigationType() {
   try {
     const nav = performance.getEntriesByType("navigation")[0];
     return (nav && nav.type) || "";
-  } catch (err) {
+  } catch {
     return "";
   }
 }
@@ -375,7 +392,7 @@ async function gribSendReport() {
     });
   } catch (err) {
     // console.warn, not error: our own hook watches console.error.
-    console.warn("grib-overlay-card: could not report the card error to Home Assistant", err);
+    gribLog("warn", "grib-overlay-card: could not report the card error to Home Assistant", err);
   }
 }
 
@@ -387,14 +404,16 @@ function gribWatchForCardErrors() {
   if (typeof console === "undefined" || typeof window === "undefined") return;
   if (window.__gribOverlayErrorHook) return; // a second copy must not hook twice
   window.__gribOverlayErrorHook = true;
+  // eslint-disable-next-line no-console -- this hook is the point: it wraps console.error
   const original = console.error;
+  // eslint-disable-next-line no-console -- idem
   console.error = function (...args) {
     try {
       const first = args[0];
       if (typeof first === "string" && first.startsWith("custom:grib-overlay-")) {
         gribReportCardError(first, args[1]);
       }
-    } catch (err) {
+    } catch {
       /* reporting must never break logging */
     }
     return original.apply(this, args);
@@ -449,7 +468,7 @@ function gribErrorCardRecord(node) {
       // are empty when Home Assistant dropped the card without a reason.
       message: String((inner._config && (inner._config.error || inner._config.message)) || ""),
     };
-  } catch (err) {
+  } catch {
     return null; // another Home Assistant version keeps these elsewhere
   }
 }
@@ -587,6 +606,8 @@ function gribApplyLanguage(root) {
   }
   for (const el of root.querySelectorAll("[data-i18n-title]")) {
     el.title = gribT(el.getAttribute("data-i18n-title"));
+    // A select or slider has no text of its own: its tooltip is also its name.
+    if (el.matches("select, input[type=range]")) el.setAttribute("aria-label", el.title);
   }
   for (const el of root.querySelectorAll("[data-i18n-aria-label]")) {
     el.setAttribute("aria-label", gribT(el.getAttribute("data-i18n-aria-label")));
@@ -618,6 +639,8 @@ const GRIB_TEXT = {
       "Deze bron heeft geen luchtdruk in deze kaart. Zet \u2018Luchtdruk (zeeniveau)\u2019 aan bij Instellingen \u2192 Apparaten & diensten \u2192 GRIB Weather Overlay \u2192 Configureren (en haal hem niet weg met parameters/exclude_parameters).",
     until: "t/m",
     playbackSpeed: "Afspeelsnelheid",
+    play: "Afspelen",
+    pause: "Pauzeren",
     animationPosition: "Positie in de animatie",
     stepEvery: "elke stap",
     stepEveryN: "om de {n} stappen",
@@ -763,6 +786,8 @@ const GRIB_TEXT = {
       "This source has no pressure in this card. Enable \u2018Pressure (mean sea level)\u2019 under Settings \u2192 Devices & services \u2192 GRIB Weather Overlay \u2192 Configure (and do not filter it out with parameters/exclude_parameters).",
     until: "to",
     playbackSpeed: "Playback speed",
+    play: "Play",
+    pause: "Pause",
     animationPosition: "Position in the animation",
     stepEvery: "every step",
     stepEveryN: "every {n} steps",
@@ -1064,7 +1089,7 @@ async function gribMapTilesToken(hass) {
   try {
     const result = await hass.callWS({ type: "map_tiles/access_token" });
     return (result && result.token) || null;
-  } catch (err) {
+  } catch {
     return null; // no map_tiles in this Home Assistant
   }
 }
@@ -1140,7 +1165,7 @@ async function gribFillOsmBase(group, cfg, getHass) {
       // Absolute, for a dashboard served from another host (Cast). Not
       // hassUrl(template): URL() would percent-encode the {z}/{x}/{y} placeholders.
       if (typeof hass.hassUrl === "function") base = hass.hassUrl("").replace(/\/+$/, "");
-    } catch (err) {
+    } catch {
       base = ""; // same origin, which is where dashboards normally live
     }
     const layer = L.tileLayer(base + HA_MAP_TILES_URL, {
@@ -1244,7 +1269,7 @@ function gribReadMapLayers() {
     if (stored && MAP_BASES.includes(stored.base) && Array.isArray(stored.overlays)) {
       return { base: stored.base, overlays: gribLayerList(stored.overlays) };
     }
-  } catch (err) {
+  } catch {
     // private mode / blocked storage: fall back to the card config
   }
   return null;
@@ -1253,7 +1278,7 @@ function gribReadMapLayers() {
 function gribWriteMapLayers(choice) {
   try {
     window.localStorage.setItem(MAP_LAYERS_KEY, JSON.stringify(choice));
-  } catch (err) {
+  } catch {
     // not remembered, that's all
   }
 }
@@ -1905,7 +1930,7 @@ function broadcastGribPoint(lat, lng, source) {
   gribSharedPoint = { lat, lng };
   try {
     sessionStorage.setItem(GRIB_POINT_KEY, JSON.stringify(gribSharedPoint));
-  } catch (e) {
+  } catch {
     /* private mode / storage disabled: fall back to the in-memory value */
   }
   window.dispatchEvent(new CustomEvent(GRIB_POINT_EVENT, { detail: { lat, lng, source } }));
@@ -1919,7 +1944,7 @@ function gribReadSharedPoint() {
       gribSharedPoint = p;
       return p;
     }
-  } catch (e) {
+  } catch {
     /* ignore */
   }
   return null;
@@ -1939,14 +1964,14 @@ function gribPointKey(lat, lng) {
 function gribReadAllMeasurements() {
   try {
     return JSON.parse(localStorage.getItem(GRIB_MEAS_KEY) || "{}") || {};
-  } catch (e) {
+  } catch {
     return {};
   }
 }
 function gribWriteAllMeasurements(store) {
   try {
     localStorage.setItem(GRIB_MEAS_KEY, JSON.stringify(store));
-  } catch (e) {
+  } catch {
     /* ignore */
   }
 }
@@ -2008,10 +2033,6 @@ function gribSavedPoints() {
   return Object.values(gribReadAllMeasurements())
     .filter((r) => r && r.params && Object.keys(r.params).length)
     .map((r) => ({ lat: r.lat, lng: r.lng }));
-}
-function gribPointHasMeasurements(lat, lng) {
-  const rec = gribReadAllMeasurements()[gribPointKey(lat, lng)];
-  return !!(rec && rec.params && Object.keys(rec.params).length);
 }
 // Wipe the saved measurements for a point (one parameter, or all).
 function gribClearMeasurements(lat, lng, param) {
@@ -2257,7 +2278,7 @@ class GribOverlayCard extends HTMLElement {
       if (back > 0) this._showFrame(back);
       requestAnimationFrame(() => this._map && this._map.invalidateSize());
     } catch (err) {
-      console.warn("grib-overlay-card: refresh after re-attach failed", err);
+      gribLog("warn", "grib-overlay-card: refresh after re-attach failed", err);
     } finally {
       this._reattaching = false;
     }
@@ -2357,7 +2378,9 @@ class GribOverlayCard extends HTMLElement {
 
   async _ensureTilesOnce(allowRebuild) {
     for (const wait of [250, 750, 1500, 3000]) {
-      await new Promise((resolve) => setTimeout(resolve, wait));
+      await new Promise((resolve) => {
+        setTimeout(resolve, wait);
+      });
       if (!this._map || !this.isConnected) return;
       if (this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
       gribFixMapPosition(this._els.mapDiv);
@@ -2386,7 +2409,7 @@ class GribOverlayCard extends HTMLElement {
       return;
     }
 
-    console.warn("grib-overlay-card: the map came back blank, building it again");
+    gribLog("warn", "grib-overlay-card: the map came back blank, building it again");
     const center = this._map.getCenter();
     const zoom = this._map.getZoom();
     const shown = this._frames[this._frameIndex || 0];
@@ -2531,7 +2554,7 @@ class GribOverlayCard extends HTMLElement {
         if (typeof layer._clearWind === "function") layer._clearWind();
       }
     } catch (err) {
-      console.warn("grib-overlay-card: could not pause the particle layer", err);
+      gribLog("warn", "grib-overlay-card: could not pause the particle layer", err);
     }
   }
 
@@ -2566,6 +2589,7 @@ class GribOverlayCard extends HTMLElement {
     const style = document.createElement("style");
     style.textContent = `
       :host { display: block; height: 100%; }
+      ${GRIB_FOCUS_CSS}
       ha-card {
         /* overflow-y auto is a safety net: if the card is made so short that
            even a zero-height map can't free enough room, the chrome scrolls
@@ -2648,7 +2672,7 @@ class GribOverlayCard extends HTMLElement {
       .grib-detail-title { font: 600 15px/1.2 sans-serif; }
       .grib-detail-sub { font: 12px/1.2 sans-serif; opacity: 0.6; }
       .grib-detail-close {
-        margin-left: auto; border: none; background: transparent; color: inherit;
+        margin-inline-start: auto; border: none; background: transparent; color: inherit;
         font-size: 20px; line-height: 1; cursor: pointer; padding: 2px 8px; border-radius: 6px;
       }
       .grib-detail-close:hover { background: var(--divider-color, #eee); }
@@ -2671,7 +2695,7 @@ class GribOverlayCard extends HTMLElement {
         background: var(--card-background-color, #fff);
         border-radius: 999px; padding: 1px 9px;
       }
-      .grib-detail-tools .showall { border-radius: 6px; margin-left: auto; }
+      .grib-detail-tools .showall { border-radius: 6px; margin-inline-start: auto; }
       .grib-detail-tools .chip:hover, .grib-detail-tools .showall:hover {
         border-color: var(--primary-color, #0288d1); color: var(--primary-color, #0288d1);
       }
@@ -2687,6 +2711,7 @@ class GribOverlayCard extends HTMLElement {
         animation: grib-spin 0.8s linear infinite;
       }
       @keyframes grib-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .grib-spinner { animation-duration: 2.4s; } }
       .grib-detail-table { border-collapse: collapse; font: 12px/1.1 sans-serif; }
       .grib-detail-table th, .grib-detail-table td { text-align: center; white-space: nowrap; }
       .grib-detail-table .cell { width: 34px; min-width: 34px; height: 24px;
@@ -2726,7 +2751,7 @@ class GribOverlayCard extends HTMLElement {
       .grib-cmp-legend .sw { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
       .grib-cmp-empty { padding: 12px; font: 12px sans-serif; opacity: 0.7; }
       .grib-detail-table .rowlabel .dot {
-        display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle;
+        display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-inline-end: 5px; vertical-align: middle;
       }
       .grib-detail-tools .modesel { display: flex; align-items: center; gap: 5px; }
       .grib-detail-tools .measctl { display: flex; align-items: center; gap: 5px; cursor: pointer; }
@@ -2740,12 +2765,12 @@ class GribOverlayCard extends HTMLElement {
         background: var(--secondary-background-color, #eef1f4);
         border-top: 1px solid var(--divider-color, #e2e2e2);
       }
-      .grib-detail-table .grouphead { text-align: left; padding: 5px 12px; font: 600 12px/1.2 sans-serif; }
+      .grib-detail-table .grouphead { text-align: start; padding: 5px 12px; font: 600 12px/1.2 sans-serif; }
       .grib-detail-table .grouphead .ghname {
         display: inline-block; max-width: 52vw; overflow: hidden;
         text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
       }
-      .grib-detail-table .grouplabel { text-align: left; padding: 5px 10px; }
+      .grib-detail-table .grouplabel { text-align: start; padding: 5px 10px; }
       .grib-detail-table .grouplabel .src {
         display: inline-block; padding: 0 5px;
         font-size: 11px; font-weight: 700; letter-spacing: 0.02em; opacity: 0.85;
@@ -2759,9 +2784,9 @@ class GribOverlayCard extends HTMLElement {
       <div class="toolbar">
         <select class="entry-select"></select>
         <select class="param-select"></select>
-        <button class="mode-single active" data-mode="single" data-i18n="singleTime">${gribT("singleTime")}</button>
-        <button class="mode-animate" data-mode="animate" data-i18n="animate">${gribT("animate")}</button>
-        <select class="render-mode-select" data-i18n-title="view" title="${gribT("view")}">
+        <button class="mode-single active" type="button" aria-pressed="true" data-mode="single" data-i18n="singleTime">${gribT("singleTime")}</button>
+        <button class="mode-animate" type="button" aria-pressed="false" data-mode="animate" data-i18n="animate">${gribT("animate")}</button>
+        <select class="render-mode-select" data-i18n-title="view" title="${gribT("view")}" aria-label="${gribT("view")}">
           <option value="raster" data-i18n="raster">${gribT("raster")}</option>
           <option value="particles" data-i18n="particles">${gribT("particles")}</option>
           <option value="vectors" data-i18n="vectors">${gribT("vectors")}</option>
@@ -2781,17 +2806,17 @@ class GribOverlayCard extends HTMLElement {
         <span data-i18n="until">${gribT("until")}</span>
         <select class="end-select"></select>
         <select class="step-select"></select>
-        <button class="play-pause">▶</button>
-        <span class="speed-control" data-i18n-title="playbackSpeed" title="${gribT("playbackSpeed")}">🐢<input type="range" class="speed-slider" min="150" max="2000" value="1450" step="50" />🐇</span>
+        <button class="play-pause" type="button" data-i18n-aria-label="play" aria-label="${gribT("play")}">▶</button>
+        <span class="speed-control" data-i18n-title="playbackSpeed" title="${gribT("playbackSpeed")}">🐢<input type="range" class="speed-slider" min="150" max="2000" value="1450" step="50" aria-label="${gribT("playbackSpeed")}" />🐇</span>
         <span class="time-label"></span>
-        <input type="range" class="progress-slider" min="0" max="0" value="0" step="1" data-i18n-title="animationPosition" title="${gribT("animationPosition")}" />
+        <input type="range" class="progress-slider" min="0" max="0" value="0" step="1" data-i18n-title="animationPosition" title="${gribT("animationPosition")}" aria-label="${gribT("animationPosition")}" />
       </div>
       <div class="legend">
         <div class="legend-bar"></div>
         <div class="legend-ticks"></div>
         <div class="legend-scale"></div>
       </div>
-      <div class="note"></div>
+      <div class="note" role="status"></div>
     `;
     root.appendChild(card);
 
@@ -3224,7 +3249,7 @@ class GribOverlayCard extends HTMLElement {
         const d = await this._fetchJson(frame.field_url, this._fieldCache);
         source = { kind: "scalar", header: d, data: d.data, unit: frame.legend.unit };
       }
-    } catch (err) {
+    } catch {
       source = null;
     }
     if (token !== this._readoutToken) return; // a newer frame won the race
@@ -3382,7 +3407,7 @@ class GribOverlayCard extends HTMLElement {
           magField = await this._fetchJson(magFrame.field_url, this._fieldCache);
         }
       }
-    } catch (err) {
+    } catch {
       return;
     }
     if (token !== this._windToken || this._activeMode() !== "wavevectors") return;
@@ -3656,7 +3681,7 @@ class GribOverlayCard extends HTMLElement {
         pf = nearestFrame(pframes, frame.valid_time, ISOBAR_MAX_OFFSET_MS);
       }
       if (pf && pf.field_url) field = await this._fetchJson(pf.field_url, this._fieldCache);
-    } catch (err) {
+    } catch {
       field = null;
     }
     if (token !== this._isobarToken || !this._isobarsOn) return;
@@ -3670,7 +3695,8 @@ class GribOverlayCard extends HTMLElement {
       // or the parameter was only just enabled on the integration.
       this._removeIsobars();
       this._setIsobarNote(gribT("isobarsNoData"));
-      console.warn(
+      gribLog("warn",
+
         `grib-overlay-card: no pressure field for ${pParam.key} at ${frame.valid_time}`
       );
     }
@@ -4061,8 +4087,8 @@ class GribOverlayCard extends HTMLElement {
       const hasDir = !!(resp && resp.direction_unit) && series.some((s) => s.direction != null);
       const svg = this._buildMeteogram(series, resp.unit, latlng, { hasDirection: hasDir });
       this._openMeteogramPopup(latlng, svg);
-    } catch (err) {
-      return;
+    } catch {
+      // no popup when the series cannot be drawn: the card stays as it was
     }
   }
 
@@ -4182,11 +4208,11 @@ class GribOverlayCard extends HTMLElement {
     // land on clean, human-readable numbers.
     const niceNum = (range, round) => {
       const exp = Math.floor(Math.log10(range));
-      const f = range / Math.pow(10, exp);
+      const f = range / 10 ** exp;
       const nf = round
         ? f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10
         : f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
-      return nf * Math.pow(10, exp);
+      return nf * 10 ** exp;
     };
 
     // ---- y scale ----
@@ -4211,7 +4237,7 @@ class GribOverlayCard extends HTMLElement {
       yStep = niceNum((dmax - dmin) / 4, true); // expand to nice, round bounds
       vmin = Math.floor(dmin / yStep) * yStep;
       vmax = Math.ceil(dmax / yStep) * yStep;
-      const yMant = Math.round(yStep / Math.pow(10, Math.floor(Math.log10(yStep))));
+      const yMant = Math.round(yStep / 10 ** Math.floor(Math.log10(yStep)));
       yMinorStep = yStep / (yMant === 2 ? 4 : 5); // keep minor steps round
     }
 
@@ -4452,7 +4478,7 @@ class GribOverlayCard extends HTMLElement {
     let groups;
     try {
       groups = await Promise.all(entries.map((entry) => this._fetchEntryPointData(entry, latlng)));
-    } catch (err) {
+    } catch {
       this._setDetailBody(`<div class="grib-detail-loading">${gribT("meteogramFailed")}</div>`);
       return;
     }
@@ -4461,7 +4487,7 @@ class GribOverlayCard extends HTMLElement {
     this._detailGroups = groups;
     this._detailLatlng = latlng;
     this._populateCompareParams();
-    this._setDetailBody(this._buildDetailTable(groups, latlng));
+    this._setDetailBody(this._buildDetailTable(groups));
     // Apply the configured default selection: rows whose parameter isn't in the
     // list start hidden (the user can still bring any back via the chips).
     const sel = this._meteogramSelection();
@@ -4494,7 +4520,7 @@ class GribOverlayCard extends HTMLElement {
         legendByKey[p.key] = (pr && pr.legend) || null;
       }
       return { entry, seriesByKey, legendByKey };
-    } catch (err) {
+    } catch {
       const [framesAll, seriesEntries] = await Promise.all([
         this._hass.callApi("GET", `grib_overlay/frames/${entry.entry_id}`).catch(() => ({})),
         Promise.all(
@@ -4704,7 +4730,7 @@ class GribOverlayCard extends HTMLElement {
     if (this._detailMode === "compare") {
       this._setDetailBody(this._buildCompareView());
     } else {
-      this._setDetailBody(this._buildDetailTable(this._detailGroups, this._detailLatlng));
+      this._setDetailBody(this._buildDetailTable(this._detailGroups));
       this._applyDetailHidden();
     }
   }
@@ -4840,11 +4866,11 @@ class GribOverlayCard extends HTMLElement {
       return;
     }
     const q = new URLSearchParams({ param: this._detailCmpParam, lat: this._detailLatlng.lat.toFixed(4), lon: this._detailLatlng.lng.toFixed(4), radius: String(this._detailRadius) });
-    let stations = null;
+    let stations;
     try {
       const data = await this._hass.callApi("GET", `grib_overlay/stations?${q}`);
       stations = ((data && data.stations) || []).map((s) => ({ name: s.name, lat: s.lat, lon: s.lon, distKm: s.dist_km }));
-    } catch (e) {
+    } catch {
       stations = null;
     }
     this._detailStationsData = stations;
@@ -4881,7 +4907,7 @@ class GribOverlayCard extends HTMLElement {
       start: new Date(Number.isFinite(tMin) ? tMin : Date.now() - 48 * 3600e3).toISOString(),
       end: new Date().toISOString(),
     });
-    let data = null;
+    let data;
     try {
       data = await this._hass.callApi("GET", `grib_overlay/station_obs?${q}`);
     } catch (err) {
@@ -4999,7 +5025,7 @@ class GribOverlayCard extends HTMLElement {
     this._detailLatlng = null;
   }
 
-  _buildDetailTable(groups, latlng) {
+  _buildDetailTable(groups) {
     // Keep only entries that actually have data at this point. Sources that are
     // configured but return nothing here (e.g. BSH's North-Sea-only grid when
     // the click is inland, or a source still downloading) are dropped, and then
@@ -5210,10 +5236,10 @@ class GribOverlayCard extends HTMLElement {
       this._setIsobarNote("");
       return;
     }
-    let frames = [];
+    let frames;
     try {
       frames = await this._fetchParamFrames(pParam.key);
-    } catch (err) {
+    } catch {
       frames = [];
     }
     if (!this._isobarsOn) return;
@@ -5221,7 +5247,8 @@ class GribOverlayCard extends HTMLElement {
       this._setIsobarNote("");
     } else {
       this._setIsobarNote(gribT("isobarsNoFrames"));
-      console.warn(
+      gribLog("warn",
+
         `grib-overlay-card: no ${pParam.key} frames for ${this._currentEntry()?.title}`
       );
     }
@@ -5300,10 +5327,19 @@ class GribOverlayCard extends HTMLElement {
 
   // -- mode + playback -----------------------------------------------------------
 
+  // The button shows only a glyph, so its name has to say what a press does now.
+  _setPlayLabel(key) {
+    const btn = this._els.playPauseBtn;
+    btn.setAttribute("data-i18n-aria-label", key);
+    btn.setAttribute("aria-label", gribT(key));
+  }
+
   _setMode(mode) {
     this._mode = mode;
     this._els.modeSingleBtn.classList.toggle("active", mode === "single");
     this._els.modeAnimateBtn.classList.toggle("active", mode === "animate");
+    this._els.modeSingleBtn.setAttribute("aria-pressed", String(mode === "single"));
+    this._els.modeAnimateBtn.setAttribute("aria-pressed", String(mode === "animate"));
     this._els.singleControls.classList.toggle("hidden", mode !== "single");
     this._els.animateControls.classList.toggle("hidden", mode !== "animate");
     if (mode !== "animate") this._stopPlayback();
@@ -5333,6 +5369,7 @@ class GribOverlayCard extends HTMLElement {
     this._playIndex = this._playStart;
     this._showFrame(this._playIndex);
     this._els.playPauseBtn.textContent = "⏸";
+    this._setPlayLabel("pause");
     this._startPlaybackTimer();
   }
 
@@ -5351,7 +5388,10 @@ class GribOverlayCard extends HTMLElement {
       this._playTimer = null;
     }
     this._playbackSuspended = false;
-    if (this._els?.playPauseBtn) this._els.playPauseBtn.textContent = "▶";
+    if (this._els?.playPauseBtn) {
+      this._els.playPauseBtn.textContent = "▶";
+      this._setPlayLabel("play");
+    }
   }
 
   // Off-screen: hold the animation where it is. The button keeps saying it is
@@ -5594,7 +5634,7 @@ function wireChartHovers(root) {
     let data;
     try {
       data = JSON.parse(cap.getAttribute("data-hover"));
-    } catch (e) {
+    } catch {
       return;
     }
     const ux = svgUserX(svg, ev);
@@ -5726,7 +5766,7 @@ function compareChartSvg(models, config, unitLabel, measurePts, corrections, wid
     vMax += 1;
   }
   const niceStep = (range) => {
-    const e = Math.pow(10, Math.floor(Math.log10(range)));
+    const e = 10 ** Math.floor(Math.log10(range));
     const f = range / e;
     return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * e;
   };
@@ -6257,7 +6297,7 @@ const COMPARE_TABLE_CSS = `
   .grib-hover-capture { cursor: crosshair; touch-action: pan-y; }
   .grib-hover-layer text { paint-order: stroke; }
   .grib-detail-table .rowlabel .dot {
-    display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle;
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-inline-end: 5px; vertical-align: middle;
   }
   .grib-detail-table thead th { position: sticky; top: 0; z-index: 3; background: var(--card-background-color, #fff); }
   .grib-detail-table thead th.rowlabel { z-index: 4; }
@@ -6333,7 +6373,7 @@ const COMPARE_EXTRA_CSS = `
   .grib-cmp-dl-station:hover { border-color: var(--primary-color, #0288d1); color: var(--primary-color, #0288d1); }
   .grib-cmp-dl-station[disabled] { opacity: 0.6; cursor: default; }
   .grib-cmp-stations { padding: 6px 12px 2px; font: 12px/1.7 sans-serif; }
-  .grib-cmp-stations .lbl { opacity: 0.7; margin-right: 4px; }
+  .grib-cmp-stations .lbl { opacity: 0.7; margin-inline-end: 4px; }
   .grib-cmp-stations .none { opacity: 0.6; }
   .grib-cmp-station {
     font: 12px sans-serif; cursor: pointer; color: inherit; margin: 0 4px 4px 0;
@@ -6530,11 +6570,11 @@ class GribCompareCard extends HTMLElement {
       return;
     }
     const q = new URLSearchParams({ param, lat: this._point.lat.toFixed(4), lon: this._point.lng.toFixed(4), radius: String(this._radius) });
-    let stations = null;
+    let stations;
     try {
       const data = await this._hass.callApi("GET", `grib_overlay/stations?${q}`);
       stations = ((data && data.stations) || []).map((s) => ({ name: s.name, lat: s.lat, lon: s.lon, distKm: s.dist_km }));
-    } catch (e) {
+    } catch {
       stations = null; // fall back to the built-in list
     }
     this._stationsData = stations;
@@ -6592,6 +6632,7 @@ class GribCompareCard extends HTMLElement {
     const style = document.createElement("style");
     style.textContent = `
       :host { display: block; height: 100%; }
+      ${GRIB_FOCUS_CSS}
       ha-card { overflow: hidden; height: 100%; display: flex; flex-direction: column; }
       .toolbar { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 8px 12px; }
       .toolbar label { display: flex; align-items: center; gap: 5px; font-size: 0.9em; }
@@ -6649,7 +6690,7 @@ class GribCompareCard extends HTMLElement {
       <div class="models"></div>
       <div class="body">
         <div class="cmpview"></div>
-        <div class="note"></div>
+        <div class="note" role="status"></div>
       </div>
     `;
     root.appendChild(card);
@@ -6785,7 +6826,7 @@ class GribCompareCard extends HTMLElement {
       start: this._obsStart(models),
       end: new Date().toISOString(),
     });
-    let data = null;
+    let data;
     try {
       data = await this._hass.callApi("GET", `grib_overlay/station_obs?${q}`);
     } catch (err) {
@@ -6947,7 +6988,9 @@ class GribCompareCard extends HTMLElement {
     this._ensuringTiles = true;
     try {
       for (const wait of [250, 750, 1500]) {
-        await new Promise((resolve) => setTimeout(resolve, wait));
+        await new Promise((resolve) => {
+        setTimeout(resolve, wait);
+      });
         if (!this._map || !this.isConnected) return;
         if (this._els.mapDiv.querySelector(GRIB_PAINTED_TILE)) return;
         gribFixMapPosition(this._els.mapDiv);
@@ -6964,7 +7007,7 @@ class GribCompareCard extends HTMLElement {
       if (!this._els.mapDiv.offsetWidth || !this._els.mapDiv.offsetHeight) return;
       this._rebuilds = (this._rebuilds || 0) + 1;
       if (this._rebuilds > 2) return; // bounded against a loop, reset on return
-      console.warn("grib-overlay-compare-card: the map came back blank, building it again");
+      gribLog("warn", "grib-overlay-compare-card: the map came back blank, building it again");
       const center = this._map.getCenter();
       const zoom = this._map.getZoom();
       this._map.remove();
@@ -7035,10 +7078,10 @@ class GribCompareCard extends HTMLElement {
     const shortById = compareShortLabels(wanted);
     const models = await Promise.all(
       wanted.map(async (e, i) => {
-        let data = null;
+        let data;
         try {
           data = await this._hass.callApi("GET", `grib_overlay/point/${e.entry_id}/${encodeURIComponent(param)}?${q}`);
-        } catch (err) {
+        } catch {
           data = null;
         }
         return {
@@ -7205,6 +7248,7 @@ class GribWeatherMapCard extends HTMLElement {
     const style = document.createElement("style");
     style.textContent = `
       :host { display: block; height: 100%; }
+      ${GRIB_FOCUS_CSS}
       ha-card { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
       .head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; }
       .title { font-weight: 600; flex: 1 1 auto; min-width: 0; }
@@ -7382,7 +7426,8 @@ gribWatchRegistry();
 // is what Home Assistant's "configuration error" placeholder looks like. How
 // long that took, and whether it came off the network at all, is the next
 // question when the placeholder does turn up, so it is printed along.
-console.info(
+gribLog("info",
+
   `%c GRIB-OVERLAY-CARD %c ${GRIB_ASSET_VERSION || "dev"} `,
   "color:#fff;background:#0b4f8a;font-weight:700;border-radius:3px 0 0 3px",
   "color:#0b4f8a;background:#dceaf6;border-radius:0 3px 3px 0",
@@ -7400,7 +7445,7 @@ function gribLoadTiming() {
       : "from cache";
     const worker = entry.deliveryType === "cache" || entry.workerStart ? ", service worker" : "";
     return `loaded in ${Math.round(entry.duration)} ms (${where}${worker})`;
-  } catch (err) {
+  } catch {
     return "";
   }
 }
