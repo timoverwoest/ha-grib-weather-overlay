@@ -1717,6 +1717,22 @@ HACS-validator. Twee regels staan bewust uit, met de reden in `pyproject.toml`:
 `RUF046` (de `int()`-casts beschermen tegen numpy-scalars) en `D401` (de
 docstrings beschrijven wat iets *is* waar dat beter leest).
 
+De kaart (`custom_components/grib_overlay/www/grib-overlay-card.js`) is gewoon
+JavaScript zonder buildstap. Hij volgt de
+[coding guidelines van de Home Assistant-frontend](https://contributors.home-assistant.io/frontend/development/guidelines/),
+met dezelfde Prettier- en ESLint-regels (`.prettierrc.json`, `eslint.config.mjs`).
+De GitHub Actions-workflow controleert ze bij elke push; met Node kun je de
+controle zelf draaien:
+
+```bash
+npm install --no-save --no-package-lock prettier@3.10.1 eslint@10.15.0 @eslint/js@10.0.1
+npx prettier --check custom_components/grib_overlay/www/grib-overlay-card.js eslint.config.mjs
+npx eslint custom_components/grib_overlay/www/grib-overlay-card.js
+```
+
+Wil je dat `git blame` de opmaakcommit overslaat:
+`git config blame.ignoreRevsFile .git-blame-ignore-revs`.
+
 Een paar losse dev-hulpmiddelen werken zonder Home Assistant:
 
 - `dev/verify_knmi_source.py` — controleert de KNMI-source-implementatie
@@ -3451,6 +3467,22 @@ the tests, `hassfest` (which checks `manifest.json` and the translations) and
 the HACS validator. Two rules are deliberately off, with the reason recorded in
 `pyproject.toml`: `RUF046` (the `int()` casts guard against numpy scalars) and
 `D401` (the docstrings describe what something *is* where that reads better).
+
+The card (`custom_components/grib_overlay/www/grib-overlay-card.js`) is plain
+JavaScript without a build step. It follows the
+[coding guidelines of the Home Assistant frontend](https://contributors.home-assistant.io/frontend/development/guidelines/),
+with the same Prettier and ESLint rules (`.prettierrc.json`, `eslint.config.mjs`).
+The GitHub Actions workflow checks them on every push; with Node you can run the
+check yourself:
+
+```bash
+npm install --no-save --no-package-lock prettier@3.10.1 eslint@10.15.0 @eslint/js@10.0.1
+npx prettier --check custom_components/grib_overlay/www/grib-overlay-card.js eslint.config.mjs
+npx eslint custom_components/grib_overlay/www/grib-overlay-card.js
+```
+
+To keep the formatting commit out of `git blame`, run
+`git config blame.ignoreRevsFile .git-blame-ignore-revs`.
 
 The following standalone dev scripts work without Home Assistant:
 
